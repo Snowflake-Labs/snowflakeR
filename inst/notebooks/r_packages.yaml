@@ -1,0 +1,90 @@
+# R Package Configuration for Snowflake Workspace Notebooks
+# =========================================================
+#
+# This file defines the R version and packages to install.
+# Edit this file to customize your R environment.
+#
+# =============================================================================
+# R VERSION
+# =============================================================================
+# Specify the R version to install. Leave blank or omit for latest available.
+#
+# Examples:
+#   r_version: "4.3.2"    # Install exactly R 4.3.2
+#   r_version: "4.3"      # Install latest 4.3.x
+#   r_version: ""         # Install latest available (default)
+#   r_version: null       # Install latest available
+
+r_version: ""  # Leave empty for latest
+
+# =============================================================================
+# CONDA PACKAGES (from conda-forge)
+# =============================================================================
+# Installed via micromamba from conda-forge.
+# Use conda package names (e.g., r-tidyverse, r-dplyr).
+# Preferred for packages with complex dependencies.
+#
+# VERSION SPECIFIERS (conda syntax):
+#   package              # Latest version
+#   package=1.2.3        # Exact version
+#   package>=1.2.0       # Minimum version
+#   package<=2.0.0       # Maximum version
+#   package>=1.2,<2.0    # Version range
+#
+# Note: r-base is automatically added if not present.
+# If r_version is specified above, it overrides any r-base version here.
+
+conda_packages:
+  - r-tidyverse      # Data manipulation and visualization (dplyr, ggplot2, tidyr, etc.)
+  - r-dbplyr         # Database backend for dplyr (required for dplyr + Snowflake)
+  - r-lazyeval       # Required for some tidyverse operations
+  - r-reticulate>=1.25  # R-Python interop (>=1.25 required for rpy2 compatibility)
+  # Examples with version pinning:
+  # - r-dplyr=1.1.4        # Pin to exact version
+  # - r-ggplot2>=3.4.0     # Require minimum version
+
+# =============================================================================
+# CRAN PACKAGES
+# =============================================================================
+# Installed via install.packages() from CRAN after conda packages.
+# Use standard R package names.
+# Requires outbound HTTP access to CRAN.
+#
+# VERSION SPECIFIERS:
+#   package              # Latest version from CRAN
+#   package==1.2.3       # Exact version (uses remotes::install_version)
+#
+# Note: Exact versions require the 'remotes' package (auto-installed if needed).
+
+cran_packages: []
+  # Examples:
+  # - prophet            # Latest from CRAN
+  # - fable              # Latest from CRAN
+  # - forecast==8.21     # Exact version (will install remotes if needed)
+  # - shiny              # Web applications
+  # - caret              # Machine learning
+
+# =============================================================================
+# MINIMUM VERSION REQUIREMENTS
+# =============================================================================
+# The following minimum versions are required for full compatibility:
+#
+# | Package       | Min Version | Reason                                    |
+# |---------------|-------------|-------------------------------------------|
+# | r-reticulate  | >= 1.25     | Fix for rpy2 segfault (PR #1188)          |
+# | r-base        | >= 4.0      | Modern R features                          |
+# | rpy2 (Python) | >= 3.5      | Stable R-Python bridge                     |
+#
+# If you see warnings like:
+#   "The R package 'reticulate' only fixed recently an issue that caused 
+#    a segfault when used with rpy2"
+# Ensure r-reticulate >= 1.25 is installed.
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# - ADBC packages (adbcdrivermanager, adbcsnowflake) are installed separately
+#   when using the --adbc flag with setup_r_environment.sh
+# - For reproducibility, consider pinning versions in production environments
+# - Check conda-forge for available R package versions:
+#   https://anaconda.org/conda-forge/r-base/files

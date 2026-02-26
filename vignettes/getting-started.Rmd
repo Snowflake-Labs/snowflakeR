@@ -1,0 +1,178 @@
+---
+title: "Getting Started with snowflakeR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with snowflakeR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+`snowflakeR` provides a native R interface to the Snowflake ML platform.
+This vignette covers installation, connecting to Snowflake, running queries,
+and using the DBI integration.
+
+## Installation
+
+Install the development version from GitHub:
+
+```r
+# install.packages("pak")
+pak::pak("Snowflake-Labs/snowflakeR")
+```
+
+`snowflakeR` requires a Python environment with `snowflake-ml-python`.
+The package includes a helper to set this up:
+
+```r
+sfr_install_python_deps()
+```
+
+Or create the environment manually:
+
+```bash
+conda create -n r-snowflakeR python=3.11 -y
+conda activate r-snowflakeR
+pip install snowflake-ml-python snowflake-snowpark-python
+```
+
+## Connecting to Snowflake
+
+### Option A: connections.toml (recommended)
+
+If you have a `~/.snowflake/connections.toml` file (the Snowflake standard),
+`snowflakeR` reads it automatically:
+
+```r
+library(snowflakeR)
+
+# Default connection from connections.toml
+conn <- sfr_connect()
+
+# Named connection
+conn <- sfr_connect(name = "production")
+```
+
+### Option B: Explicit parameters
+
+```r
+conn <- sfr_connect(
+  account   = "xy12345.us-east-1",
+  user      = "MYUSER",
+  warehouse = "COMPUTE_WH",
+  database  = "MY_DB",
+  schema    = "MY_SCHEMA",
+  authenticator = "externalbrowser"
+)
+```
+
+### Option C: Key-pair authentication
+
+```r
+conn <- sfr_connect(
+  account          = "xy12345.us-east-1",
+  user             = "MYUSER",
+  private_key_file = "~/.snowflake/rsa_key.p8"
+)
+```
+
+### Option D: Snowflake Workspace Notebooks
+
+In Workspace Notebooks, `sfr_connect()` automatically detects the active
+session -- no credentials needed:
+
+```r
+conn <- sfr_connect()  # Auto-detects Workspace session
+```
+
+### Checking the connection
+
+```r
+# Print connection details
+conn
+
+# Check connection status
+sfr_status(conn)
+
+# Switch warehouse or schema
+sfr_use(conn, warehouse = "ML_WH", schema = "FEATURES")
+```
+
+## Running Queries
+
+### SQL queries
+
+```r
+# Return results as a data.frame
+result <- sfr_query(conn, "SELECT CURRENT_TIMESTAMP() AS now, CURRENT_USER() AS user")
+result
+
+# DDL/DML (no result set)
+sfr_execute(conn, "CREATE TABLE IF NOT EXISTS test_table (id INT, name STRING)")
+```
+
+### Reading and writing tables
+
+```r
+# List tables
+sfr_list_tables(conn)
+
+# Check if a table exists
+sfr_table_exists(conn, "MY_TABLE")
+
+# Read a table into R
+df <- sfr_read_table(conn, "MY_TABLE")
+
+# Write a data.frame to Snowflake
+sfr_write_table(conn, "NEW_TABLE", mtcars, overwrite = TRUE)
+
+# Describe a table's columns
+sfr_list_fields(conn, "MY_TABLE")
+```
+
+## DBI Integration
+
+When the `DBI` package is installed, `sfr_connection` objects automatically
+work with standard R database tooling:
+
+```r
+library(DBI)
+
+# These work with sfr_connection objects:
+DBI::dbGetQuery(conn, "SELECT 1 AS x")
+DBI::dbListTables(conn)
+DBI::dbExistsTable(conn, "MY_TABLE")
+DBI::dbReadTable(conn, "MY_TABLE")
+DBI::dbWriteTable(conn, "NEW_TABLE", mtcars, overwrite = TRUE)
+DBI::dbDisconnect(conn)
+```
+
+This means `sfr_connection` objects also work with `dbplyr` for dplyr-style
+data manipulation:
+
+```r
+library(dplyr)
+library(dbplyr)
+
+# Create a lazy table reference
+my_table <- tbl(conn, "MY_TABLE")
+
+# dplyr operations generate SQL -- nothing runs until you collect()
+result <- my_table |>
+  filter(status == "active") |>
+  group_by(category) |>
+  summarise(n = n(), avg_value = mean(value, na.rm = TRUE)) |>
+  collect()
+```
+
+## Disconnecting
+
+```r
+sfr_disconnect(conn)
+```
+
+## Next steps
+
+- **Model Registry**: See `vignette("model-registry")` for logging and
+  deploying R models to Snowflake.
+- **Feature Store**: See `vignette("feature-store")` for managing features
+  and generating training data.

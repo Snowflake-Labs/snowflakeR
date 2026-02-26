@@ -1,0 +1,65 @@
+# =============================================================================
+# snowflakeR Notebook Configuration
+# =============================================================================
+# Copy this file to notebook_config.yaml and customize for your environment.
+#
+# Usage:
+#   cp notebook_config.yaml.template notebook_config.yaml
+#   # Edit notebook_config.yaml with your values
+#
+# All notebooks read this config to set execution context consistently.
+# =============================================================================
+
+# =============================================================================
+# Execution Context
+# =============================================================================
+# Required by Workspace Notebooks (which do NOT auto-set database/schema).
+# Also used by local notebooks for consistency.
+#
+# These values are used for:
+#   - USE WAREHOUSE / USE DATABASE / USE SCHEMA at the start of each notebook
+#   - Fully qualified table names (e.g., MY_DB.MY_SCHEMA.MY_TABLE)
+
+context:
+  warehouse: "<YOUR_WAREHOUSE>"
+  database: "<YOUR_DATABASE>"
+  schema: "<YOUR_SCHEMA>"
+  # role: "<YOUR_ROLE>"   # Optional: uncomment to set a role
+
+# =============================================================================
+# Connection Parameters (local only)
+# =============================================================================
+# Workspace Notebooks: IGNORED (authentication is handled by the session)
+# Local environments:  Used for sfr_connect() if not using connections.toml
+
+connection:
+  # Profile name in ~/.snowflake/connections.toml (recommended)
+  # If set, sfr_connect() reads all params from that profile automatically.
+  # name: "my_profile"
+
+  # Fallback explicit params (used when connections.toml is not available,
+  # e.g. in Workspace Notebooks, or when name is not set)
+  # Snowflake account identifier (e.g., "xy12345" or "xy12345.us-east-1")
+  account: "<YOUR_ACCOUNT>"
+
+  # Snowflake username
+  user: "<YOUR_USER>"
+
+  # Authentication method: "externalbrowser", "snowflake", "SNOWFLAKE_JWT"
+  auth_method: "externalbrowser"
+
+  # Path to RSA private key (only needed for key-pair / SNOWFLAKE_JWT auth)
+  # private_key_path: "~/.snowflake/keys/rsa_key.p8"
+
+# =============================================================================
+# Demo Settings
+# =============================================================================
+# Table names and query settings used across demo notebooks.
+# Adjust these to avoid conflicts with your existing objects.
+
+demo:
+  # Prefix for demo tables (e.g., SFR_MTCARS, SFR_IRIS)
+  table_prefix: "SFR_"
+
+  # Sample row limit for query examples
+  row_limit: 1000

@@ -1,0 +1,45 @@
+Package: snowflakeR
+Title: R Interface to the Snowflake ML Platform
+Version: 0.1.0
+Authors@R: c(
+    person("Simon", "Field", email = "simon.field@snowflake.com", role = c("aut", "cre")),
+    person("Snowflake Inc.", role = "cph"))
+Author: Simon Field [aut, cre], Snowflake Inc. [cph]
+Maintainer: Simon Field <simon.field@snowflake.com>
+Description: Provides native R functions for working with the Snowflake ML
+    platform, including Model Registry (log, deploy, and serve R models),
+    Feature Store (create and manage feature views using dplyr/dbplyr or SQL),
+    and data connectivity. Uses 'reticulate' to bridge to the
+    'snowflake-ml-python' SDK while presenting an idiomatic R API. Supports
+    both Snowflake Workspace Notebooks and local R environments. Integrates
+    with 'snowflakeauth' for 'connections.toml'/'config.toml' credential
+    management when available.
+License: Apache License 2.0 | file LICENSE
+URL: https://github.com/Snowflake-Labs/snowflakeR
+BugReports: https://github.com/Snowflake-Labs/snowflakeR/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Depends:
+    R (>= 4.1.0)
+Imports:
+    methods,
+    DBI,
+    reticulate (>= 1.34),
+    cli,
+    rlang,
+    jsonlite
+Suggests:
+    snowflakeauth,
+    RcppTOML,
+    httr2 (>= 1.0.0),
+    testthat (>= 3.0.0),
+    dplyr,
+    dbplyr,
+    arrow,
+    knitr,
+    rmarkdown,
+    withr
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+SystemRequirements: Python (>= 3.9), snowflake-ml-python (>= 1.5.0)

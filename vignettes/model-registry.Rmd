@@ -1,0 +1,282 @@
+---
+title: "Model Registry: Log, Deploy, and Serve R Models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Model Registry: Log, Deploy, and Serve R Models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The Snowflake Model Registry lets you version, manage, and deploy ML models
+directly in Snowflake. `snowflakeR` makes this accessible from R -- you
+train models in R, and the package handles the Python bridging behind the
+scenes.
+
+## How it works
+
+When you call `sfr_log_model()`, snowflakeR:
+
+1. Saves your R model to an `.rds` file
+2. Auto-generates a Python `CustomModel` wrapper that uses `rpy2` to load
+   and call your R model
+3. Registers the wrapped model in Snowflake's Model Registry
+4. At inference time (in SPCS), the wrapper loads R, restores the model,
+   and runs your predict function
+
+You never write Python -- the package handles everything.
+
+## Setup
+
+```r
+library(snowflakeR)
+
+conn <- sfr_connect()
+
+# Optional: target a specific db/schema for the registry
+reg <- sfr_model_registry(conn, database = "ML_DB", schema = "MODELS")
+```
+
+You can pass either `reg` or `conn` as the first argument to all registry
+functions. Using `conn` directly uses the session's current database/schema.
+
+## Train a model
+
+Train any R model as you normally would:
+
+```r
+# Simple linear model
+model <- lm(mpg ~ wt + hp + cyl, data = mtcars)
+summary(model)
+```
+
+## Test locally before registering
+
+`sfr_predict_local()` runs the exact same prediction logic that will execute
+inside Snowflake, but entirely in R (no Python bridge):
+
+```r
+test_data <- data.frame(wt = c(2.5, 3.0, 3.5), hp = c(110, 150, 200), cyl = c(4, 6, 8))
+
+preds <- sfr_predict_local(model, test_data)
+preds
+#>   prediction
+#> 1   24.46
+#> 2   20.12
+#> 3   15.18
+```
+
+## Log the model to Snowflake
+
+```r
+mv <- sfr_log_model(
+  reg,
+  model       = model,
+  model_name  = "MTCARS_MPG",
+  input_cols  = list(wt = "double", hp = "double", cyl = "integer"),
+  output_cols = list(prediction = "double"),
+  comment     = "Linear regression predicting MPG from weight, horsepower, cylinders"
+)
+
+mv
+#> <sfr_model_version>
+#>   model: "MTCARS_MPG"
+#>   version: "V1"
+```
+
+### Key parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `model` | Any R object that can be `saveRDS()`'d |
+| `model_name` | Registry name (uppercase recommended) |
+| `input_cols` | Named list: column name -> type (`"double"`, `"integer"`, `"string"`, `"boolean"`) |
+| `output_cols` | Named list: output column name -> type |
+| `predict_fn` | R function name (default: `"predict"`) |
+| `predict_pkgs` | R packages needed at inference time (e.g., `c("forecast", "xgboost")`) |
+| `conda_deps` | Additional conda packages (r-base and rpy2 are always included) |
+| `target_platforms` | `"SNOWPARK_CONTAINER_SERVICES"` (default) or `"WAREHOUSE"` |
+
+### Custom prediction code
+
+For models that need special prediction logic (e.g., `forecast`, or
+multi-step pipelines), use `predict_body`:
+
+```r
+# Example: forecast model with custom output
+mv <- sfr_log_model(
+  reg,
+  model        = arima_model,
+  model_name   = "SALES_FORECAST",
+  predict_fn   = "forecast",
+  predict_pkgs = c("forecast"),
+  predict_body = '
+    pred_{{UID}} <- forecast({{MODEL}}, h = {{N}})
+    result_{{UID}} <- data.frame(
+      period = seq_len({{N}}),
+      point_forecast = as.numeric(pred_{{UID}}$mean),
+      lower_95 = as.numeric(pred_{{UID}}$lower[,2]),
+      upper_95 = as.numeric(pred_{{UID}}$upper[,2])
+    )
+  ',
+  input_cols  = list(period = "integer"),
+  output_cols = list(
+    period = "integer", point_forecast = "double",
+    lower_95 = "double", upper_95 = "double"
+  )
+)
+```
+
+Template variables:
+
+- `{{MODEL}}` -- the loaded R model object
+- `{{INPUT}}` -- the input data.frame
+- `{{UID}}` -- unique ID for variable naming (prevents collisions)
+- `{{N}}` -- number of rows in input
+
+## Manage models
+
+```r
+# List all models
+sfr_show_models(reg)
+
+# Get a specific model
+m <- sfr_get_model(reg, "MTCARS_MPG")
+m
+#> <sfr_model> "MTCARS_MPG"
+#>   versions: "V1"
+#>   default: "V1"
+
+# Show versions
+sfr_show_model_versions(reg, "MTCARS_MPG")
+
+# Get a specific version
+mv <- sfr_get_model_version(reg, "MTCARS_MPG", "V1")
+```
+
+## Metrics
+
+Attach evaluation metrics to model versions for tracking and comparison:
+
+```r
+# Set metrics
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "rmse", 2.45)
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "r_squared", 0.87)
+
+# Retrieve metrics
+sfr_show_model_metrics(reg, "MTCARS_MPG", "V1")
+#> $rmse
+#> [1] 2.45
+#> $r_squared
+#> [1] 0.87
+```
+
+## Version management
+
+```r
+# Log a new version of the same model
+model_v2 <- lm(mpg ~ wt + hp + cyl + disp, data = mtcars)
+
+mv2 <- sfr_log_model(
+  reg,
+  model        = model_v2,
+  model_name   = "MTCARS_MPG",
+  version_name = "V2",
+  input_cols   = list(wt = "double", hp = "double", cyl = "integer", disp = "double"),
+  output_cols  = list(prediction = "double"),
+  comment      = "V2: added displacement"
+)
+
+# Set default version
+sfr_set_default_model_version(reg, "MTCARS_MPG", "V2")
+```
+
+## Remote inference (SPCS)
+
+Once deployed, run inference directly in Snowflake:
+
+```r
+# Predict using a Snowpark DataFrame (runs in Snowflake, not locally)
+new_data <- sfr_query(conn, "SELECT wt, hp, cyl FROM car_data LIMIT 100")
+preds <- sfr_predict(reg, "MTCARS_MPG", new_data)
+```
+
+## Deploy as an SPCS service
+
+For real-time inference endpoints:
+
+```r
+sfr_deploy_model(
+  reg,
+  model_name   = "MTCARS_MPG",
+  version_name = "V2",
+  service_name = "mpg_service",
+  compute_pool = "ML_POOL",
+  image_repo   = "my_db.my_schema.my_repo"
+)
+
+# Predict via the service
+preds <- sfr_predict(
+  reg, "MTCARS_MPG", new_data,
+  service_name = "mpg_service"
+)
+
+# Clean up
+sfr_undeploy_model(reg, "MTCARS_MPG", "V2", "mpg_service")
+```
+
+## Clean up
+
+```r
+sfr_delete_model(reg, "MTCARS_MPG")
+```
+
+## Container package versions (important)
+
+When `sfr_deploy_model()` or `create_service()` builds the SPCS container
+image, it resolves conda/pip package versions at build time. R model
+containers include `r-base` and `rpy2`, which can affect which versions of
+numpy, pandas, and Python itself get installed.
+
+**Key points:**
+
+- Without a `numpy<2.0` pin, the conda solver picks **Python 3.12** +
+  **numpy 2.x** for R model containers. Pure Python models get
+  **Python 3.11** + numpy 2.x (which works fine).
+- Under Python 3.12 + numpy 2.x the SPCS inference server's JSON
+  deserialisation produces a `numpy.recarray` instead of a
+  `pandas.DataFrame`. This causes an HTTP 500 crash:
+  `recarray has no attribute fillna`.
+- Pinning `numpy<2.0` also causes the solver to select **Python 3.11**
+  (the same version used by pure-Python containers), which completely
+  avoids the bug. Our testing confirmed: Python 3.11.14 + numpy 1.26.4.
+- `snowflakeR` includes `numpy<2.0` in the default `conda_deps`. If you
+  override `conda_deps`, **make sure to include `numpy<2.0`**.
+
+```r
+# Default (safe) -- numpy<2.0 is pinned automatically:
+mv <- sfr_log_model(conn, model, model_name = "MY_MODEL",
+                    input_cols = list(x = "double"),
+                    output_cols = list(prediction = "double"))
+
+# Custom conda deps -- remember to include the numpy pin:
+mv <- sfr_log_model(conn, model, model_name = "MY_MODEL",
+                    input_cols = list(x = "double"),
+                    output_cols = list(prediction = "double"),
+                    conda_deps = c("r-base>=4.1", "rpy2>=3.5",
+                                   "numpy<2.0", "r-forecast"))
+```
+
+## Supported model types
+
+Any R model that can be serialised with `saveRDS()` works, including:
+
+- `lm()`, `glm()` (base R)
+- `randomForest::randomForest()`
+- `xgboost::xgb.train()`
+- `ranger::ranger()`
+- `forecast::auto.arima()`, `forecast::ets()`
+- `tidymodels` workflows
+- Custom S3/S4 model objects
+
+The only requirement is that the model has a `predict()` method (or you
+provide custom prediction code via `predict_body`).

@@ -1,0 +1,53 @@
+# snowflakeR test environment
+# Creates a clean conda env with all Python + R dependencies needed
+# for developing and testing the snowflakeR package.
+#
+# Usage:
+#   conda env create -f inst/setup/environment.yml
+#   conda activate r-snowflakeR
+#
+# This single env is shared by both reticulate (R->Python) and rpy2 (Python->R),
+# avoiding duplicate package installations.
+
+name: r-snowflakeR
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python
+  - python=3.11
+
+  # Snowflake ML & Snowpark
+  - snowflake-ml-python>=1.5.0
+  - snowflake-snowpark-python
+
+  # R bridge (Python side)
+  - rpy2>=3.5
+
+  # Data interchange
+  - pandas
+  - pyarrow
+
+  # Auth (key-pair)
+  - cryptography
+
+  # R (for rpy2 to find)
+  - r-base>=4.1
+
+  # Core R packages needed by snowflakeR
+  - r-reticulate
+  - r-cli
+  - r-rlang
+  - r-jsonlite
+  - r-testthat
+  - r-devtools
+  - r-roxygen2
+  - r-withr
+
+  # Optional R packages (Suggests)
+  - r-dplyr
+  - r-dbplyr
+  - r-dbi
+  - r-knitr
+  - r-rmarkdown

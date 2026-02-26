@@ -1,0 +1,26 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+inst/doc
+docs/
+*.o
+*.so
+*.dll
+
+# Secrets and credentials
+*.pem
+*.key
+*.p8
+*.der
+.env
+.env.*
+connections.toml
+credentials.json
+secrets.json
+snowflake_credentials.json
+inst/notebooks/notebook_config.yaml
+
+# Python artefacts
+__pycache__/
+*.pyc

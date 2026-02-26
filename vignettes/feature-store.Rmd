@@ -1,0 +1,358 @@
+---
+title: "Feature Store: Manage Features and Generate Training Data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Feature Store: Manage Features and Generate Training Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The Snowflake Feature Store provides a centralised repository for feature
+engineering pipelines, enabling consistent feature reuse across training and
+inference. `snowflakeR` wraps the full Feature Store Python API, giving you
+an R-native interface.
+
+## Concepts
+
+- **Entity**: Defines join keys for features (e.g., `CUSTOMER_ID`). Immutable
+  once created.
+- **Feature View**: A set of features derived from a SQL query, tied to one
+  or more entities. Can be automatically refreshed (managed) or manually
+  maintained (external).
+- **Feature Store**: A schema in Snowflake that holds entities, feature views,
+  and metadata.
+
+## Setup
+
+```r
+library(snowflakeR)
+
+conn <- sfr_connect()
+
+# Connect to (or create) a Feature Store
+fs <- sfr_feature_store(
+  conn,
+  database  = "ML_DB",
+  schema    = "FEATURES",
+  warehouse = "ML_WH",
+  create    = TRUE  # Creates schema + tags if they don't exist
+)
+
+fs
+#> <sfr_feature_store> "ML_DB"."FEATURES"
+#>   warehouse: "ML_WH"
+#>   mode: "create"
+```
+
+### One-time admin setup
+
+For first-time setup with proper role/privilege provisioning:
+
+```r
+sfr_setup_feature_store(conn, "ML_DB", "FEATURES", "ML_WH")
+```
+
+## Entities
+
+Entities define the join keys that link features to business objects:
+
+```r
+# Create entities
+customer <- sfr_create_entity(fs, "CUSTOMER", "CUSTOMER_ID", desc = "Customer entity")
+product  <- sfr_create_entity(fs, "PRODUCT", "PRODUCT_ID", desc = "Product entity")
+
+customer
+#> <sfr_entity> "CUSTOMER"
+#>   join_keys: "CUSTOMER_ID"
+
+# List all entities
+sfr_list_entities(fs)
+
+# Get a specific entity
+customer <- sfr_get_entity(fs, "CUSTOMER")
+
+# Update description
+sfr_update_entity(fs, "CUSTOMER", desc = "Primary customer entity with demographics")
+
+# Delete an entity (fails if referenced by Feature Views)
+sfr_delete_entity(fs, "PRODUCT")
+```
+
+## Feature Views
+
+Feature Views define the SQL transformation that produces features. There
+are two approaches.
+
+### Two-step: draft then register
+
+This mirrors the Python API exactly and is useful when you want to inspect
+the draft before materialising:
+
+```r
+# Step 1: Create a local draft
+fv_draft <- sfr_feature_view(
+  name         = "CUSTOMER_FEATURES",
+  entities     = customer,
+  features     = "
+    SELECT
+      customer_id,
+      AVG(order_total) AS avg_order_total,
+      COUNT(*) AS order_count,
+      MAX(order_date) AS last_order_date
+    FROM orders
+    GROUP BY customer_id
+  ",
+  refresh_freq = "1 hour",
+  desc         = "Customer aggregate features from orders"
+)
+
+fv_draft
+#> <sfr_feature_view> "CUSTOMER_FEATURES" [draft]
+#>   entities: "CUSTOMER"
+#>   refresh: "1 hour"
+
+# Step 2: Register (materialise as a dynamic table)
+fv <- sfr_register_feature_view(fs, fv_draft, version = "v1")
+#> Feature View "CUSTOMER_FEATURES" version "v1" registered.
+```
+
+### One-step convenience
+
+```r
+fv <- sfr_create_feature_view(
+  fs,
+  name         = "CUSTOMER_FEATURES",
+  version      = "v1",
+  entities     = customer,
+  features     = "
+    SELECT customer_id, AVG(order_total) AS avg_order_total,
+           COUNT(*) AS order_count
+    FROM orders GROUP BY customer_id
+  ",
+  refresh_freq = "1 hour",
+  desc         = "Customer order aggregates"
+)
+```
+
+### Using dbplyr for features
+
+You can define features using dplyr pipelines instead of raw SQL. The
+`features` argument accepts dbplyr lazy tables:
+
+```r
+library(dplyr)
+library(dbplyr)
+
+orders_tbl <- tbl(conn, "ORDERS")
+
+customer_features_query <- orders_tbl |>
+  group_by(customer_id) |>
+  summarise(
+    avg_order_total = mean(order_total, na.rm = TRUE),
+    order_count = n(),
+    last_order_date = max(order_date, na.rm = TRUE)
+  )
+
+fv <- sfr_create_feature_view(
+  fs,
+  name     = "CUSTOMER_FEATURES_DBPLYR",
+  version  = "v1",
+  entities = customer,
+  features = customer_features_query,  # dbplyr lazy table -> SQL
+  desc     = "Customer features built with dplyr"
+)
+```
+
+### External (manually managed) Feature Views
+
+Omit `refresh_freq` to create a Feature View without automatic refresh.
+You maintain the underlying table yourself (e.g., via dbt):
+
+```r
+fv_external <- sfr_create_feature_view(
+  fs,
+  name     = "CUSTOMER_DEMOGRAPHICS",
+  version  = "v1",
+  entities = customer,
+  features = "SELECT * FROM customer_demographics_table"
+  # No refresh_freq -> external Feature View
+)
+```
+
+### Time-series features
+
+For point-in-time correct joins, specify a `timestamp_col`:
+
+```r
+fv_ts <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ACTIVITY",
+  version       = "v1",
+  entities      = customer,
+  features      = "SELECT customer_id, event_ts, page_views, clicks FROM activity",
+  timestamp_col = "event_ts",
+  refresh_freq  = "30 minutes"
+)
+```
+
+## Managing Feature Views
+
+```r
+# List all Feature Views
+sfr_list_feature_views(fs)
+
+# Filter by entity or name
+sfr_list_feature_views(fs, entity_name = "CUSTOMER")
+sfr_list_feature_views(fs, feature_view_name = "CUSTOMER_FEATURES")
+
+# Get a specific version
+fv <- sfr_get_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+
+# Show all versions of a Feature View
+sfr_show_fv_versions(fs, "CUSTOMER_FEATURES")
+
+# Read feature data
+feature_data <- sfr_read_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+head(feature_data)
+```
+
+### Refresh management
+
+```r
+# Manually trigger a refresh
+sfr_refresh_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+
+# Check refresh history
+history <- sfr_get_refresh_history(fs, "CUSTOMER_FEATURES", "v1")
+history
+#>              name    state      refresh_start_time ...
+#> 1 CUSTOMER_FE...  SUCCEEDED 2026-02-10 14:53:58  ...
+
+# Pause automatic refresh
+sfr_suspend_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+
+# Resume automatic refresh
+sfr_resume_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+```
+
+## Generate Training Data
+
+Join spine (label) data with features using point-in-time correct joins:
+
+```r
+training_data <- sfr_generate_training_data(
+  fs,
+  spine = "
+    SELECT customer_id, churn_date AS event_ts, churned AS label
+    FROM churn_labels
+  ",
+  features = list(
+    list(name = "CUSTOMER_FEATURES", version = "v1"),
+    list(name = "CUSTOMER_ACTIVITY", version = "v1")
+  ),
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "label"
+)
+
+head(training_data)
+#>   customer_id event_ts label avg_order_total order_count page_views clicks
+#> 1       C001  2026-... 1          45.20          12         320     45
+#> ...
+```
+
+You can also pass registered `sfr_feature_view` objects directly:
+
+```r
+fv1 <- sfr_get_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+fv2 <- sfr_get_feature_view(fs, "CUSTOMER_ACTIVITY", "v1")
+
+training_data <- sfr_generate_training_data(
+  fs,
+  spine    = "SELECT customer_id, churned FROM churn_labels",
+  features = list(fv1, fv2),
+  spine_label_cols = "churned"
+)
+```
+
+### Materialise training data to a table
+
+```r
+training_data <- sfr_generate_training_data(
+  fs,
+  spine    = "SELECT customer_id, churned FROM churn_labels",
+  features = list(fv1, fv2),
+  save_as  = "CHURN_TRAINING_SET_V1"
+)
+```
+
+## Retrieve Features for Inference
+
+At inference time, fetch the latest feature values without labels or
+point-in-time logic:
+
+```r
+features_for_scoring <- sfr_retrieve_features(
+  fs,
+  spine    = "SELECT customer_id FROM customers_to_score",
+  features = list(fv1, fv2)
+)
+```
+
+## Clean up
+
+```r
+sfr_delete_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+sfr_delete_feature_view(fs, "CUSTOMER_ACTIVITY", "v1")
+sfr_delete_entity(fs, "CUSTOMER")
+```
+
+## End-to-end workflow
+
+Here's a complete example tying everything together:
+
+```r
+library(snowflakeR)
+
+# 1. Connect
+conn <- sfr_connect()
+fs   <- sfr_feature_store(conn, database = "ML_DB", schema = "FEATURES",
+                          warehouse = "ML_WH", create = TRUE)
+reg  <- sfr_model_registry(conn, database = "ML_DB", schema = "MODELS")
+
+# 2. Create entity + feature view
+entity <- sfr_create_entity(fs, "CUSTOMER", "CUSTOMER_ID")
+fv <- sfr_create_feature_view(
+  fs, "CUST_FV", "v1", entities = entity,
+  features = "SELECT customer_id, avg_spend, tenure FROM customer_summary",
+  refresh_freq = "1 hour"
+)
+
+# 3. Generate training data
+training <- sfr_generate_training_data(
+  fs,
+  spine = "SELECT customer_id, churned FROM labels",
+  features = list(list(name = "CUST_FV", version = "v1")),
+  spine_label_cols = "churned"
+)
+
+# 4. Train in R
+model <- glm(churned ~ avg_spend + tenure, data = training, family = binomial)
+
+# 5. Test locally
+sfr_predict_local(model, training[1:5, c("avg_spend", "tenure")])
+
+# 6. Register
+sfr_log_model(
+  reg, model, "CHURN_MODEL",
+  input_cols  = list(avg_spend = "double", tenure = "double"),
+  output_cols = list(prediction = "double")
+)
+
+# 7. Score new customers
+new_features <- sfr_retrieve_features(
+  fs,
+  spine = "SELECT customer_id FROM active_customers",
+  features = list(list(name = "CUST_FV", version = "v1"))
+)
+predictions <- sfr_predict(reg, "CHURN_MODEL", new_features)
+```
