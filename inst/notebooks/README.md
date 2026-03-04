@@ -5,10 +5,21 @@ This directory is **self-contained** -- everything you need is included.
 
 ## Contents
 
+### Notebooks
+
+| File | Environment | Purpose |
+|---|---|---|
+| `workspace_quickstart.ipynb` | Workspace | Connection, config, queries, ggplot2 |
+| `local_quickstart.ipynb` | Local | Quickstart for RStudio, Jupyter, etc. |
+| `workspace_model_registry.ipynb` | Workspace | Model Registry: log, deploy, serve R models |
+| `local_model_registry.ipynb` | Local | Model Registry for local environments |
+| `workspace_feature_store.ipynb` | Workspace | Feature Store: entities, views, training data |
+| `local_feature_store.ipynb` | Local | Feature Store for local environments |
+
+### Supporting Files
+
 | File | Purpose |
 |---|---|
-| `workspace_quickstart.ipynb` | Quickstart for **Snowflake Workspace Notebooks** |
-| `local_quickstart.ipynb` | Quickstart for **local R environments** (RStudio, Jupyter, etc.) |
 | `notebook_config.yaml.template` | Configuration template (warehouse, database, schema) |
 | `setup_r_environment.sh` | Installs R + packages via micromamba (Workspace only) |
 | `r_packages.yaml` | R package list for `setup_r_environment.sh` |
@@ -42,9 +53,13 @@ Table references use fully qualified names (`DATABASE.SCHEMA.TABLE`) as
 **Workspace Notebooks** (Python kernel + `%%R` magic):
 
 1. Upload this entire folder to your Workspace
-2. Open `workspace_quickstart.ipynb`
-3. Run the setup cells to install R and snowflakeR
-4. The notebook handles `USE WAREHOUSE/DATABASE/SCHEMA` via `sfr_load_notebook_config()`
+2. Attach an **External Access Integration (EAI)** that allows outbound HTTPS
+   to `micro.mamba.pm`, `conda.anaconda.org`, and `repo.anaconda.com` (plus
+   `cloud.r-project.org` if installing CRAN packages). See the full host table
+   and example SQL in `internal/prd_eng/workspace_notebooks_eai_requirements.md`.
+3. Open `workspace_quickstart.ipynb`
+4. Run the setup cells to install R and snowflakeR
+5. The notebook handles `USE WAREHOUSE/DATABASE/SCHEMA` via `sfr_load_notebook_config()`
 
 **Local R environments** (RStudio, Posit Workbench, JupyterLab with R kernel):
 
@@ -66,3 +81,15 @@ Or copy them to your working directory:
 nb_dir <- system.file("notebooks", package = "snowflakeR")
 file.copy(list.files(nb_dir, full.names = TRUE), ".", recursive = TRUE)
 ```
+
+## DBI / dbplyr
+
+These notebooks use `sfr_query()` and `sfr_execute()` for SQL. For full
+DBI compliance and `dbplyr` integration, install the companion
+[RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) package and use
+`sfr_dbi_connection()` to bridge from an `sfr_connection`.
+
+## RSnowflake Test Notebook
+
+A standalone test notebook for the **RSnowflake** DBI package is available at
+`RSnowflake/inst/notebooks/workspace_rsnowflake_test.ipynb`.

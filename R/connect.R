@@ -265,6 +265,8 @@ sfr_connect <- function(name = NULL,
   conn <- structure(
     list(
       session = session,
+      dbi_con = NULL,
+      .connect_name = name,
       account = account,
       user = user,
       database = database,
@@ -275,7 +277,7 @@ sfr_connect <- function(name = NULL,
       environment = env_type,
       created_at = Sys.time()
     ),
-    class = c("sfr_connection", "DBIConnection", "list")
+    class = c("sfr_connection", "list")
   )
 
   # Refresh from live session to fill any NULLs
@@ -304,8 +306,8 @@ sfr_connect <- function(name = NULL,
 #' @returns Invisibly returns `x`.
 #' @export
 print.sfr_connection <- function(x, ...) {
-  name_label <- x$account %||% "unknown"
   env_label <- x$environment %||% "unknown"
+  dbi_label <- if (!is.null(x$dbi_con)) "attached" else "not attached"
   cli::cli_text("<{.cls sfr_connection}> [{env_label}]")
   fields <- list(
     account = x$account,
@@ -316,6 +318,7 @@ print.sfr_connection <- function(x, ...) {
     role = x$role,
     auth_method = x$auth_method,
     environment = x$environment,
+    dbi_connection = dbi_label,
     created_at = format(x$created_at, "%Y-%m-%d %H:%M:%S")
   )
   fields <- Filter(Negate(is.null), fields)
@@ -448,4 +451,52 @@ sfr_has_connection <- function(...) {
     },
     error = function(e) FALSE
   )
+}
+
+
+#' Get an RSnowflake DBI connection from an sfr_connection
+#'
+#' Returns an `RSnowflake::SnowflakeConnection` that can be used with
+#' standard DBI methods (`dbGetQuery`, `dbWriteTable`, etc.) and dbplyr.
+#' The connection is created lazily on first call and cached on the
+#' `sfr_connection` object.
+#'
+#' Requires the `RSnowflake` package to be installed.
+#'
+#' @param conn An `sfr_connection` object from [sfr_connect()].
+#' @returns An `RSnowflake::SnowflakeConnection` object.
+#'
+#' @examples
+#' \dontrun{
+#' sfr_conn <- sfr_connect(name = "my_profile")
+#' dbi_con  <- sfr_dbi_connection(sfr_conn)
+#' DBI::dbGetQuery(dbi_con, "SELECT 1")
+#' }
+#'
+#' @export
+sfr_dbi_connection <- function(conn) {
+  validate_connection(conn)
+
+  if (!is.null(conn$dbi_con)) {
+    return(conn$dbi_con)
+  }
+
+  rlang::check_installed("RSnowflake",
+    reason = "for DBI database connectivity")
+  rlang::check_installed("DBI",
+    reason = "for DBI database connectivity")
+
+  dbi_con <- DBI::dbConnect(
+    RSnowflake::Snowflake(),
+    name      = conn$.connect_name,
+    account   = conn$account,
+    user      = conn$user,
+    database  = conn$database,
+    schema    = conn$schema,
+    warehouse = conn$warehouse,
+    role      = conn$role
+  )
+
+  conn$dbi_con <- dbi_con
+  dbi_con
 }

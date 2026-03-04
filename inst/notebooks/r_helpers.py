@@ -1,6 +1,13 @@
 """
 R Environment Helpers for Snowflake Workspace Notebooks
 
+SYNC NOTE: This file is shared between RSnowflake and snowflakeR.
+  Canonical copies live at:
+    - RSnowflake/inst/notebooks/r_helpers.py
+    - snowflakeR/inst/notebooks/r_helpers.py
+  When editing either copy, port the changes to the other and verify
+  nothing breaks in the other package's notebooks.
+
 This module provides helper functions for:
 - R environment setup and configuration
 - PAT (Programmatic Access Token) management
@@ -15,10 +22,10 @@ Usage:
     from r_helpers import init_r_output_helpers  # Load rprint, rview, rglimpse
     from r_helpers import KeyPairAuth, OAuthAuth  # Alternative auth methods
     from r_helpers import init_r_alt_auth  # Load R test functions
-    
+
 After setup, use in R cells:
     rprint(x)      - Print any object cleanly
-    rview(df, n)   - View data frame (optional row limit)  
+    rview(df, n)   - View data frame (optional row limit)
     rglimpse(df)   - Glimpse data frame structure
 """
 
@@ -35,7 +42,21 @@ import json
 # Configuration
 # =============================================================================
 
-R_ENV_PREFIX = "/root/.local/share/mamba/envs/r_env"
+def _resolve_r_env_prefix() -> str:
+    """Return the R environment prefix.
+
+    Checks ``~/.workspace_env_prefix`` first (written by the combined
+    setup_workspace_environment.sh script), then falls back to the
+    per-language default.
+    """
+    marker = os.path.expanduser("~/.workspace_env_prefix")
+    if os.path.isfile(marker):
+        prefix = open(marker).read().strip()
+        if prefix and os.path.isdir(prefix):
+            return prefix
+    return "/root/.local/share/mamba/envs/r_env"
+
+R_ENV_PREFIX = _resolve_r_env_prefix()
 PAT_TOKEN_NAME = "r_adbc_pat"
 
 
@@ -106,25 +127,25 @@ def setup_r_environment(install_rpy2: bool = True, register_magic: bool = True) 
     except Exception as e:
         result['errors'].append(f"Failed to get R version: {e}")
     
-    # Install rpy2 and tabulate if requested
+    # Install rpy2 and tabulate if requested (skip when already importable)
     if install_rpy2:
         try:
-            # Install rpy2 for R integration
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "rpy2", "-q"],
-                check=True,
-                capture_output=True,
-                timeout=120
-            )
+            import importlib
+            _rpy2_ok = importlib.util.find_spec("rpy2") is not None
+            _tab_ok = importlib.util.find_spec("tabulate") is not None
+
+            if not _rpy2_ok:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "rpy2", "-q"],
+                    check=True, capture_output=True, timeout=120,
+                )
             result['rpy2_installed'] = True
-            
-            # Install tabulate for nice DataFrame output (df.to_markdown())
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "tabulate", "-q"],
-                check=True,
-                capture_output=True,
-                timeout=60
-            )
+
+            if not _tab_ok:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "tabulate", "-q"],
+                    check=True, capture_output=True, timeout=60,
+                )
             result['tabulate_installed'] = True
         except subprocess.CalledProcessError as e:
             result['errors'].append(f"Failed to install packages: {e}")
@@ -171,6 +192,46 @@ class RMagicExecutionError(Exception):
     pass
 
 
+def _r_df_to_pandas(r_obj):
+    """Convert an R data.frame (or tibble/grouped_df) to a pandas DataFrame.
+
+    Coerces to plain data.frame first so rpy2's pandas2ri converter
+    always gets a standard R data.frame.  If direct conversion fails
+    (e.g. columns contain S4 objects like DBI ``Id``), falls back to
+    converting all columns to character vectors first.
+    Returns ``None`` only if both strategies fail.
+    """
+    import rpy2.robjects as ro
+    from rpy2.robjects import pandas2ri
+
+    try:
+        r_df = ro.r('as.data.frame')(r_obj)
+        with (ro.default_converter + pandas2ri.converter).context():
+            return ro.conversion.get_conversion().rpy2py(r_df)
+    except Exception:
+        pass
+
+    # Fallback: coerce every column to character so S4/complex
+    # objects become their text representation.
+    try:
+        r_df_chr = ro.r(
+            'function(df) as.data.frame('
+            'lapply(df, function(col) '
+            'if (is.character(col) || is.numeric(col) || '
+            'is.logical(col) || inherits(col, "Date") || '
+            'inherits(col, "POSIXct")) col '
+            'else vapply(col, function(x) '
+            'paste(capture.output(print(x)), collapse=" "), "")),'
+            'stringsAsFactors=FALSE)'
+        )(r_obj)
+        with (ro.default_converter + pandas2ri.converter).context():
+            return ro.conversion.get_conversion().rpy2py(r_df_chr)
+    except Exception as exc:
+        print(f"Warning: R→pandas grid conversion failed ({exc}); "
+              "falling back to text output.", file=sys.stderr)
+        return None
+
+
 def _build_safe_r_magics_class():
     """Build and return an RMagics subclass with improved behaviour.
 
@@ -178,16 +239,23 @@ def _build_safe_r_magics_class():
 
     1. **Error propagation** — R errors always raise
        ``RMagicExecutionError`` so Jupyter "Run All" stops on failure.
-    2. **Buffered output** — all R console output (``print()``,
-       ``cat()``, ``message()``) is captured via rpy2's console
-       callback and emitted as a single ``print()`` call at the end
-       of the cell.  This eliminates the extra line-breaks that
-       Workspace Notebooks inject between separate
-       ``publish_display_data`` calls.  With buffered output enabled,
-       R's normal ``print()``/``cat()`` work cleanly without needing
-       the ``rprint``/``rcat`` helper wrappers.
-    3. **``--time``** — prints wall-clock execution time.
-    4. **``--silent``** — suppresses all R text output.
+    2. **Single-block output** — cell code is wrapped in R's
+       ``capture.output({...})`` so ALL output (including visible
+       return values like data.frames) is collected as a character
+       vector.  ``writeLines()`` then sends it through a single
+       ``write_console_regular`` call → our buffer → one ``print()``
+       at the end.  ``flush()`` returns empty to rpy2 so it has
+       nothing to publish via ``publish_display_data``.  This
+       eliminates the extra line-breaks that Workspace Notebooks
+       inject between separate display calls.  Same pattern as the
+       ``%%scala`` / ``%%java`` magics.
+    3. **Auto-detect grid display** — when the last visible expression
+       is a ``data.frame`` (or tibble), it is converted to a pandas
+       DataFrame and returned as the cell result so Workspace renders
+       the interactive grid viewer.  Use ``--text`` to opt out, or
+       ``--df varname`` to explicitly pick which R variable to display.
+    4. **``--time``** — prints wall-clock execution time.
+    5. **``--silent``** — suppresses all R text output.
     """
     import time
     import IPython.core.magic
@@ -209,18 +277,16 @@ def _build_safe_r_magics_class():
                 super().write_console_regular(output)
 
         def flush(self):
-            """Return buffered output instead of Rstdout_cache.
-
-            During buffered mode, drains our buffer (so
-            ``RInterpreterError`` still gets context) and also
-            drains the parent cache (in case any output slipped
-            through to it directly).
+            """In buffered mode, return empty to rpy2 so it has nothing
+            to publish via ``publish_display_data``.  The real output
+            stays in ``_output_buf`` and is emitted as a single
+            ``print()`` at the end of our ``R()`` override.
             """
             if self._buffered_mode:
-                text = ''.join(self._output_buf)
-                self._output_buf.clear()
                 parent_text = super().flush()
-                return text + parent_text
+                if parent_text:
+                    self._output_buf.append(parent_text)
+                return ''
             return super().flush()
 
         @IPython.core.magic.needs_local_scope
@@ -229,6 +295,8 @@ def _build_safe_r_magics_class():
         def R(self, line, cell=None, local_ns=None):
             show_time = False
             silent = False
+            text_only = False
+            df_varname = None
 
             if cell is not None:
                 parts = line.split()
@@ -238,7 +306,67 @@ def _build_safe_r_magics_class():
                 if "--silent" in parts:
                     silent = True
                     parts.remove("--silent")
+                if "--text" in parts:
+                    text_only = True
+                    parts.remove("--text")
+                # --df varname — explicit variable to return as grid
+                # (double-dash to avoid conflict with rpy2's -d/--display)
+                df_idx = None
+                for i, p in enumerate(parts):
+                    if p == '--df' and i + 1 < len(parts):
+                        df_idx = i
+                        break
+                if df_idx is not None:
+                    df_varname = parts[df_idx + 1]
+                    del parts[df_idx:df_idx + 2]
                 line = " ".join(parts)
+
+            has_io_flags = cell is not None and any(
+                f in line for f in ('-i ', '-o ', '-w ', '-h ',
+                                    '-i\t', '-o\t', '-w\t', '-h\t')
+            )
+
+            # Determine grid mode:
+            #  - "auto"  → withVisible wrapping; detect last df
+            #  - "named" → capture.output wrapping; pull named var
+            #  - None    → text-only (current behaviour)
+            grid_mode = None
+            if cell is not None and not has_io_flags:
+                if df_varname:
+                    grid_mode = "named"
+                elif not text_only:
+                    grid_mode = "auto"
+
+            if cell is not None and not has_io_flags:
+                if grid_mode == "auto":
+                    # withVisible captures the last expression's value
+                    # + visibility WITHOUT auto-printing it, while the
+                    # outer {…} (not local()) keeps variable assignments
+                    # in the calling scope.  capture.output collects
+                    # only intermediate cat()/print() text.
+                    cell = (
+                        '..__co__ <- capture.output({\n'
+                        '  ..__wv__ <- withVisible({\n'
+                        + cell
+                        + '\n  })\n'
+                        '})\n'
+                        '..__is_grid__ <- ..__wv__$visible && '
+                        'is.data.frame(..__wv__$value)\n'
+                        'if (..__wv__$visible && !..__is_grid__) {\n'
+                        '  ..__co__ <- c(..__co__, '
+                        'capture.output(print(..__wv__$value)))\n'
+                        '}\n'
+                        'if (length(..__co__) > 0L) writeLines(..__co__)'
+                    )
+                else:
+                    # text-only or named-df: standard wrapping
+                    cell = (
+                        '..__co__ <- capture.output({\n'
+                        + cell
+                        + '\n})\n'
+                        'if (length(..__co__) > 0L) writeLines(..__co__)\n'
+                        'rm(..__co__)'
+                    )
 
             self._output_buf.clear()
             self._buffered_mode = True
@@ -255,6 +383,42 @@ def _build_safe_r_magics_class():
                     elapsed = time.time() - t0
                     print(f"[R executed in {elapsed:.2f}s]")
 
+                # --- Grid display post-processing ---
+                pdf = None
+                if grid_mode == "auto":
+                    import rpy2.robjects as ro
+                    try:
+                        is_grid = bool(ro.r('..__is_grid__')[0])
+                        if is_grid:
+                            pdf = _r_df_to_pandas(
+                                ro.r('..__wv__$value'))
+                    except Exception:
+                        pass
+                    finally:
+                        try:
+                            ro.r('rm(..__co__, ..__wv__, ..__is_grid__)')
+                        except Exception:
+                            pass
+                elif grid_mode == "named":
+                    import rpy2.robjects as ro
+                    try:
+                        r_obj = ro.globalenv[df_varname]
+                        is_df = bool(ro.r(
+                            f'is.data.frame({df_varname})')[0])
+                        if is_df:
+                            pdf = _r_df_to_pandas(r_obj)
+                        else:
+                            print(f"Warning: R variable '{df_varname}'"
+                                  " is not a data.frame; "
+                                  "skipping grid display.",
+                                  file=sys.stderr)
+                    except Exception as exc:
+                        print(f"Warning: could not read R variable "
+                              f"'{df_varname}': {exc}",
+                              file=sys.stderr)
+
+                if pdf is not None:
+                    return pdf
                 return result
 
             except RInterpreterError as e:

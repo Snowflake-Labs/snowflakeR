@@ -129,39 +129,46 @@ sfr_write_table(conn, "NEW_TABLE", mtcars, overwrite = TRUE)
 sfr_list_fields(conn, "MY_TABLE")
 ```
 
-## DBI Integration
+## DBI / dbplyr Integration
 
-When the `DBI` package is installed, `sfr_connection` objects automatically
-work with standard R database tooling:
+For full DBI compliance (`dbGetQuery`, `dbWriteTable`, `dbListTables`, etc.)
+and `dbplyr` integration, use the companion
+[**RSnowflake**](https://github.com/Snowflake-Labs/RSnowflake) package. You
+can bridge from an `sfr_connection` to a DBI connection with
+`sfr_dbi_connection()`:
 
 ```r
-library(DBI)
+# Obtain an RSnowflake DBI connection (requires RSnowflake to be installed)
+dbi_con <- sfr_dbi_connection(conn)
 
-# These work with sfr_connection objects:
-DBI::dbGetQuery(conn, "SELECT 1 AS x")
-DBI::dbListTables(conn)
-DBI::dbExistsTable(conn, "MY_TABLE")
-DBI::dbReadTable(conn, "MY_TABLE")
-DBI::dbWriteTable(conn, "NEW_TABLE", mtcars, overwrite = TRUE)
-DBI::dbDisconnect(conn)
+library(DBI)
+DBI::dbGetQuery(dbi_con, "SELECT 1 AS x")
+DBI::dbListTables(dbi_con)
+DBI::dbExistsTable(dbi_con, "MY_TABLE")
+DBI::dbReadTable(dbi_con, "MY_TABLE")
+DBI::dbWriteTable(dbi_con, "NEW_TABLE", mtcars, overwrite = TRUE)
 ```
 
-This means `sfr_connection` objects also work with `dbplyr` for dplyr-style
-data manipulation:
+This also enables `dbplyr` for dplyr-style data manipulation:
 
 ```r
 library(dplyr)
 library(dbplyr)
 
-# Create a lazy table reference
-my_table <- tbl(conn, "MY_TABLE")
-
-# dplyr operations generate SQL -- nothing runs until you collect()
-result <- my_table |>
+tbl(dbi_con, "MY_TABLE") |>
   filter(status == "active") |>
   group_by(category) |>
   summarise(n = n(), avg_value = mean(value, na.rm = TRUE)) |>
   collect()
+```
+
+Alternatively, you can connect directly with RSnowflake without
+`snowflakeR`:
+
+```r
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake(), name = "my_profile")
 ```
 
 ## Disconnecting

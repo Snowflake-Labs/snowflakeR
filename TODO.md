@@ -24,18 +24,29 @@ current release.
   - This could be gated behind `requireNamespace("arrow")` so that users
     without the R `arrow` package fall back to the current `tolist()` path.
 
-## Feature Store API
+## DBI / Database Connectivity
 
-- [ ] Additional methods: `list_feature_views`, `get_feature_view`,
-  `generate_training_set` -- partially implemented, may need further testing
-  and edge-case handling.
+Standard DBI-compliant database access (dbGetQuery, dbWriteTable, dbplyr,
+RStudio Connections Pane) is now provided by the companion **RSnowflake**
+package. `snowflakeR` retains lightweight SQL helpers (`sfr_query()`,
+`sfr_execute()`, `sfr_read_table()`, `sfr_write_table()`) that route
+through the Snowpark session for ML workflows. When `RSnowflake` is
+installed, `sfr_query()` and `sfr_execute()` delegate to it automatically.
 
-## Vignettes
-
-- [ ] Write comprehensive vignettes for Feature Store, Model Registry, and
-  Datasets workflows.
+- [x] Extract DBI methods to RSnowflake package
+- [x] Add `sfr_dbi_connection()` bridge function
+- [ ] Consider deprecating `sfr_list_tables()`, `sfr_read_table()`, etc.
+  in favour of the DBI equivalents via `sfr_dbi_connection()`
 
 ## Testing
 
 - [ ] Expand testthat suite with integration tests that run against a live
   Snowflake account (behind an env-var gate).
+
+## Vignettes
+
+- [x] Getting started
+- [x] Setup & prerequisites
+- [x] Model Registry
+- [x] Feature Store
+- [x] Workspace Notebooks

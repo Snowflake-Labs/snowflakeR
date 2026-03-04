@@ -37,17 +37,22 @@ In a Workspace Notebook, the data flow is:
 Python Kernel (Jupyter)
   |-- rpy2 (Python-R bridge)
   |     |-- %%R magic cells (R code execution)
-  |     |-- snowflakeR (R package)
-  |           |-- reticulate (R-Python bridge)
-  |                 |-- snowflake-ml-python (Snowflake ML SDK)
-  |                       |-- Snowpark Session (built-in)
+  |     |-- snowflakeR (R package, ML platform features)
+  |     |     |-- reticulate (R-Python bridge)
+  |     |           |-- snowflake-ml-python (Snowflake ML SDK)
+  |     |                 |-- Snowpark Session (built-in)
+  |     |
+  |     |-- RSnowflake (R package, DBI/dbplyr, optional)
+  |           |-- Snowflake SQL API v2 (direct HTTPS)
   |
   |-- Active Snowpark Session (auto-detected by sfr_connect())
 ```
 
-The key insight: `snowflakeR` uses `reticulate` to call Python under the
-hood, while the Workspace Notebook uses `rpy2` to call R from Python. This
-bidirectional bridge is transparent -- you just write R code.
+`snowflakeR` uses `reticulate` to call the Snowflake ML Python SDK,
+while `RSnowflake` connects directly to Snowflake via HTTPS (no Python
+needed). Both work in Workspace Notebooks. For ML workflows (Model
+Registry, Feature Store), use `snowflakeR`. For standard DBI/dbplyr
+database operations, install `RSnowflake` and use `sfr_dbi_connection()`.
 
 ## Setup
 
@@ -103,6 +108,14 @@ Anaconda, Inc.). All packages come from
 collection entirely separate from Anaconda's default repository. R is
 GPL-licensed, and CRAN packages carry their own open-source licenses. You can
 use all of this freely in commercial environments.
+
+**External Access Integration (EAI):** The setup script downloads packages from
+external hosts (`micro.mamba.pm`, `conda.anaconda.org`, `repo.anaconda.com`,
+and optionally `cloud.r-project.org`). Snowflake blocks outbound traffic by
+default, so you must attach an
+[External Access Integration](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-external-access)
+that allows these hosts. See the full host table and example SQL in
+`internal/prd_eng/workspace_notebooks_eai_requirements.md`.
 
 ### Step 2: Register the `%%R` magic
 
@@ -317,23 +330,24 @@ rview(df, n = 10)
 rglimpse(df)
 ```
 
-## PAT management (for ADBC)
+## PAT management
 
-Most `snowflakeR` operations use the Snowpark session (no extra auth needed).
-However, if you want **direct R-to-Snowflake queries via ADBC** (e.g., for
-use with `DBI::dbGetQuery()` outside of `snowflakeR`), you need a Personal
-Access Token (PAT):
+Most `snowflakeR` operations use the Snowpark session directly (no extra
+auth needed). A **Programmatic Access Token (PAT)** is only required for:
 
-```python
-# Python cell
-from r_helpers import PATManager
+- `sfr_predict_rest()` -- pure-R REST inference against SPCS endpoints
+  (the Workspace session token is not authorised for SPCS ingress)
 
-pat_mgr = PATManager(session)
-pat_mgr.create_pat(days_to_expiry=1)
+For REST inference in local environments, create a PAT in
+**Snowsight > Account > Programmatic Access Tokens** and set:
+
+```r
+Sys.setenv(SNOWFLAKE_PAT = "your_token")
 ```
 
-This is only needed for ADBC-based connectivity, not for standard `snowflakeR`
-operations.
+For Workspace Notebooks, use `sfr_predict()` (Python-bridge predict) instead
+of `sfr_predict_rest()` -- it routes through the Snowpark session and requires
+no separate token.
 
 ## Local vs Workspace differences
 
@@ -404,8 +418,12 @@ system.file("notebooks", package = "snowflakeR")
 
 | Notebook | Environment | Description |
 |---|---|---|
-| `workspace_quickstart.ipynb` | Workspace | Connection, config, queries, DBI, ggplot2 |
+| `workspace_quickstart.ipynb` | Workspace | Connection, config, queries, ggplot2 |
 | `local_quickstart.ipynb` | Local (RStudio, Jupyter) | Same content, native R kernel |
+| `workspace_model_registry.ipynb` | Workspace | Model Registry: log, deploy, serve R models |
+| `workspace_feature_store.ipynb` | Workspace | Feature Store: entities, views, training data |
+| `local_model_registry.ipynb` | Local | Model Registry for local R environments |
+| `local_feature_store.ipynb` | Local | Feature Store for local R environments |
 
 Both notebooks use `notebook_config.yaml` for execution context and
 `sfr_fqn()` for fully qualified table names. Upload the entire folder to

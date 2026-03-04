@@ -37,6 +37,7 @@ r_version: ""  # Leave empty for latest
 conda_packages:
   - r-tidyverse      # Data manipulation and visualization (dplyr, ggplot2, tidyr, etc.)
   - r-dbplyr         # Database backend for dplyr (required for dplyr + Snowflake)
+  - r-httr2          # HTTP client (required for sfr_predict_rest and REST inference)
   - r-lazyeval       # Required for some tidyverse operations
   - r-reticulate>=1.25  # R-Python interop (>=1.25 required for rpy2 compatibility)
   # Examples with version pinning:

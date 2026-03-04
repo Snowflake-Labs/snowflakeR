@@ -1,19 +1,22 @@
-# DBI Methods — Minimum Viable Implementation
+# S3 Database Helper Functions
 # =============================================================================
-# Implements the core DBI generics so that sfr_connection objects work with
-# standard R database tooling (dbplyr, RStudio connection pane, etc.).
+# Lightweight wrappers around the Python/Snowpark bridge for table operations.
+# These are used internally by ML modules (registry, features, datasets, admin)
+# that need to run SQL through the Snowpark session.
 #
-# We don't formally subclass DBI::DBIDriver/DBIConnection/DBIResult because
-# DBI is only in Suggests (not Imports). Instead, we provide S4 methods that
-# register when DBI is available.
-
-# -----------------------------------------------------------------------------
-# S3-based helpers that always work (no DBI dependency)
-# -----------------------------------------------------------------------------
+# For standard DBI-compliant database access (dbGetQuery, dbWriteTable, dbplyr,
+# Connections Pane, etc.), use the RSnowflake package directly:
+#
+#   con <- DBI::dbConnect(RSnowflake::Snowflake(), name = "my_profile")
+#
+# Or obtain an RSnowflake connection from an existing sfr_connection:
+#
+#   dbi_con <- sfr_dbi_connection(sfr_conn)
 
 #' Disconnect a Snowflake connection
 #'
-#' Closes the underlying Snowpark session.
+#' Closes the underlying Snowpark session. If an RSnowflake DBI connection
+#' is also attached, it is disconnected too.
 #'
 #' @param conn An `sfr_connection` object.
 #'
@@ -22,6 +25,14 @@
 #' @export
 sfr_disconnect <- function(conn) {
   validate_connection(conn)
+
+  if (!is.null(conn$dbi_con)) {
+    tryCatch(
+      DBI::dbDisconnect(conn$dbi_con),
+      error = function(e) NULL
+    )
+  }
+
   tryCatch(
     conn$session$close(),
     error = function(e) {
@@ -47,7 +58,6 @@ sfr_list_tables <- function(conn, database = NULL, schema = NULL) {
   db <- database %||% conn$database
   sc <- schema %||% conn$schema
 
-  # If still NULL, try to get from the live session
   if (is.null(db)) {
     db <- tryCatch({
       val <- as.character(conn$session$get_current_database())
@@ -73,7 +83,6 @@ sfr_list_tables <- function(conn, database = NULL, schema = NULL) {
 
   if (nrow(df) == 0) return(character(0))
 
-  # SHOW TABLES returns a 'name' column (lowercased by sfr_query)
   name_col <- if ("name" %in% names(df)) "name" else names(df)[2]
   as.character(df[[name_col]])
 }
@@ -111,7 +120,6 @@ sfr_table_exists <- function(conn, table_name) {
   validate_connection(conn)
   stopifnot(is.character(table_name), length(table_name) == 1L)
 
-  # Parse FQN: extract database, schema, and bare table name
   parts <- strsplit(table_name, "\\.")[[1]]
   if (length(parts) == 3L) {
     db <- parts[1]
@@ -172,12 +180,8 @@ sfr_write_table <- function(conn, table_name, value, overwrite = FALSE) {
   validate_connection(conn)
   stopifnot(is.data.frame(value))
 
-  # Uppercase column names to follow Snowflake convention.
-  # Snowflake stores unquoted identifiers in uppercase; pandas DataFrames
-  # often have lowercase names which would be stored case-sensitively.
   names(value) <- toupper(names(value))
 
-  # Reset row names to avoid Snowpark warning about non-standard index
   rownames(value) <- NULL
 
   py_df <- reticulate::r_to_py(value)
@@ -188,177 +192,4 @@ sfr_write_table <- function(conn, table_name, value, overwrite = FALSE) {
 
   cli::cli_inform("Wrote {nrow(value)} rows to {.val {table_name}}.")
   invisible(TRUE)
-}
-
-
-# -----------------------------------------------------------------------------
-# DBI generics registration (only when DBI is loaded)
-# -----------------------------------------------------------------------------
-# DBI uses S4 generics, so we must:
-#   1. Register the S3 class with the S4 system via setOldClass()
-#   2. Register S4 methods via setMethod() in .onLoad()
-# This avoids a hard dependency on DBI (which is in Suggests) while still
-# enabling standard R database tooling (dbplyr, etc.).
-
-# Bridge S3 classes into S4 so DBI generics can dispatch on them.
-#
-# Two layers:
-#   - S3 class vectors include "DBIConnection"/"DBIResult" (see connect.R
-#     and dbSendQuery below) for dbplyr's S3 dispatch.
-#   - setOldClass + setIs tell S4 about the inheritance so that S4 value
-#     class checks (e.g. dbSendQuery must return DBIResult) pass via is().
-#   - DBIConnection/DBIResult are S4 virtual classes and CANNOT appear in
-#     setOldClass, so we use setIs() separately.
-setOldClass(c("sfr_connection", "list"))
-setIs("sfr_connection", "DBIConnection")
-
-setOldClass(c("sfr_result", "list"))
-setIs("sfr_result", "DBIResult")
-
-
-# =============================================================================
-# S4 method definitions — DBI is in Imports, generics are always available
-# =============================================================================
-
-# --- Core query / table methods ---
-
-setMethod("dbGetQuery", signature(conn = "sfr_connection"),
-          function(conn, statement, ...) sfr_query(conn, statement, .keep_case = TRUE))
-
-setMethod("dbExecute", signature(conn = "sfr_connection"),
-          function(conn, statement, ...) sfr_execute(conn, statement))
-
-setMethod("dbListTables", signature(conn = "sfr_connection"),
-          function(conn, ...) sfr_list_tables(conn, ...))
-
-setMethod("dbListFields", signature(conn = "sfr_connection"),
-          function(conn, name, ...) {
-            fields <- sfr_list_fields(conn, name)
-            as.character(fields$name)
-          })
-
-setMethod("dbExistsTable", signature(conn = "sfr_connection"),
-          function(conn, name, ...) sfr_table_exists(conn, name))
-
-setMethod("dbDisconnect", signature(conn = "sfr_connection"),
-          function(conn, ...) sfr_disconnect(conn))
-
-setMethod("dbReadTable", signature(conn = "sfr_connection"),
-          function(conn, name, ...) sfr_read_table(conn, name))
-
-setMethod("dbWriteTable", signature(conn = "sfr_connection"),
-          function(conn, name, value, ..., overwrite = FALSE)
-            sfr_write_table(conn, name, value, overwrite = overwrite))
-
-
-# --- Connection metadata (needed by dbplyr::src_dbi) ---
-
-setMethod("dbGetInfo", "sfr_connection", function(dbObj, ...) {
-  list(
-    dbname     = dbObj$database %||% "snowflake",
-    db.version = "snowflake",
-    username   = dbObj$user %||% "",
-    host       = dbObj$account %||% "",
-    port       = 443L
-  )
-})
-
-setMethod("dbIsValid", "sfr_connection", function(dbObj, ...) {
-  tryCatch({
-    !is.null(dbObj$session) &&
-      !is.null(dbObj$session$get_current_account())
-  }, error = function(e) FALSE)
-})
-
-
-# --- Identifier & string quoting (needed by dbplyr SQL generation) ---
-
-setMethod("dbQuoteIdentifier", signature("sfr_connection", "character"),
-          function(conn, x, ...) {
-            # Already quoted → pass through
-            already_quoted <- grepl("^\".*\"$", x)
-            DBI::SQL(ifelse(already_quoted, x,
-                            paste0('"', gsub('"', '""', x), '"')))
-          })
-
-setMethod("dbQuoteIdentifier", signature("sfr_connection", "SQL"),
-          function(conn, x, ...) x)
-
-setMethod("dbQuoteString", signature("sfr_connection", "character"),
-          function(conn, x, ...) {
-            DBI::SQL(ifelse(is.na(x), "NULL",
-                            paste0("'", gsub("'", "''", x), "'")))
-          })
-
-setMethod("dbQuoteString", signature("sfr_connection", "SQL"),
-          function(conn, x, ...) x)
-
-
-# --- Send query / fetch (result-set interface for dbplyr collect) ---
-
-setMethod("dbSendQuery", signature("sfr_connection", "character"),
-          function(conn, statement, ...) {
-            data <- sfr_query(conn, statement, .keep_case = TRUE)
-            structure(
-              list(statement = statement, data = data, conn = conn),
-              class = c("sfr_result", "DBIResult", "list")
-            )
-          })
-
-setMethod("dbFetch", "sfr_result", function(res, n = -1, ...) {
-  if (n >= 0 && n < nrow(res$data)) {
-    res$data[seq_len(n), , drop = FALSE]
-  } else {
-    res$data
-  }
-})
-
-setMethod("dbClearResult", "sfr_result", function(res, ...) {
-  invisible(TRUE)
-})
-
-setMethod("dbHasCompleted", "sfr_result", function(res, ...) {
-  TRUE
-})
-
-setMethod("dbIsValid", "sfr_result", function(dbObj, ...) {
-  TRUE
-})
-
-setMethod("dbGetInfo", "sfr_result", function(dbObj, ...) {
-  list(
-    statement     = dbObj$statement,
-    row.count     = nrow(dbObj$data),
-    has.completed = TRUE
-  )
-})
-
-
-# --- S3 methods for dplyr / dbplyr (registered in .onLoad) ---
-
-#' @noRd
-dbplyr_edition.sfr_connection <- function(con) 2L
-
-#' @noRd
-db_query_fields.sfr_connection <- function(con, sql, ...) {
-  # Convert dbplyr table identifiers to SQL strings.
-  # in_catalog/in_schema produce dbplyr_catalog/dbplyr_schema objects;
-  # format() renders them with backtick-quoting, which we convert to
-  # Snowflake's double-quote convention.
-  sql_str <- if (inherits(sql, "dbplyr_catalog") ||
-                 inherits(sql, "dbplyr_schema") ||
-                 inherits(sql, "dbplyr_table_ident") ||
-                 inherits(sql, "ident")) {
-    gsub("`", "\"", format(sql))
-  } else if (inherits(sql, "SQL") || inherits(sql, "sql")) {
-    as.character(sql)
-  } else {
-    as.character(sql)
-  }
-  # Run a LIMIT 0 query to discover column names.
-  # Return names as-is from Snowflake (typically uppercase) so that
-  # dbplyr generates SQL with matching case for quoted identifiers.
-  bridge <- get_bridge_module("sfr_connect_bridge")
-  result <- bridge$query_to_dict(con$session, paste("SELECT * FROM", sql_str, "LIMIT 0"))
-  result$columns
 }

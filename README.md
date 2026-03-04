@@ -1,6 +1,8 @@
 # snowflakeR
 
-R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datasets, and data connectivity. Works in **local R environments** (RStudio, VS Code, terminal) and **Snowflake Workspace Notebooks**.
+R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datasets, and SPCS model serving. Works in **local R environments** (RStudio, VS Code, terminal) and **Snowflake Workspace Notebooks**.
+
+> **Companion package:** For standard DBI-compliant database access (`dbGetQuery`, `dbWriteTable`, `dbplyr`, RStudio Connections Pane, etc.), see [**RSnowflake**](https://github.com/Snowflake-Labs/RSnowflake). `snowflakeR` focuses on ML platform features; `RSnowflake` provides the database connectivity layer.
 
 ## Overview
 
@@ -9,14 +11,35 @@ R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datas
 | Module | What it does |
 |---|---|
 | **Connect** | One-line connection via `connections.toml`, keypair, or Workspace auto-detect |
-| **Query & DBI** | Run SQL, read/write tables, integrate with `dplyr`/`dbplyr` |
+| **Query** | Run SQL via `sfr_query()` / `sfr_execute()`, read/write tables |
 | **Model Registry** | Log R models (lm, glm, randomForest, xgboost, ...), deploy to SPCS, run inference |
 | **Feature Store** | Create entities & feature views, generate training data, retrieve features at inference |
 | **Datasets** | Versioned, immutable snapshots of query results for reproducible ML |
 | **Admin** | Manage compute pools, image repos, and external access integrations |
+| **REST Inference** | Pure-R prediction against SPCS service endpoints via `sfr_predict_rest()` |
 | **Workspace Notebooks** | First-class support for Snowflake Workspace Notebooks with zero-config auth and `%%R` magic cells |
 
 Under the hood, `snowflakeR` uses [`reticulate`](https://rstudio.github.io/reticulate/) to bridge to the [`snowflake-ml-python`](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index) SDK while exposing a native R API with `snake_case` naming, S3 classes, and `cli` messaging. The same code runs identically in local R sessions and Snowflake Workspace Notebooks.
+
+### DBI / dbplyr
+
+For full DBI compliance, `dbplyr` integration, and the RStudio Connections Pane, use the companion **RSnowflake** package. You can obtain an `RSnowflake` connection from an existing `sfr_connection`:
+
+```r
+dbi_con <- sfr_dbi_connection(conn)  # lazy, cached on first call
+DBI::dbGetQuery(dbi_con, "SELECT 1")
+
+library(dplyr)
+tbl(dbi_con, "MY_TABLE") |> filter(score > 90) |> collect()
+```
+
+Or connect directly with RSnowflake:
+
+```r
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake(), name = "my_profile")
+```
 
 ## Installation
 
@@ -114,6 +137,10 @@ open `workspace_quickstart.ipynb`. For **local** environments, open
 |---|---|
 | `workspace_quickstart.ipynb` | Quickstart for Snowflake Workspace Notebooks |
 | `local_quickstart.ipynb` | Quickstart for local R environments |
+| `workspace_model_registry.ipynb` | Model Registry: log, deploy, serve R models (Workspace) |
+| `local_model_registry.ipynb` | Model Registry for local environments |
+| `workspace_feature_store.ipynb` | Feature Store: entities, views, training data (Workspace) |
+| `local_feature_store.ipynb` | Feature Store for local environments |
 | `notebook_config.yaml.template` | Single config file for warehouse, database, schema |
 | `setup_r_environment.sh` | Installs R + packages via micromamba (Workspace only) |
 | `r_packages.yaml` | R package list for the setup script |
@@ -139,7 +166,10 @@ context before running any notebook.
 - `snowflake-ml-python` >= 1.5.0
 - `snowflake-snowpark-python`
 
-Optional: [`snowflakeauth`](https://github.com/Snowflake-Labs/snowflakeauth) for `connections.toml` credential management.
+Optional:
+
+- [`RSnowflake`](https://github.com/Snowflake-Labs/RSnowflake) -- DBI-compliant database access, `dbplyr`, RStudio Connections Pane
+- [`snowflakeauth`](https://github.com/Snowflake-Labs/snowflakeauth) -- `connections.toml` credential management
 
 ## License
 

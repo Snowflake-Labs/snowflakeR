@@ -403,11 +403,23 @@ These R packages are optional but enhance `snowflakeR`:
 
 | Package | What it enables |
 |---|---|
+| `RSnowflake` | DBI-compliant database access (`dbGetQuery`, `dbWriteTable`, `dbplyr`, Connections Pane). See [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake). |
 | `snowflakeauth` | `connections.toml` / `config.toml` credential management |
-| `DBI` | Standard R database interface (`dbGetQuery`, `dbListTables`, ...) |
-| `dplyr` + `dbplyr` | `dplyr`-style data manipulation that generates SQL |
-| `arrow` | Zero-copy data transfer for large datasets |
+| `httr2` | Pure-R REST inference via `sfr_predict_rest()` |
 | `knitr` + `rmarkdown` | Building vignettes from source |
+
+`snowflakeR` provides SQL querying via `sfr_query()` and `sfr_execute()`
+using the Python/Snowpark bridge. For full DBI compliance, `dbplyr`
+integration, and the RStudio Connections Pane, install `RSnowflake` and
+use `sfr_dbi_connection()` to bridge from an `sfr_connection`:
+
+```r
+dbi_con <- sfr_dbi_connection(conn)
+DBI::dbGetQuery(dbi_con, "SELECT 1")
+
+library(dplyr)
+tbl(dbi_con, "MY_TABLE") |> filter(score > 90) |> collect()
+```
 
 Install all optional dependencies at once:
 

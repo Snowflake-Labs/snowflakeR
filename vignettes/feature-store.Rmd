@@ -137,13 +137,18 @@ fv <- sfr_create_feature_view(
 ### Using dbplyr for features
 
 You can define features using dplyr pipelines instead of raw SQL. The
-`features` argument accepts dbplyr lazy tables:
+`features` argument accepts dbplyr lazy tables. This requires the
+[RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) package for
+DBI/dbplyr connectivity:
 
 ```r
 library(dplyr)
 library(dbplyr)
 
-orders_tbl <- tbl(conn, "ORDERS")
+# Get a DBI connection from the sfr_connection
+dbi_con <- sfr_dbi_connection(conn)
+
+orders_tbl <- tbl(dbi_con, "ORDERS")
 
 customer_features_query <- orders_tbl |>
   group_by(customer_id) |>
