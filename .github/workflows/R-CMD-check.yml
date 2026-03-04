@@ -45,36 +45,31 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Install Python packages needed by reticulate bridge
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install snowflake-ml-python snowflake-snowpark-python
 
-      # Install R package dependencies (including Suggests except snowflakeauth)
       - name: Install R dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck"))
-          remotes::install_deps("snowflakeR", dependencies = TRUE)
+          remotes::install_deps(".", dependencies = TRUE)
         shell: Rscript {0}
 
-      # Point reticulate at the system Python (not a venv)
       - name: Configure reticulate
         run: |
           Sys.setenv(RETICULATE_PYTHON = Sys.which("python"))
         shell: Rscript {0}
 
-      # Run the test suite
       - name: Run tests
         run: |
-          testthat::test_local("snowflakeR", reporter = "summary")
+          testthat::test_local(".", reporter = "summary")
         shell: Rscript {0}
 
-      # Full R CMD check
       - name: R CMD check
         run: |
           rcmdcheck::rcmdcheck(
-            path = "snowflakeR",
+            path = ".",
             args = c("--no-manual", "--as-cran"),
             error_on = "error",
             check_dir = "check"
