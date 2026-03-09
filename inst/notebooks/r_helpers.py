@@ -1,12 +1,11 @@
 """
 R Environment Helpers for Snowflake Workspace Notebooks
 
-SYNC NOTE: This file is shared between RSnowflake and snowflakeR.
-  Canonical copies live at:
-    - RSnowflake/inst/notebooks/r_helpers.py
-    - snowflakeR/inst/notebooks/r_helpers.py
-  When editing either copy, port the changes to the other and verify
-  nothing breaks in the other package's notebooks.
+DERIVED COPY -- Do not edit directly.
+  The canonical source is:
+    snowflake-notebook-multilang/src/sfnb_multilang/helpers/r_helpers.py
+  Edit there, then copy here. The sync script (sync_snowflakeR_to_public.sh)
+  handles this automatically for public repo pushes.
 
 This module provides helper functions for:
 - R environment setup and configuration
@@ -232,6 +231,140 @@ def _r_df_to_pandas(r_obj):
         return None
 
 
+def _lazy_tbl_to_pandas(ro):
+    """Execute a lazy dbplyr table's SQL via Snowpark and return pandas.
+
+    Reads the SQL string left in ``..__lazy_sql__`` by our R wrapping
+    code, runs it through the active Snowpark session, and returns a
+    pandas DataFrame.  Falls back to collecting in R + pandas2ri if
+    Snowpark is unavailable (e.g. running outside Workspace).
+
+    Context awareness: if the R connection's database/schema differs
+    from the Snowpark session's, the Snowpark context is temporarily
+    aligned before executing the SQL and restored afterwards.
+
+    Returns ``None`` on failure.
+    """
+    try:
+        sql = str(ro.r('..__lazy_sql__')[0])
+        if not sql:
+            return None
+    except Exception:
+        return None
+
+    # Preferred: execute via Snowpark (no R→Python data copy)
+    try:
+        from snowflake.snowpark.context import get_active_session
+        session = get_active_session()
+
+        # Context alignment: the lazy tbl's SQL was generated against
+        # the R connection's context; ensure Snowpark matches.
+        r_db = r_sch = None
+        try:
+            r_db = str(ro.r('con@database')[0])
+            r_sch = str(ro.r('con@schema')[0])
+        except Exception:
+            pass
+
+        py_db, py_sch = _get_snowpark_context()
+        need_restore = False
+
+        if (r_db and py_db
+                and (r_db != py_db or r_sch != py_sch)):
+            session.sql(
+                f'USE DATABASE "{r_db}"').collect()
+            session.sql(
+                f'USE SCHEMA "{r_sch}"').collect()
+            need_restore = True
+
+        try:
+            return session.sql(sql).to_pandas()
+        finally:
+            if need_restore:
+                try:
+                    session.sql(
+                        f'USE DATABASE "{py_db}"').collect()
+                    session.sql(
+                        f'USE SCHEMA "{py_sch}"').collect()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Fallback: collect() in R, then convert via pandas2ri
+    try:
+        r_df = ro.r('as.data.frame(dplyr::collect(..__wv__$value))')
+        return _r_df_to_pandas(r_df)
+    except Exception as exc:
+        print(f"Warning: lazy table grid display failed ({exc}); "
+              "falling back to text output.", file=sys.stderr)
+        return None
+
+
+def _snowpark_df_to_sql(df):
+    """Extract the SQL query from a Snowpark DataFrame.
+
+    Returns the SQL string, or ``None`` if extraction fails.
+    """
+    try:
+        from snowflake.snowpark import DataFrame as SparkDF
+        if not isinstance(df, SparkDF):
+            return None
+    except ImportError:
+        return None
+
+    try:
+        queries = df.queries
+        if queries and queries.get('queries'):
+            return queries['queries'][-1]
+    except Exception:
+        pass
+    return None
+
+
+def _get_snowpark_context():
+    """Return (database, schema) from the active Snowpark session.
+
+    Returns ``(None, None)`` if the session is unavailable.
+    """
+    try:
+        from snowflake.snowpark.context import get_active_session
+        s = get_active_session()
+        return (
+            (s.get_current_database() or '').strip('"'),
+            (s.get_current_schema() or '').strip('"'),
+        )
+    except Exception:
+        return (None, None)
+
+
+def _resolve_var(name, local_ns, shell):
+    """Resolve a Python variable by *name* from the notebook namespace.
+
+    Checks ``local_ns`` first, then the IPython ``shell.user_ns``.
+    Supports dotted paths (e.g. ``pkg.module.obj``).
+    Returns the object or ``None``.
+    """
+    parts = name.split('.')
+    obj = None
+    ns_list = []
+    if local_ns:
+        ns_list.append(local_ns)
+    if shell is not None and hasattr(shell, 'user_ns'):
+        ns_list.append(shell.user_ns)
+    for ns in ns_list:
+        if parts[0] in ns:
+            obj = ns[parts[0]]
+            try:
+                for attr in parts[1:]:
+                    obj = getattr(obj, attr)
+            except AttributeError:
+                obj = None
+                continue
+            return obj
+    return None
+
+
 def _build_safe_r_magics_class():
     """Build and return an RMagics subclass with improved behaviour.
 
@@ -252,10 +385,20 @@ def _build_safe_r_magics_class():
     3. **Auto-detect grid display** — when the last visible expression
        is a ``data.frame`` (or tibble), it is converted to a pandas
        DataFrame and returned as the cell result so Workspace renders
-       the interactive grid viewer.  Use ``--text`` to opt out, or
-       ``--df varname`` to explicitly pick which R variable to display.
-    4. **``--time``** — prints wall-clock execution time.
-    5. **``--silent``** — suppresses all R text output.
+       the interactive grid viewer.  Lazy ``dbplyr`` tables (``tbl_lazy``)
+       are detected automatically: the generated SQL is extracted and
+       executed directly via Snowpark, avoiding R→Python data copy.
+       Use ``--text`` to opt out, or ``--df varname`` to explicitly
+       pick which R variable to display.
+    4. **Smart ``-i`` for Snowpark DataFrames** — when ``-i varname``
+       references a Snowpark DataFrame, it is automatically injected
+       into R as a lazy ``dbplyr`` table (via ``tbl(con, sql(...))``).
+       Regular Python objects on the same ``-i`` are still passed
+       through rpy2's native converter.  ``--snow pyvar[=r_name]`` is
+       available as an explicit alternative.  Database/schema context
+       is checked and aligned between the Snowpark and R sessions.
+    5. **``--time``** — prints wall-clock execution time.
+    6. **``--silent``** — suppresses all R text output.
     """
     import time
     import IPython.core.magic
@@ -297,6 +440,8 @@ def _build_safe_r_magics_class():
             silent = False
             text_only = False
             df_varname = None
+            snow_inputs = []
+            o_vars = []
 
             if cell is not None:
                 parts = line.split()
@@ -319,16 +464,153 @@ def _build_safe_r_magics_class():
                 if df_idx is not None:
                     df_varname = parts[df_idx + 1]
                     del parts[df_idx:df_idx + 2]
+
+                # --snow pyvar[=r_name] — explicit Snowpark DF injection
+                while True:
+                    idx = None
+                    for i, p in enumerate(parts):
+                        if p == '--snow' and i + 1 < len(parts):
+                            idx = i
+                            break
+                    if idx is None:
+                        break
+                    spec = parts[idx + 1]
+                    if '=' in spec:
+                        py_name, r_name = spec.split('=', 1)
+                    else:
+                        py_name = r_name = spec
+                    snow_inputs.append((py_name, r_name))
+                    del parts[idx:idx + 2]
+
+                # --- Intercept -i / --input for Snowpark DataFrames ---
+                # For each -i variable, check if it's a Snowpark DF.
+                # Snowpark DFs are removed from -i and handled as lazy
+                # dbplyr tbls; everything else stays on -i for rpy2.
+                remaining_i_vars = []
+                i_segments = []
+                idx = 0
+                while idx < len(parts):
+                    if (parts[idx] in ('-i', '--input')
+                            and idx + 1 < len(parts)):
+                        i_segments.append((idx, idx + 2))
+                        for vspec in parts[idx + 1].split(','):
+                            vspec = vspec.strip()
+                            if not vspec:
+                                continue
+                            lhs, sep, rhs = vspec.partition('=')
+                            if not sep:
+                                rhs = lhs
+                            var = _resolve_var(
+                                rhs, local_ns, self.shell)
+                            if (var is not None
+                                    and _snowpark_df_to_sql(var)
+                                    is not None):
+                                snow_inputs.append((rhs, lhs))
+                            else:
+                                remaining_i_vars.append(vspec)
+                        idx += 2
+                    else:
+                        idx += 1
+                for start, end in reversed(i_segments):
+                    del parts[start:end]
+                if remaining_i_vars:
+                    parts.extend(['-i', ','.join(remaining_i_vars)])
+
+                # Collect -o variable names so we can grid-display them
+                idx = 0
+                while idx < len(parts):
+                    if (parts[idx] in ('-o', '--output')
+                            and idx + 1 < len(parts)):
+                        for vspec in parts[idx + 1].split(','):
+                            vname = vspec.strip()
+                            if vname:
+                                o_vars.append(vname)
+                        idx += 2
+                    else:
+                        idx += 1
+
                 line = " ".join(parts)
+
+            # Inject Snowpark DataFrames as lazy dbplyr tbls
+            if cell is not None and snow_inputs:
+                import rpy2.robjects as ro
+                preamble = []
+
+                # Capture Snowpark session context once
+                py_db, py_sch = _get_snowpark_context()
+                ctx_checked = False
+
+                for py_name, r_name in snow_inputs:
+                    var = _resolve_var(
+                        py_name, local_ns, self.shell)
+                    if var is None:
+                        print(
+                            f"Warning: Python variable '{py_name}' "
+                            "not found; skipping Snowpark injection.",
+                            file=sys.stderr)
+                        continue
+                    sql = _snowpark_df_to_sql(var)
+                    if sql is None:
+                        print(
+                            f"Warning: '{py_name}' is not a Snowpark "
+                            "DataFrame; skipping Snowpark injection.",
+                            file=sys.stderr)
+                        continue
+
+                    # Context alignment (once per cell)
+                    if not ctx_checked and py_db:
+                        ctx_checked = True
+                        preamble.append(
+                            '..__py_db__ <- '
+                            f'"{py_db}"\n'
+                            '..__py_sch__ <- '
+                            f'"{py_sch}"\n'
+                            '..__r_ctx__ <- tryCatch(\n'
+                            '  dbGetQuery(con, "SELECT '
+                            'CURRENT_DATABASE(), '
+                            'CURRENT_SCHEMA()"),\n'
+                            '  error = function(e) NULL)\n'
+                            'if (!is.null(..__r_ctx__)) {\n'
+                            '  if (!identical(..__r_ctx__[1,1], '
+                            '..__py_db__) ||\n'
+                            '      !identical(..__r_ctx__[1,2], '
+                            '..__py_sch__)) {\n'
+                            '    cat(sprintf("Note: Aligning R '
+                            'session context to Snowpark '
+                            '(%s.%s)\\n",\n'
+                            '        ..__py_db__, ..__py_sch__))\n'
+                            '    dbExecute(con, sprintf(\''
+                            'USE DATABASE "%s"\', '
+                            '..__py_db__))\n'
+                            '    dbExecute(con, sprintf(\''
+                            'USE SCHEMA "%s"\', '
+                            '..__py_sch__))\n'
+                            '  }\n'
+                            '}\n'
+                            'rm(..__py_db__, ..__py_sch__, '
+                            '..__r_ctx__)')
+
+                    tmp = f'..__snow_sql_{r_name}__'
+                    ro.r.assign(tmp, sql)
+                    preamble.append(
+                        f'{r_name} <- dplyr::tbl(con, '
+                        f'dplyr::sql({tmp}))\n'
+                        f'rm({tmp})')
+                if preamble:
+                    cell = '\n'.join(preamble) + '\n' + cell
 
             has_io_flags = cell is not None and any(
                 f in line for f in ('-i ', '-o ', '-w ', '-h ',
                                     '-i\t', '-o\t', '-w\t', '-h\t')
             )
+            has_plot_flags = cell is not None and any(
+                f in line for f in ('-w ', '-h ', '-w\t', '-h\t')
+            )
 
             # Determine grid mode:
             #  - "auto"  → withVisible wrapping; detect last df
             #  - "named" → capture.output wrapping; pull named var
+            #  - "io"    → -i/-o present; wrap text but let rpy2 handle vars
             #  - None    → text-only (current behaviour)
             grid_mode = None
             if cell is not None and not has_io_flags:
@@ -336,6 +618,9 @@ def _build_safe_r_magics_class():
                     grid_mode = "named"
                 elif not text_only:
                     grid_mode = "auto"
+            elif cell is not None and has_io_flags and not has_plot_flags:
+                if not text_only:
+                    grid_mode = "io"
 
             if cell is not None and not has_io_flags:
                 if grid_mode == "auto":
@@ -344,6 +629,11 @@ def _build_safe_r_magics_class():
                     # outer {…} (not local()) keeps variable assignments
                     # in the calling scope.  capture.output collects
                     # only intermediate cat()/print() text.
+                    #
+                    # After evaluating, we check three cases:
+                    #  a) data.frame/tibble → grid via pandas2ri
+                    #  b) lazy dbplyr table → extract SQL, run in Snowpark
+                    #  c) anything else     → text output
                     cell = (
                         '..__co__ <- capture.output({\n'
                         '  ..__wv__ <- withVisible({\n'
@@ -352,7 +642,17 @@ def _build_safe_r_magics_class():
                         '})\n'
                         '..__is_grid__ <- ..__wv__$visible && '
                         'is.data.frame(..__wv__$value)\n'
-                        'if (..__wv__$visible && !..__is_grid__) {\n'
+                        '..__is_lazy__ <- ..__wv__$visible && '
+                        '!..__is_grid__ && '
+                        'inherits(..__wv__$value, "tbl_lazy")\n'
+                        '..__lazy_sql__ <- NULL\n'
+                        'if (..__is_lazy__ && '
+                        'requireNamespace("dbplyr", quietly = TRUE)) {\n'
+                        '  ..__lazy_sql__ <- as.character('
+                        'dbplyr::remote_query(..__wv__$value))\n'
+                        '}\n'
+                        'if (..__wv__$visible && '
+                        '!..__is_grid__ && !..__is_lazy__) {\n'
                         '  ..__co__ <- c(..__co__, '
                         'capture.output(print(..__wv__$value)))\n'
                         '}\n'
@@ -367,6 +667,17 @@ def _build_safe_r_magics_class():
                         'if (length(..__co__) > 0L) writeLines(..__co__)\n'
                         'rm(..__co__)'
                     )
+
+            # Wrap -i/-o cells in capture.output for clean text output.
+            # Variables stay in global scope so rpy2's -o can find them.
+            if cell is not None and grid_mode == "io":
+                cell = (
+                    '..__co__ <- capture.output({\n'
+                    + cell
+                    + '\n})\n'
+                    'if (length(..__co__) > 0L) writeLines(..__co__)\n'
+                    'rm(..__co__)'
+                )
 
             self._output_buf.clear()
             self._buffered_mode = True
@@ -389,14 +700,30 @@ def _build_safe_r_magics_class():
                     import rpy2.robjects as ro
                     try:
                         is_grid = bool(ro.r('..__is_grid__')[0])
+                        is_lazy = bool(ro.r('..__is_lazy__')[0])
+
                         if is_grid:
                             pdf = _r_df_to_pandas(
                                 ro.r('..__wv__$value'))
+                        elif is_lazy:
+                            pdf = _lazy_tbl_to_pandas(ro)
+                            if pdf is None:
+                                # Grid conversion failed; print text repr
+                                try:
+                                    txt = ro.r(
+                                        'capture.output('
+                                        'print(..__wv__$value))')
+                                    print('\n'.join(
+                                        str(x) for x in txt))
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                     finally:
                         try:
-                            ro.r('rm(..__co__, ..__wv__, ..__is_grid__)')
+                            ro.r('rm(..__co__, ..__wv__, '
+                                 '..__is_grid__, ..__is_lazy__, '
+                                 '..__lazy_sql__)')
                         except Exception:
                             pass
                 elif grid_mode == "named":
@@ -416,6 +743,24 @@ def _build_safe_r_magics_class():
                         print(f"Warning: could not read R variable "
                               f"'{df_varname}': {exc}",
                               file=sys.stderr)
+
+                # --- Grid display for -o output variables ---
+                # rpy2 pushes -o variables into the notebook namespace
+                # via pandas2ri.  If the last -o var is a pandas DF,
+                # return it so Workspace renders the grid viewer.
+                if pdf is None and o_vars and not text_only:
+                    import pandas as pd
+                    ns = {}
+                    if local_ns:
+                        ns.update(local_ns)
+                    if (self.shell is not None
+                            and hasattr(self.shell, 'user_ns')):
+                        ns.update(self.shell.user_ns)
+                    for vname in reversed(o_vars):
+                        obj = ns.get(vname)
+                        if isinstance(obj, pd.DataFrame):
+                            pdf = obj
+                            break
 
                 if pdf is not None:
                     return pdf
@@ -1184,19 +1529,31 @@ test_oauth_auth <- function(token = NULL) {
   schema      <- Sys.getenv("SNOWFLAKE_SCHEMA")
   warehouse   <- Sys.getenv("SNOWFLAKE_WAREHOUSE")
   role        <- Sys.getenv("SNOWFLAKE_ROLE")
-  public_host <- Sys.getenv("SNOWFLAKE_PUBLIC_HOST")
+  
+  # Prefer internal SPCS host; fall back to public endpoint
+  spcs_host <- Sys.getenv("SNOWFLAKE_HOST")
+  if (nzchar(spcs_host)) {
+    host <- spcs_host
+  } else {
+    host <- Sys.getenv("SNOWFLAKE_PUBLIC_HOST")
+  }
   
   if (is.null(token)) {
-    token <- Sys.getenv("SNOWFLAKE_OAUTH_TOKEN")
+    # In Workspace: read SPCS token; outside: use SNOWFLAKE_OAUTH_TOKEN
+    if (nzchar(spcs_host) && file.exists("/snowflake/session/token")) {
+      token <- trimws(readLines("/snowflake/session/token", warn = FALSE))
+    } else {
+      token <- Sys.getenv("SNOWFLAKE_OAUTH_TOKEN")
+    }
   }
   
   if (identical(token, "")) {
-    stop("OAuth token not set. Set SNOWFLAKE_OAUTH_TOKEN or pass as argument.")
+    stop("OAuth token not available. Set SNOWFLAKE_OAUTH_TOKEN or pass as argument.")
   }
   
   message("Testing OAuth authentication...")
   message("  Account: ", account)
-  message("  User: ", user)
+  message("  Host: ", host)
   message("  Token length: ", nchar(token))
   
   tryCatch({
@@ -1204,7 +1561,7 @@ test_oauth_auth <- function(token = NULL) {
       adbcsnowflake::adbcsnowflake(),
       username                          = user,
       `adbc.snowflake.sql.account`      = account,
-      `adbc.snowflake.sql.uri.host`     = public_host,
+      `adbc.snowflake.sql.uri.host`     = host,
       `adbc.snowflake.sql.db`           = database,
       `adbc.snowflake.sql.schema`       = schema,
       `adbc.snowflake.sql.warehouse`    = warehouse,
@@ -1214,12 +1571,10 @@ test_oauth_auth <- function(token = NULL) {
     )
     con <- adbc_connection_init(db)
     
-    # Test query - collect to data frame to release the stream
     result <- con |> read_adbc("SELECT CURRENT_USER() AS USER, 'OAUTH' AS AUTH_METHOD") |> as.data.frame()
     message("[OK] OAuth authentication SUCCESSFUL")
     rprint(result)
     
-    # Clean up test connection
     adbc_connection_release(con)
     adbc_database_release(db)
     
@@ -1680,23 +2035,29 @@ def validate_adbc_connection() -> Tuple[bool, str]:
     """
     Validate that ADBC connection can be established.
     
+    In Workspace (SNOWFLAKE_HOST set): checks for SPCS OAuth token.
+    Outside Workspace: checks for PAT.
+    
     Returns:
         Tuple of (success, message)
     """
     errors = []
+    in_workspace = bool(os.environ.get('SNOWFLAKE_HOST'))
     
-    # Check PAT
-    pat = os.environ.get('SNOWFLAKE_PAT')
-    if not pat:
-        errors.append("SNOWFLAKE_PAT not set - create PAT first")
+    if in_workspace:
+        token_file = '/snowflake/session/token'
+        if not os.path.isfile(token_file):
+            errors.append(f"SPCS token file not found at {token_file}")
+    else:
+        pat = os.environ.get('SNOWFLAKE_PAT')
+        if not pat:
+            errors.append("SNOWFLAKE_PAT not set - create PAT first (or run in Workspace for auto-auth)")
     
-    # Check required env vars
     required = ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER']
     for var in required:
         if not os.environ.get(var):
             errors.append(f"{var} not set")
     
-    # Check ADBC packages
     try:
         import rpy2.robjects as ro
         check = ro.r('requireNamespace("adbcsnowflake", quietly = TRUE)')
@@ -1708,7 +2069,8 @@ def validate_adbc_connection() -> Tuple[bool, str]:
     if errors:
         return False, "ADBC validation failed:\n  - " + "\n  - ".join(errors)
     
-    return True, "ADBC connection prerequisites validated"
+    auth_mode = "SPCS OAuth (internal host)" if in_workspace else "PAT (public endpoint)"
+    return True, f"ADBC connection prerequisites validated ({auth_mode})"
 
 
 # =============================================================================
@@ -1744,7 +2106,6 @@ get_snowflake_connection <- function(force_new = FALSE) {
     # Verify existing connection is still valid
     tryCatch({
       con <- get("r_sf_con", envir = .GlobalEnv)
-      # Simple test query to verify connection
       test <- con |> read_adbc("SELECT 1")
       return(con)
     }, error = function(e) {
@@ -1754,39 +2115,45 @@ get_snowflake_connection <- function(force_new = FALSE) {
   }
   
   if (needs_new) {
-    # Close existing connection if present
     close_snowflake_connection(silent = TRUE)
     
-    # Read connection parameters from environment
     account      <- Sys.getenv("SNOWFLAKE_ACCOUNT")
     user         <- Sys.getenv("SNOWFLAKE_USER")
     database     <- Sys.getenv("SNOWFLAKE_DATABASE")
     schema       <- Sys.getenv("SNOWFLAKE_SCHEMA")
     warehouse    <- Sys.getenv("SNOWFLAKE_WAREHOUSE")
     role         <- Sys.getenv("SNOWFLAKE_ROLE")
-    pat          <- Sys.getenv("SNOWFLAKE_PAT")
-    public_host  <- Sys.getenv("SNOWFLAKE_PUBLIC_HOST")
+    spcs_host    <- Sys.getenv("SNOWFLAKE_HOST")
     
-    # Validate PAT
-    if (identical(pat, "")) {
-      stop("SNOWFLAKE_PAT not set. Create PAT first using PATManager.")
+    # In Workspace (SPCS): use internal host + OAuth token
+    # Outside Workspace: fall back to PAT + public endpoint
+    if (nzchar(spcs_host) && file.exists("/snowflake/session/token")) {
+      token     <- trimws(readLines("/snowflake/session/token", warn = FALSE))
+      host      <- spcs_host
+      auth_type <- "auth_oauth"
+      message("Using SPCS OAuth via internal host: ", host)
+    } else {
+      token     <- Sys.getenv("SNOWFLAKE_PAT")
+      host      <- Sys.getenv("SNOWFLAKE_PUBLIC_HOST")
+      auth_type <- "auth_pat"
+      if (identical(token, "")) {
+        stop("SNOWFLAKE_PAT not set. Create PAT first using PATManager.")
+      }
     }
     
-    # Create database handle
     r_sf_db <<- adbc_database_init(
       adbcsnowflake::adbcsnowflake(),
       username                          = user,
       `adbc.snowflake.sql.account`      = account,
-      `adbc.snowflake.sql.uri.host`     = public_host,
+      `adbc.snowflake.sql.uri.host`     = host,
       `adbc.snowflake.sql.db`           = database,
       `adbc.snowflake.sql.schema`       = schema,
       `adbc.snowflake.sql.warehouse`    = warehouse,
       `adbc.snowflake.sql.role`         = role,
-      `adbc.snowflake.sql.auth_type`                = "auth_pat",
-      `adbc.snowflake.sql.client_option.auth_token` = pat
+      `adbc.snowflake.sql.auth_type`                = auth_type,
+      `adbc.snowflake.sql.client_option.auth_token` = token
     )
     
-    # Create connection
     r_sf_con <<- adbc_connection_init(r_sf_db)
     
     message("Snowflake ADBC connection established (r_sf_con)")

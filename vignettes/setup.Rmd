@@ -343,8 +343,11 @@ Upload the folder contents to your Workspace and open
 
 ```python
 # Python cell
-!bash setup_r_environment.sh --basic
+!bash setup_r_environment.sh --adbc
 ```
+
+   Use `--basic` instead of `--adbc` if you don't need ADBC acceleration
+   (faster install, but no Arrow-native bulk I/O).
 
 3. **Register `%%R` magic:**
 

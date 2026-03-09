@@ -24,6 +24,21 @@ current release.
   - This could be gated behind `requireNamespace("arrow")` so that users
     without the R `arrow` package fall back to the current `tolist()` path.
 
+- [ ] **Arrow IPC for R→Python grid display (large data.frames)**
+  The `%%R` magic's grid viewer currently converts R data.frames to pandas via
+  rpy2's `pandas2ri` converter (column-by-column copy through rpy2's C bridge).
+  For large results (10K+ rows), an Arrow IPC path would be faster:
+
+  - **R side**: `nanoarrow::as_nanoarrow_array_stream(df)` → serialize to IPC.
+  - **Python side**: `pyarrow.ipc.read_stream()` → `.to_pandas()` (zero-copy
+    for many dtypes).
+  - Both `nanoarrow` (R) and `pyarrow` (Python) are already available in the
+    Workspace environment.
+  - Main challenge: passing the Arrow buffer across the rpy2 boundary
+    efficiently (temp file vs shared memory via C-level pointers).
+  - Consider implementing when users report grid display performance issues
+    on large result sets.
+
 ## DBI / Database Connectivity
 
 Standard DBI-compliant database access (dbGetQuery, dbWriteTable, dbplyr,

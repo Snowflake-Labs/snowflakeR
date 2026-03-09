@@ -43,9 +43,11 @@ Python Kernel (Jupyter)
   |     |                 |-- Snowpark Session (built-in)
   |     |
   |     |-- RSnowflake (R package, DBI/dbplyr, optional)
-  |           |-- Snowflake SQL API v2 (direct HTTPS)
+  |           |-- Snowflake SQL API v2 (reads, small writes)
+  |           |-- reticulate -> write_pandas (bulk writes via SPCS path)
+  |           |-- ADBC (optional, Arrow-native reads)
   |
-  |-- Active Snowpark Session (auto-detected by sfr_connect())
+  |-- Active Snowpark Session (auto-detected by sfr_connect() / RSnowflake)
 ```
 
 `snowflakeR` uses `reticulate` to call the Snowflake ML Python SDK,
@@ -90,12 +92,15 @@ included setup script:
 
 ```python
 # Python cell -- run once per session (~3 minutes)
-!bash setup_r_environment.sh --basic
+!bash setup_r_environment.sh --adbc
 ```
 
-This installs R, `rpy2`, and base R packages via `micromamba`. Everything is
-installed in **user-space** -- no `sudo` or root access is required or used.
-Nothing modifies the container base image or system Python environment.
+This installs R, `rpy2`, base R packages, and optionally the ADBC Snowflake
+driver (including Go compiler) via `micromamba`. Use `--basic` instead of
+`--adbc` to skip ADBC installation (faster, but no Arrow-native bulk I/O).
+Everything is installed in **user-space** -- no `sudo` or root access is
+required or used. Nothing modifies the container base image or system Python
+environment.
 
 The script, `r_packages.yaml`, and `r_helpers.py` are all included in the
 notebooks directory.
@@ -329,6 +334,37 @@ rview(df, n = 10)
 # Instead of str(df):
 rglimpse(df)
 ```
+
+## Bulk Write Performance
+
+When writing large data from R in Workspace Notebooks, RSnowflake
+automatically routes through ADBC (if installed) or the Python Snowpark
+session as a fallback. Both paths use the **internal SPCS gateway**
+(`SNOWFLAKE_HOST`) with SPCS OAuth authentication -- zero-config, no
+public endpoint or PAT required.
+
+The preferred data flow for bulk writes in Workspace is:
+
+```
+R data.frame  -->  ADBC bulk ingest (PUT + COPY INTO)
+                   via internal SPCS gateway (SNOWFLAKE_HOST)
+                   Arrow-native, ~7s for 50K rows
+```
+
+Fallback (when ADBC is not installed):
+
+```
+R data.frame  -->  reticulate::r_to_py()  -->  pandas DataFrame
+                                                     |
+                                          session.write_pandas()
+                                                     |
+                                     Internal SPCS gateway (PUT + COPY INTO)
+                                     ~2.5s for 50K rows
+```
+
+Outside Workspace, RSnowflake uses ADBC (if available) for bulk writes
+via the public endpoint. See the RSnowflake `getting-started` vignette
+for the full `upload_method` options table.
 
 ## PAT management
 

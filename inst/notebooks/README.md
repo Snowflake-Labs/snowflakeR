@@ -1,7 +1,6 @@
 # snowflakeR Notebooks
 
 Interactive Jupyter notebooks demonstrating the `snowflakeR` package.
-This directory is **self-contained** -- everything you need is included.
 
 ## Contents
 
@@ -15,14 +14,14 @@ This directory is **self-contained** -- everything you need is included.
 | `local_model_registry.ipynb` | Local | Model Registry for local environments |
 | `workspace_feature_store.ipynb` | Workspace | Feature Store: entities, views, training data |
 | `local_feature_store.ipynb` | Local | Feature Store for local environments |
+| `workspace_forecasting_demo.ipynb` | Workspace | Time series forecasting (ARIMA) with custom predict logic |
+| `local_forecasting_demo.ipynb` | Local | Forecasting demo for local environments |
 
 ### Supporting Files
 
 | File | Purpose |
 |---|---|
 | `notebook_config.yaml.template` | Configuration template (warehouse, database, schema) |
-| `setup_r_environment.sh` | Installs R + packages via micromamba (Workspace only) |
-| `r_packages.yaml` | R package list for `setup_r_environment.sh` |
 | `r_helpers.py` | Python helpers for rpy2/%%R magic setup (Workspace only) |
 
 ## Quick Start
@@ -52,14 +51,24 @@ Table references use fully qualified names (`DATABASE.SCHEMA.TABLE`) as
 
 **Workspace Notebooks** (Python kernel + `%%R` magic):
 
-1. Upload this entire folder to your Workspace
+1. Upload this folder to your Workspace
 2. Attach an **External Access Integration (EAI)** that allows outbound HTTPS
    to `micro.mamba.pm`, `conda.anaconda.org`, and `repo.anaconda.com` (plus
    `cloud.r-project.org` if installing CRAN packages). See the full host table
    and example SQL in `internal/prd_eng/workspace_notebooks_eai_requirements.md`.
 3. Open `workspace_quickstart.ipynb`
-4. Run the setup cells to install R and snowflakeR
+4. Run the setup cells -- the first cell installs R via the
+   [`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
+   toolkit (micromamba + conda-forge, no root required)
 5. The notebook handles `USE WAREHOUSE/DATABASE/SCHEMA` via `sfr_load_notebook_config()`
+
+**Public standalone install** (when `sfnb-multilang` is not bundled):
+
+```python
+!pip install sfnb-multilang
+from sfnb_multilang import install
+install(languages=["r"])
+```
 
 **Local R environments** (RStudio, Posit Workbench, JupyterLab with R kernel):
 
@@ -87,7 +96,9 @@ file.copy(list.files(nb_dir, full.names = TRUE), ".", recursive = TRUE)
 These notebooks use `sfr_query()` and `sfr_execute()` for SQL. For full
 DBI compliance and `dbplyr` integration, install the companion
 [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) package and use
-`sfr_dbi_connection()` to bridge from an `sfr_connection`.
+`sfr_dbi_connection()` to bridge from an `sfr_connection`. See the
+`local_quickstart.ipynb` Section 4 for examples, or the standalone
+`RSnowflake/inst/notebooks/demo_rsnowflake.ipynb`.
 
 ## RSnowflake Test Notebook
 
