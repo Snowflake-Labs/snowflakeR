@@ -328,7 +328,7 @@ in the first cell. Key notebooks:
 | Aspect | Local | Workspace |
 |---|---|---|
 | R kernel | Native R | Python + `%%R` |
-| Python/R env | You manage | `sfnb_multilang.install()` |
+| Python/R env | You manage | `sfnb_setup.install_r()` |
 | Authentication | `connections.toml` / key-pair | Auto-detected (SPCS OAuth) |
 | Package install | `install.packages()` | YAML config + `install.packages()` |
 | Execution context | Usually set by connection | Must set explicitly ([docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context)) |
@@ -337,31 +337,35 @@ in the first cell. Key notebooks:
 
 **Setup steps:**
 
-1. **Install R** (run once per session, ~1-2 minutes):
+1. **Install R and register `%%R` magic** (run once per session, ~1-2 minutes):
 
 ```python
 # Python cell
-# Public standalone: !pip install sfnb-multilang
-from sfnb_multilang import install
-install(languages=["r"])
+from sfnb_setup import install_r
+install_r()
 ```
 
-   For advanced configurations (ADBC, custom packages, Scala/Julia), use a
-   YAML config file: `install(config="configs/snowflaker.yaml")`.
+   Each notebook directory includes `sfnb_setup.py`, which auto-detects the
+   environment and installs `sfnb-multilang` from PyPI if needed. For advanced
+   configurations (ADBC, custom packages, Scala/Julia), pass keyword arguments
+   or a YAML config: `install_r(config="configs/snowflaker.yaml")`.
 
-2. **Register `%%R` magic and load `snowflakeR`:**
-
-```python
-from r_helpers import setup_r_environment
-result = setup_r_environment()
-```
+2. **Install and load `snowflakeR`:**
 
 ```r
 %%R
-library(snowflakeR)
-conn <- sfr_connect()   # auto-detects Workspace session
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-# Load config and set execution context
+if (nzchar(Sys.getenv("SNOWFLAKER_PATH"))) {
+  install.packages(Sys.getenv("SNOWFLAKER_PATH"), repos = NULL, type = "source")
+} else {
+  install.packages("pak", type = "source", quiet = TRUE)
+  pak::pak("Snowflake-Labs/snowflakeR", ask = FALSE, upgrade = FALSE)
+}
+
+library(snowflakeR)
+conn <- sfr_connect()
+
 conn <- sfr_load_notebook_config(conn)
 ```
 

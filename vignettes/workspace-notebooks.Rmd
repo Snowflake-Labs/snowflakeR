@@ -85,38 +85,51 @@ context:
 All notebooks read this file. Table references use fully qualified names
 (`DATABASE.SCHEMA.TABLE`) via `sfr_fqn()`.
 
-### Step 1: Install the R environment
+### Step 1: Install the R environment and register `%%R` magic
 
 Workspace Notebooks run in containers without R pre-installed. The
 [`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
-toolkit handles installation:
+toolkit handles installation. Each notebook directory includes an `sfnb_setup.py`
+bootstrap file that auto-detects the environment and installs the toolkit if
+needed:
 
 ```python
 # Python cell -- run once per session (~1-2 minutes)
-# Public standalone: !pip install sfnb-multilang
-try:
-    from sfnb_multilang import install
-except ImportError:
-    import sys; sys.path.insert(0, "../../../snowflake-notebook-multilang/src")
-    from sfnb_multilang import install
-
-install(languages=["r"])
+from sfnb_setup import install_r
+install_r()
 ```
 
-This installs R, `rpy2`, and base R packages via `micromamba` + conda-forge.
-Everything is installed in **user-space** -- no `sudo` or root access is
-required or used. Nothing modifies the container base image or system Python
-environment.
+This single call installs R via `micromamba` + conda-forge, registers the `%%R`
+cell magic via `rpy2`, and configures the R environment. Everything is installed
+in **user-space** -- no `sudo` or root access is required.
 
 For more advanced configurations (ADBC, DuckDB, custom packages, Scala/Julia),
-pass a YAML config file instead:
+pass keyword arguments or a YAML config file:
 
 ```python
-install(config="configs/snowflaker.yaml")
+install_r(r_adbc=True)                      # enable ADBC
+install_r(config="configs/snowflaker.yaml")  # use preset config
 ```
 
 See the preset configs in the `snowflake-notebook-multilang` repo under
 `configs/` for examples.
+
+**Alternative (no sfnb_setup.py):** If you prefer not to use the bootstrap file,
+you can inline the setup directly in a notebook cell (~25 lines):
+
+```python
+try:
+    from sfnb_multilang import install
+except ImportError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sfnb-multilang"])
+    from sfnb_multilang import install
+
+install(languages=["r"])
+
+from r_helpers import setup_r_environment
+setup_r_environment()
+```
 
 **Licensing:** All software installed by the toolkit is freely-licensed
 open-source. `micromamba` is BSD-3-Clause (developed by the
@@ -136,60 +149,30 @@ that allows these hosts. The toolkit can generate the required EAI SQL for you
 -- see the
 [network rules documentation](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md).
 
-### Step 2: Register the `%%R` magic
-
-```python
-# Python cell
-from r_helpers import setup_r_environment
-
-result = setup_r_environment()
-print(f"R {result['r_version']} ready. %%R magic: {result['magic_registered']}")
-```
-
-After this, any cell starting with `%%R` executes as R code.
-
-### Step 3: Resolve the snowflakeR package path
-
-Use a Python cell to resolve the absolute path to the `snowflakeR` directory
-and export it as an environment variable so R can access it:
-
-```python
-import os
-# This notebook lives at snowflakeR/inst/notebooks/, so the package root
-# (the directory containing DESCRIPTION) is two levels up.
-snowflaker_path = os.path.normpath(os.path.join(os.getcwd(), "..", ".."))
-print(f"snowflakeR path: {snowflaker_path}")
-assert os.path.isfile(os.path.join(snowflaker_path, "DESCRIPTION")), \
-    f"DESCRIPTION not found in {snowflaker_path}"
-
-os.environ["SNOWFLAKER_PATH"] = snowflaker_path
-```
-
-### Step 4: Install and load snowflakeR
+### Step 2: Install and load snowflakeR
 
 ```r
 %%R
-# Suppress interactive prompts (Workspace Notebooks have no stdin)
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-if (!requireNamespace("snowflakeR", quietly = TRUE)) {
-  # Install required dependencies from CRAN first (repos=NULL skips CRAN)
-  deps <- c("reticulate", "cli", "rlang")
-  for (pkg in deps) {
-    if (!requireNamespace(pkg, quietly = TRUE))
-      install.packages(pkg, type = "source", quiet = TRUE)
-  }
+deps <- c("reticulate", "cli", "rlang")
+for (pkg in deps) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, type = "source", quiet = TRUE)
+}
 
-  # Option 1: Install from local repo cloned into the Workspace
-  # (absolute path resolved in the previous Python cell via env var)
+if (nzchar(Sys.getenv("SNOWFLAKER_PATH"))) {
   install.packages(Sys.getenv("SNOWFLAKER_PATH"), repos = NULL, type = "source")
-
-  # Option 2: Install from GitHub via pak (once published to public repo)
-  # install.packages("pak", type = "source", quiet = TRUE)
-  # pak::pak("Snowflake-Labs/snowflakeR", ask = FALSE, upgrade = FALSE)
+} else {
+  install.packages("pak", type = "source", quiet = TRUE)
+  pak::pak("Snowflake-Labs/snowflakeR", ask = FALSE, upgrade = FALSE)
 }
 library(snowflakeR)
 ```
+
+When running from the internal monorepo, `sfnb_setup.py` automatically sets
+`SNOWFLAKER_PATH` to the local package source. From the public repository,
+the `else` branch installs from GitHub via `pak`.
 
 ### Installing additional R packages
 
@@ -420,11 +403,8 @@ environments. Only the setup differs.
 
 ```python
 # Cell 1 (Python): Install R and register %%R magic
-from sfnb_multilang import install
-install(languages=["r"])
-
-from r_helpers import setup_r_environment
-setup_r_environment()
+from sfnb_setup import install_r
+install_r()
 ```
 
 ```r
@@ -489,7 +469,7 @@ your Workspace or copy to a local directory to get started.
 
 | Issue | Solution |
 |-------|----------|
-| `rpy2` not found | Run `install(languages=["r"])` from `sfnb_multilang` |
+| `rpy2` not found | Run `from sfnb_setup import install_r; install_r()` |
 | `%%R` not recognised | Run `%load_ext rpy2.ipython` |
 | Extra line breaks in output | Use `rprint()`, `rview()`, `rglimpse()` |
 | Package not found | Add to a YAML config preset or install interactively |
