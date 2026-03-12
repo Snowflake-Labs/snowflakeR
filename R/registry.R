@@ -379,11 +379,16 @@ sfr_predict_local <- function(model,
   }
 
   # Standard predict path
-  # tidymodels workflows use `new_data`; base R models use `newdata`
+  # Base R models use `newdata`; tidymodels workflows use `new_data`.
+  # We must try `newdata` first because predict.lm() silently ignores
+
+  # unrecognised arguments (via ...) and returns predictions on the
+  # training data instead of erroring. Tidymodels predict() explicitly
+  # rejects `newdata` with an error, so the fallback always fires.
   fn <- match.fun(predict_fn)
   pred <- tryCatch(
-    fn(model, new_data = new_data),
-    error = function(e) fn(model, newdata = new_data)
+    fn(model, newdata = new_data),
+    error = function(e) fn(model, new_data = new_data)
   )
 
   if (is.data.frame(pred)) {

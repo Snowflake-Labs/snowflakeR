@@ -223,14 +223,17 @@ def _build_generic_predict_r_code(
 ) -> str:
     """Build R code for generic predict() call.
 
-    Tries ``new_data`` first (tidymodels convention) then falls back to
-    ``newdata`` (base R convention) so the same wrapper works for both
-    tidymodels workflows and base-R model objects.
+    Tries ``newdata`` first (base R convention) then falls back to
+    ``new_data`` (tidymodels convention).  This order matters because
+    predict.lm() silently ignores unrecognised arguments via ``...``
+    and returns predictions on the training data instead of erroring.
+    Tidymodels predict() explicitly rejects ``newdata`` with an error,
+    so the fallback always fires for tidymodels workflows.
     """
     return textwrap.dedent("""\
         pred_{{UID}} <- tryCatch(
-            predict({{MODEL}}, new_data = {{INPUT}}),
-            error = function(e) predict({{MODEL}}, newdata = {{INPUT}})
+            predict({{MODEL}}, newdata = {{INPUT}}),
+            error = function(e) predict({{MODEL}}, new_data = {{INPUT}})
         )
 
         if (is.data.frame(pred_{{UID}})) {
