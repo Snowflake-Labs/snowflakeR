@@ -25,6 +25,25 @@ from typing import Dict, List, Optional, Any
 # =============================================================================
 
 
+def _to_json_tempfile(pdf):
+    """Write a pandas DataFrame to a temp JSON file and return the path.
+
+    Avoids the ``basic_string::substr`` C++ crash in reticulate/rpy2 that
+    occurs when large dicts cross the Python <-> R bridge in Workspace
+    Notebooks.  The R side reads and parses the file with jsonlite.
+    """
+    import json
+    import tempfile
+
+    d = _pandas_to_r_dict(pdf)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, prefix="sfr_features_"
+    )
+    json.dump(d, tmp)
+    tmp.close()
+    return tmp.name
+
+
 def _pandas_to_r_dict(pdf):
     """Convert a pandas DataFrame to a column-oriented dict with native Python
     types via Series.tolist().  This avoids NumPy ABI issues with reticulate
@@ -528,7 +547,7 @@ def generate_training_set(
         **kwargs,
     )
 
-    return _pandas_to_r_dict(result_df.to_pandas())
+    return _to_json_tempfile(result_df.to_pandas())
 
 
 def retrieve_features(
@@ -567,7 +586,7 @@ def retrieve_features(
         features=fvs,
     )
 
-    return _pandas_to_r_dict(result_df.to_pandas())
+    return _to_json_tempfile(result_df.to_pandas())
 
 
 # =============================================================================

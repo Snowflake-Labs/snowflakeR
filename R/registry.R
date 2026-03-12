@@ -98,6 +98,50 @@ resolve_registry_context <- function(reg) {
 
 
 # =============================================================================
+# Column schema helpers
+# =============================================================================
+
+#' Infer input column schema from a data.frame
+#'
+#' Builds the `input_cols` list expected by [sfr_log_model()] by inspecting
+#' column types in a data.frame.  Columns listed in `exclude` (typically the
+#' target variable and ID columns) are omitted.
+#'
+#' @param data A data.frame (e.g. the training data used to fit the model).
+#' @param exclude Character vector of column names to exclude (case-insensitive).
+#'
+#' @returns A named list mapping column names to type strings
+#'   (`"double"`, `"integer"`, `"string"`, `"boolean"`).
+#'
+#' @examples
+#' \dontrun{
+#' cols <- sfr_input_cols(training_data,
+#'                        exclude = c("defaulted", "customer_id", "application_id"))
+#' mv <- sfr_log_model(reg, model, "MY_MODEL", input_cols = cols, ...)
+#' }
+#'
+#' @export
+sfr_input_cols <- function(data, exclude = character(0)) {
+  stopifnot(is.data.frame(data))
+  keep <- setdiff(names(data), names(data)[tolower(names(data)) %in% tolower(exclude)])
+
+  type_map <- function(col) {
+    if (is.logical(col))   return("boolean")
+    if (is.integer(col))   return("integer")
+    if (is.numeric(col))   return("double")
+    if (is.factor(col))    return("string")
+    if (is.character(col)) return("string")
+    "string"
+  }
+
+  stats::setNames(
+    lapply(data[keep], type_map),
+    keep
+  )
+}
+
+
+# =============================================================================
 # Log model
 # =============================================================================
 
@@ -335,8 +379,12 @@ sfr_predict_local <- function(model,
   }
 
   # Standard predict path
+  # tidymodels workflows use `new_data`; base R models use `newdata`
   fn <- match.fun(predict_fn)
-  pred <- fn(model, newdata = new_data)
+  pred <- tryCatch(
+    fn(model, new_data = new_data),
+    error = function(e) fn(model, newdata = new_data)
+  )
 
   if (is.data.frame(pred)) {
     return(pred)
@@ -373,16 +421,20 @@ sfr_predict <- function(reg,
   ctx <- resolve_registry_context(reg)
 
   bridge <- get_bridge_module("sfr_registry_bridge")
-  py_input <- reticulate::r_to_py(new_data)
 
-  # registry_predict writes JSON to a temp file to bypass the
-  # basic_string::substr C++ crash in reticulate/rpy2 that occurs when
-  # large strings cross the Python <-> R bridge (Workspace Notebooks).
+  # Write input data to a temp CSV to bypass the basic_string::substr
+
+  # C++ crash in rpy2 that occurs when reticulate::r_to_py() converts
+  # R data.frames with string columns through rpy2's C++ layer.
+  input_path <- tempfile(fileext = ".csv")
+  utils::write.csv(new_data, input_path, row.names = FALSE)
+  on.exit(unlink(input_path), add = TRUE)
+
   json_path <- bridge$registry_predict(
     session = ctx$session,
     model_name = model_name,
     version_name = version_name,
-    input_data = py_input,
+    input_data_path = input_path,
     service_name = service_name,
     database_name = ctx$database_name,
     schema_name = ctx$schema_name
@@ -651,9 +703,33 @@ sfr_deploy_model <- function(reg, model_name, version_name,
     database_name = ctx$database_name,
     schema_name = ctx$schema_name
   )
-  cli::cli_inform(c(
-    "v" = "Service {.val {service_name}} deployed for {.val {model_name}}/{.val {version_name}}."
-  ))
+
+  # Set the deployed version as default so that sfr_predict() (which
+  # falls back to the default version) uses the same column order as
+  # the service.  A mismatch causes Snowflake SQL errors when string
+  # columns land in numeric positions.
+  tryCatch(
+    {
+      bridge$registry_set_default_version(
+        session = ctx$session,
+        model_name = model_name,
+        version_name = version_name,
+        database_name = ctx$database_name,
+        schema_name = ctx$schema_name
+      )
+      cli::cli_inform(c(
+        "v" = "Service {.val {service_name}} deployed for {.val {model_name}}/{.val {version_name}}.",
+        "i" = "Default version set to {.val {version_name}}."
+      ))
+    },
+    error = function(e) {
+      cli::cli_inform(c(
+        "v" = "Service {.val {service_name}} deployed for {.val {model_name}}/{.val {version_name}}.",
+        "!" = "Could not set default version: {conditionMessage(e)}"
+      ))
+    }
+  )
+
   invisible(as.list(result))
 }
 

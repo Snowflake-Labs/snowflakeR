@@ -10,7 +10,9 @@
 
 #' Get the Python bridge module for a given submodule
 #'
-#' Lazy-loads the Python bridge from `inst/python/` on first call.
+#' Imports the Python bridge from `inst/python/` and caches it.  Use
+#' [sfr_reload_bridges()] to force a re-import after updating bridge code
+#' without restarting the kernel.
 #'
 #' @param module_name Base name of the Python module (without `.py`)
 #' @returns A Python module object (via reticulate)
@@ -29,9 +31,54 @@ get_bridge_module <- function(module_name) {
     ))
   }
 
+  # Evict any stale version from Python's sys.modules so that
+
+  # import_from_path reads the file from disk rather than returning
+  # a cached module from a previous snowflakeR install.
+  tryCatch(
+    {
+      py_sys <- reticulate::import("sys", convert = FALSE)
+      if (!is.null(py_sys$modules$get(module_name))) {
+        py_sys$modules$pop(module_name)
+      }
+    },
+    error = function(e) NULL
+  )
+
   mod <- reticulate::import_from_path(module_name, path = python_dir)
   .pkg_env[[cache_key]] <- mod
   mod
+}
+
+
+#' Reload all cached Python bridge modules
+#'
+#' Clears the R-side bridge cache and forces Python to re-import
+#' each module from disk on the next call.  Useful during development
+#' when bridge code has changed without a kernel restart.
+#'
+#' @export
+sfr_reload_bridges <- function() {
+  py_importlib <- reticulate::import("importlib")
+  py_sys <- reticulate::import("sys")
+
+  bridge_keys <- grep("^bridge_", names(.pkg_env), value = TRUE)
+  for (key in bridge_keys) {
+    mod <- .pkg_env[[key]]
+    mod_name <- sub("^bridge_", "", key)
+
+    tryCatch(
+      py_importlib$reload(mod),
+      error = function(e) NULL
+    )
+
+    python_dir <- system.file("python", package = "snowflakeR")
+    new_mod <- reticulate::import_from_path(mod_name, path = python_dir)
+    .pkg_env[[key]] <- new_mod
+  }
+
+  cli::cli_inform("Reloaded {length(bridge_keys)} bridge module(s).")
+  invisible(length(bridge_keys))
 }
 
 
@@ -486,16 +533,23 @@ sfr_dbi_connection <- function(conn) {
   rlang::check_installed("DBI",
     reason = "for DBI database connectivity")
 
-  dbi_con <- DBI::dbConnect(
-    RSnowflake::Snowflake(),
-    name      = conn$.connect_name,
-    account   = conn$account,
-    user      = conn$user,
-    database  = conn$database,
-    schema    = conn$schema,
-    warehouse = conn$warehouse,
-    role      = conn$role
-  )
+  if (identical(conn$environment, "workspace")) {
+    # In Workspace Notebooks, RSnowflake auto-detects the session token
+    # when called with no parameters. Passing explicit account/user
+    # overrides auto-detection and triggers interactive auth prompts.
+    dbi_con <- DBI::dbConnect(RSnowflake::Snowflake())
+  } else {
+    dbi_con <- DBI::dbConnect(
+      RSnowflake::Snowflake(),
+      name      = conn$.connect_name,
+      account   = conn$account,
+      user      = conn$user,
+      database  = conn$database,
+      schema    = conn$schema,
+      warehouse = conn$warehouse,
+      role      = conn$role
+    )
+  }
 
   conn$dbi_con <- dbi_con
   dbi_con

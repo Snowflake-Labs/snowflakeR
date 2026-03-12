@@ -303,64 +303,61 @@ conn <- sfr_connect()
 Workspace Notebooks are managed Jupyter environments inside Snowflake. They
 run a **Python kernel** -- R is available via `rpy2` and `%%R` magic cells.
 
-`snowflakeR` ships a **self-contained `notebooks/` directory** with all the
-scripts, config, and helpers you need. Find it with:
+The R environment is installed by the
+[`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
+toolkit, which handles micromamba, R, rpy2, and package installation. The
+`snowflakeR` package ships demo notebooks in `inst/notebooks/` -- find them
+with:
 
 ```r
 system.file("notebooks", package = "snowflakeR")
 ```
 
-Upload the folder contents to your Workspace and open
-`workspace_quickstart.ipynb`. The directory includes:
+Upload the notebook(s) you need to your Workspace and follow the instructions
+in the first cell. Key notebooks:
 
-| File | Purpose |
+| Notebook | Description |
 |---|---|
-| `setup_r_environment.sh` | Installs R + packages via micromamba |
-| `r_packages.yaml` | R package list for the setup script |
-| `r_helpers.py` | Python helpers for rpy2 / `%%R` magic setup |
-| `notebook_config.yaml.template` | Single config for warehouse, database, schema |
-| `workspace_quickstart.ipynb` | Ready-to-run Workspace demo |
-| `local_quickstart.ipynb` | Ready-to-run local demo |
+| `workspace_quickstart.ipynb` | Connection, config, queries, ggplot2 |
+| `workspace_model_registry.ipynb` | Log, deploy, and serve R models |
+| `workspace_feature_store.ipynb` | Feature Store: entities, views, training data |
+| `workspace_forecasting_demo.ipynb` | Time series forecasting with forecast + ggplot2 |
 
 **Key differences from local:**
 
 | Aspect | Local | Workspace |
 |---|---|---|
 | R kernel | Native R | Python + `%%R` |
-| Python/R env | You manage | Container-managed |
-| Authentication | `connections.toml` / key-pair | Auto-detected session |
-| Package install | `install.packages()` | `micromamba` + `install.packages()` |
+| Python/R env | You manage | `sfnb_multilang.install()` |
+| Authentication | `connections.toml` / key-pair | Auto-detected (SPCS OAuth) |
+| Package install | `install.packages()` | YAML config + `install.packages()` |
 | Execution context | Usually set by connection | Must set explicitly ([docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context)) |
 | Plotting | Native plot pane | `%%R -w W -h H` + `print(p)` |
-| Session lifecycle | Persistent | Re-setup each session |
+| Session lifecycle | Persistent | Re-setup each session (~1-2 min) |
 
 **Setup steps:**
 
-1. **Copy config:** `cp notebook_config.yaml.template notebook_config.yaml`
-   and edit with your warehouse, database, and schema.
-
-2. **Install R** (run once per session, ~3 minutes):
+1. **Install R** (run once per session, ~1-2 minutes):
 
 ```python
 # Python cell
-!bash setup_r_environment.sh --adbc
+# Public standalone: !pip install sfnb-multilang
+from sfnb_multilang import install
+install(languages=["r"])
 ```
 
-   Use `--basic` instead of `--adbc` if you don't need ADBC acceleration
-   (faster install, but no Arrow-native bulk I/O).
+   For advanced configurations (ADBC, custom packages, Scala/Julia), use a
+   YAML config file: `install(config="configs/snowflaker.yaml")`.
 
-3. **Register `%%R` magic:**
+2. **Register `%%R` magic and load `snowflakeR`:**
 
 ```python
 from r_helpers import setup_r_environment
 result = setup_r_environment()
 ```
 
-4. **Install and load `snowflakeR`:**
-
 ```r
 %%R
-# install.packages("pak"); pak::pak("Snowflake-Labs/snowflakeR")
 library(snowflakeR)
 conn <- sfr_connect()   # auto-detects Workspace session
 
@@ -375,7 +372,7 @@ sfr_write_table(conn, sfr_fqn(conn, "MY_TABLE"), my_data)
 ```
 
 See `vignette("workspace-notebooks")` for the full Workspace guide including
-output helpers, PAT management, and Python-R data exchange.
+output helpers, authentication details, and Python-R data exchange.
 
 ### Docker / CI / headless environments
 
@@ -440,7 +437,7 @@ pak::pak("Snowflake-Labs/snowflakeR", dependencies = TRUE)
 | `sfr_connect()` hangs | If using `externalbrowser`, check your browser opened a Snowflake tab |
 | `sfr_connect()` fails with "account required" | Set up `connections.toml` or pass `account` explicitly |
 | `reticulate` uses wrong Python | Call `reticulate::use_condaenv()` *before* loading `snowflakeR` |
-| R packages missing in Workspace | Add them to `r_packages.yaml` and re-run the setup script |
+| R packages missing in Workspace | Add to YAML config or install interactively via `install.packages()` |
 | `%%R` not recognised in Workspace | Run `%load_ext rpy2.ipython` in a Python cell |
 | Conda solve takes forever | Use `pip install` inside a conda env (see Option B above) |
 

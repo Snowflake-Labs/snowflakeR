@@ -825,7 +825,7 @@ sfr_generate_training_data <- function(fs,
     }
   })
 
-  result <- bridge$generate_training_set(
+  json_path <- bridge$generate_training_set(
     session = fs$conn$session,
     spine_sql = spine_sql,
     feature_view_refs = fv_refs,
@@ -837,6 +837,8 @@ sfr_generate_training_data <- function(fs,
     warehouse = args$warehouse
   )
 
+  on.exit(unlink(json_path), add = TRUE)
+  result <- jsonlite::fromJSON(json_path)
   .bridge_dict_to_df(result)
 }
 
@@ -872,7 +874,7 @@ sfr_retrieve_features <- function(fs, spine, features) {
     }
   })
 
-  result <- bridge$retrieve_features(
+  json_path <- bridge$retrieve_features(
     session = fs$conn$session,
     spine_sql = spine_sql,
     feature_view_refs = fv_refs,
@@ -881,6 +883,8 @@ sfr_retrieve_features <- function(fs, spine, features) {
     warehouse = args$warehouse
   )
 
+  on.exit(unlink(json_path), add = TRUE)
+  result <- jsonlite::fromJSON(json_path)
   .bridge_dict_to_df(result)
 }
 

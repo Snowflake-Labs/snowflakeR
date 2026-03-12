@@ -221,11 +221,21 @@ def _build_forecast_r_code() -> str:
 def _build_generic_predict_r_code(
     output_cols: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Build R code for generic predict() call."""
-    return textwrap.dedent("""\
-        pred_{{UID}} <- predict({{MODEL}}, newdata = {{INPUT}})
+    """Build R code for generic predict() call.
 
-        if (is.matrix(pred_{{UID}})) {
+    Tries ``new_data`` first (tidymodels convention) then falls back to
+    ``newdata`` (base R convention) so the same wrapper works for both
+    tidymodels workflows and base-R model objects.
+    """
+    return textwrap.dedent("""\
+        pred_{{UID}} <- tryCatch(
+            predict({{MODEL}}, new_data = {{INPUT}}),
+            error = function(e) predict({{MODEL}}, newdata = {{INPUT}})
+        )
+
+        if (is.data.frame(pred_{{UID}})) {
+            result_{{UID}} <- pred_{{UID}}
+        } else if (is.matrix(pred_{{UID}})) {
             result_{{UID}} <- as.data.frame(pred_{{UID}})
         } else {
             result_{{UID}} <- data.frame(
@@ -535,6 +545,7 @@ def registry_predict(
     model_name: str,
     version_name: Optional[str] = None,
     input_data: Optional[pd.DataFrame] = None,
+    input_data_path: Optional[str] = None,
     function_name: str = "predict",
     service_name: Optional[str] = None,
     database_name: Optional[str] = None,
@@ -542,17 +553,21 @@ def registry_predict(
 ) -> str:
     """Run inference using a registered model.
 
-    Returns the path to a temp JSON file containing the result.  Writing to
-    a file instead of returning a string avoids the ``basic_string::substr``
-    C++ crash in reticulate / rpy2 that occurs when large strings cross the
-    Python <-> R bridge (especially in Workspace Notebooks where the call
-    stack is Python -> rpy2 -> R -> reticulate -> Python -> back).
-    The R side reads and parses the file with ``jsonlite::fromJSON()``.
+    Input data can be passed as a pandas DataFrame (``input_data``) or as
+    a path to a CSV file (``input_data_path``).  The CSV path avoids the
+    ``basic_string::substr`` C++ crash in rpy2 that occurs when
+    ``reticulate::r_to_py()`` converts R data.frames with string columns.
+
+    Returns the path to a temp JSON file containing the result (same
+    workaround, output direction).
     """
     import json
     import tempfile
 
     from snowflake.ml.registry import Registry
+
+    if input_data_path is not None:
+        input_data = pd.read_csv(input_data_path)
 
     reg_kwargs = {"session": session}
     if database_name:
@@ -580,8 +595,6 @@ def registry_predict(
 
     d = _pandas_to_r_dict(result_df)
 
-    # Write JSON to a temp file so the string never crosses the
-    # reticulate / rpy2 C++ bridge.  The R side reads the file.
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False, prefix="sfr_predict_"
     )
@@ -764,10 +777,13 @@ def registry_create_service(
     mv = m.version(version_name)
 
     if force:
+        # Drop via SQL -- mv.delete_service() is version-scoped and won't
+        # find services created by a different version of the same model.
+        svc_fqn = f"{database_name}.{schema_name}.{service_name}" if database_name and schema_name else service_name
         try:
-            mv.delete_service(service_name)
+            session.sql(f"DROP SERVICE IF EXISTS {svc_fqn}").collect()
         except Exception:
-            pass  # service may not exist -- that's fine
+            pass
 
     mv.create_service(
         service_name=service_name,

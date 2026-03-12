@@ -87,25 +87,38 @@ All notebooks read this file. Table references use fully qualified names
 
 ### Step 1: Install the R environment
 
-Workspace Notebooks run in containers without R pre-installed. Use the
-included setup script:
+Workspace Notebooks run in containers without R pre-installed. The
+[`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
+toolkit handles installation:
 
 ```python
-# Python cell -- run once per session (~3 minutes)
-!bash setup_r_environment.sh --adbc
+# Python cell -- run once per session (~1-2 minutes)
+# Public standalone: !pip install sfnb-multilang
+try:
+    from sfnb_multilang import install
+except ImportError:
+    import sys; sys.path.insert(0, "../../../snowflake-notebook-multilang/src")
+    from sfnb_multilang import install
+
+install(languages=["r"])
 ```
 
-This installs R, `rpy2`, base R packages, and optionally the ADBC Snowflake
-driver (including Go compiler) via `micromamba`. Use `--basic` instead of
-`--adbc` to skip ADBC installation (faster, but no Arrow-native bulk I/O).
+This installs R, `rpy2`, and base R packages via `micromamba` + conda-forge.
 Everything is installed in **user-space** -- no `sudo` or root access is
 required or used. Nothing modifies the container base image or system Python
 environment.
 
-The script, `r_packages.yaml`, and `r_helpers.py` are all included in the
-notebooks directory.
+For more advanced configurations (ADBC, DuckDB, custom packages, Scala/Julia),
+pass a YAML config file instead:
 
-**Licensing:** All software installed by this script is freely-licensed
+```python
+install(config="configs/snowflaker.yaml")
+```
+
+See the preset configs in the `snowflake-notebook-multilang` repo under
+`configs/` for examples.
+
+**Licensing:** All software installed by the toolkit is freely-licensed
 open-source. `micromamba` is BSD-3-Clause (developed by the
 [mamba-org](https://github.com/mamba-org) community, not affiliated with
 Anaconda, Inc.). All packages come from
@@ -114,13 +127,14 @@ collection entirely separate from Anaconda's default repository. R is
 GPL-licensed, and CRAN packages carry their own open-source licenses. You can
 use all of this freely in commercial environments.
 
-**External Access Integration (EAI):** The setup script downloads packages from
+**External Access Integration (EAI):** The toolkit downloads packages from
 external hosts (`micro.mamba.pm`, `conda.anaconda.org`, `repo.anaconda.com`,
 and optionally `cloud.r-project.org`). Snowflake blocks outbound traffic by
 default, so you must attach an
 [External Access Integration](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-external-access)
-that allows these hosts. See the full host table and example SQL in
-`internal/prd_eng/workspace_notebooks_eai_requirements.md`.
+that allows these hosts. The toolkit can generate the required EAI SQL for you
+-- see the
+[network rules documentation](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md).
 
 ### Step 2: Register the `%%R` magic
 
@@ -202,13 +216,14 @@ use `ask = FALSE` or `upgrade = "never"`.
 **System library dependencies:** R packages with compiled C/C++ code may
 depend on system libraries (e.g., `sf` needs `libgdal`). Since you don't
 have root access in the container, `install.packages()` will fail if those
-libraries are missing. Use conda-forge equivalents (e.g., `r-sf`) in
-`r_packages.yaml` instead -- conda-forge bundles the required system
-libraries.
+libraries are missing. Use conda-forge equivalents (e.g., `r-sf`) in your
+YAML config preset's `conda_packages` list instead -- conda-forge bundles
+the required system libraries.
 
 **Persistence:** Packages installed interactively don't persist across
-container recycles. Add regularly-used packages to `r_packages.yaml` for
-automatic reinstallation via the setup script.
+container recycles. Add regularly-used packages to a YAML config preset
+(see `configs/snowflaker.yaml` in the `sfnb-multilang` toolkit) for
+automatic reinstallation.
 
 ### Step 5: Connect and set execution context
 
@@ -394,7 +409,7 @@ no separate token.
 | **Package install** | `install.packages()` | `micromamba` + `install.packages()` |
 | **Plotting** | Native plot pane | `%%R -w W -h H` + `print(p)` |
 | **Output** | Standard | Use `rprint()` / `rview()` helpers |
-| **Session persistence** | Persistent | Re-setup each session (~3 min) |
+| **Session persistence** | Persistent | Re-setup each session (~1-2 min) |
 | **Python interop** | `reticulate` | `rpy2` (bidirectional) |
 | **`sfr_connect()`** | Reads credentials | Wraps active session |
 
@@ -404,7 +419,10 @@ environments. Only the setup differs.
 ## Typical workflow
 
 ```python
-# Cell 1 (Python): Setup
+# Cell 1 (Python): Install R and register %%R magic
+from sfnb_multilang import install
+install(languages=["r"])
+
 from r_helpers import setup_r_environment
 setup_r_environment()
 ```
@@ -458,8 +476,10 @@ system.file("notebooks", package = "snowflakeR")
 | `local_quickstart.ipynb` | Local (RStudio, Jupyter) | Same content, native R kernel |
 | `workspace_model_registry.ipynb` | Workspace | Model Registry: log, deploy, serve R models |
 | `workspace_feature_store.ipynb` | Workspace | Feature Store: entities, views, training data |
+| `workspace_forecasting_demo.ipynb` | Workspace | Time series forecasting with forecast + ggplot2 |
 | `local_model_registry.ipynb` | Local | Model Registry for local R environments |
 | `local_feature_store.ipynb` | Local | Feature Store for local R environments |
+| `local_forecasting_demo.ipynb` | Local | Forecasting demo for local R environments |
 
 Both notebooks use `notebook_config.yaml` for execution context and
 `sfr_fqn()` for fully qualified table names. Upload the entire folder to
@@ -469,9 +489,9 @@ your Workspace or copy to a local directory to get started.
 
 | Issue | Solution |
 |-------|----------|
-| `rpy2` not found | Run `setup_r_environment()` in a Python cell |
+| `rpy2` not found | Run `install(languages=["r"])` from `sfnb_multilang` |
 | `%%R` not recognised | Run `%load_ext rpy2.ipython` |
 | Extra line breaks in output | Use `rprint()`, `rview()`, `rglimpse()` |
-| Package not found | Add to `r_packages.yaml` and re-run setup script |
+| Package not found | Add to a YAML config preset or install interactively |
 | `sfr_connect()` fails | Ensure the Python kernel has an active Snowpark session |
 | Plot not showing | Add `print(p)` and use `-w` / `-h` flags |

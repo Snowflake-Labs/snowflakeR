@@ -63,3 +63,18 @@ demo:
 
   # Sample row limit for query examples
   row_limit: 1000
+
+# =============================================================================
+# Credit Risk Demo Database Layout
+# =============================================================================
+# Schema isolation for the credit risk demo -- each concern gets its own schema.
+# The setup notebook creates these; the demo notebook references them.
+#
+# Adjust the names below to fit your naming conventions or existing database.
+
+credit_risk:
+  database: "CREDIT_RISK_ML"
+  source_schema: "RAW_DATA"
+  feature_store_schema: "FEATURES"
+  training_schema: "TRAINING"
+  registry_schema: "MODELS"
