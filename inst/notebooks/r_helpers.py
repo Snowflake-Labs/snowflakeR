@@ -106,7 +106,26 @@ def setup_r_environment(install_rpy2: bool = True, register_magic: bool = True) 
     os.environ["PATH"] = f"{R_ENV_PREFIX}/bin:" + os.environ.get("PATH", "")
     os.environ["R_HOME"] = f"{R_ENV_PREFIX}/lib/R"
     result['r_home'] = os.environ["R_HOME"]
-    
+
+    # Set TZ before R initialises (SPCS/Workspace containers have a broken
+    # /var/db/timezone/localtime symlink that causes R timezone warnings).
+    if not os.environ.get("TZ"):
+        import time as _time
+        tz_val = "UTC"
+        try:
+            from snowflake.snowpark.context import get_active_session
+            _session = get_active_session()
+            _rows = _session.sql("SELECT CURRENT_TIMEZONE() AS tz").collect()
+            if _rows:
+                tz_val = str(_rows[0]["TZ"]).strip() or "UTC"
+        except Exception:
+            pass
+        os.environ["TZ"] = tz_val
+        try:
+            _time.tzset()
+        except AttributeError:
+            pass
+
     # Verify R is accessible
     r_path = shutil.which('R')
     if not r_path:
@@ -166,6 +185,7 @@ def setup_r_environment(install_rpy2: bool = True, register_magic: bool = True) 
     if result['rpy2_installed']:
         try:
             import rpy2.robjects as ro
+            ro.r('if (!nzchar(Sys.getenv("TZ", ""))) Sys.setenv(TZ = "UTC")')
             ro.r('options(width = 200)')  # Wide console output for notebooks
             ro.r('options(tibble.width = Inf)')  # Show all tibble columns
             ro.r('options(pillar.width = Inf)')  # Pillar (tibble printing) width

@@ -326,7 +326,7 @@ def _build_signature(
                     f"Valid types: {list(_DTYPE_MAP.keys())}"
                 )
             dt = getattr(DataType, _DTYPE_MAP[dtype_key])
-            specs.append(FeatureSpec(name=name, dtype=dt))
+            specs.append(FeatureSpec(name=name.upper(), dtype=dt))
         return specs
 
     return ModelSignature(
@@ -424,7 +424,7 @@ def registry_log_model(
 
     if sample_input is None and input_cols:
         sample_rows = {
-            name: (
+            name.upper(): (
                 [1]
                 if dtype.lower() in ("integer", "int", "int64")
                 else [1.0]
@@ -437,6 +437,8 @@ def registry_log_model(
             for name, dtype in input_cols.items()
         }
         sample_input = pd.DataFrame(sample_rows)
+    elif sample_input is not None:
+        sample_input.columns = [c.upper() for c in sample_input.columns]
 
     reg_kwargs = {"session": session}
     if database_name:
@@ -583,6 +585,7 @@ def registry_predict(
     else:
         mv = m.default
 
+    input_data.columns = [c.upper() for c in input_data.columns]
     sp_df = session.create_dataframe(input_data)
 
     run_kwargs = {"function_name": function_name}

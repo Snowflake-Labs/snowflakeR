@@ -82,6 +82,53 @@ sfr_reload_bridges <- function() {
 }
 
 
+#' Reinstall and reload snowflakeR (and RSnowflake) from source
+#'
+#' Convenience wrapper for the full reload sequence needed when developing
+#' inside a Workspace Notebook.  Detaches loaded packages, reinstalls from
+#' source, reloads libraries, and refreshes all Python bridge modules.
+#'
+#' For most code changes (R function bodies, Python bridge files, NAMESPACE
+#' edits) this is sufficient.  See the package dev standards (Section 13.5)
+#' for cases that require a kernel or container restart instead.
+#'
+#' @param path Path to the snowflakeR source directory.
+#'   Defaults to the `SNOWFLAKER_PATH` environment variable.
+#' @param rsnowflake_path Path to the RSnowflake source directory.
+#'   Defaults to the `RSNOWFLAKE_PATH` environment variable.
+#'   Set to `""` to skip RSnowflake reinstallation.
+#'
+#' @returns Invisibly returns `TRUE`.
+#'
+#' @export
+sfr_reinstall <- function(path = Sys.getenv("SNOWFLAKER_PATH"),
+                          rsnowflake_path = Sys.getenv("RSNOWFLAKE_PATH")) {
+  if (!nzchar(path)) {
+    cli::cli_abort("{.arg path} is empty. Set {.envvar SNOWFLAKER_PATH} or pass explicitly.")
+  }
+
+  for (pkg in c("snowflakeR", "RSnowflake")) {
+    if (paste0("package:", pkg) %in% search()) {
+      detach(paste0("package:", pkg), unload = TRUE, character.only = TRUE)
+    }
+  }
+
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+  if (nzchar(rsnowflake_path)) {
+    install.packages(rsnowflake_path, repos = NULL, type = "source", quiet = TRUE)
+    library(RSnowflake)
+  }
+
+  install.packages(path, repos = NULL, type = "source", quiet = TRUE)
+  library(snowflakeR)
+
+  sfr_reload_bridges()
+  cli::cli_inform(c("v" = "snowflakeR reinstalled and reloaded."))
+  invisible(TRUE)
+}
+
+
 # -----------------------------------------------------------------------------
 # Internal: Read connections.toml directly (fallback when snowflakeauth absent)
 # -----------------------------------------------------------------------------
@@ -354,7 +401,6 @@ sfr_connect <- function(name = NULL,
 #' @export
 print.sfr_connection <- function(x, ...) {
   env_label <- x$environment %||% "unknown"
-  dbi_label <- if (!is.null(x$dbi_con)) "attached" else "not attached"
   cli::cli_text("<{.cls sfr_connection}> [{env_label}]")
   fields <- list(
     account = x$account,
@@ -365,9 +411,11 @@ print.sfr_connection <- function(x, ...) {
     role = x$role,
     auth_method = x$auth_method,
     environment = x$environment,
-    dbi_connection = dbi_label,
     created_at = format(x$created_at, "%Y-%m-%d %H:%M:%S")
   )
+  if (!is.null(x$dbi_con)) {
+    fields$dbi_connection <- "attached"
+  }
   fields <- Filter(Negate(is.null), fields)
   labels <- lapply(names(fields), function(n) cli::format_inline("{.field {n}}"))
   items <- lapply(fields, function(v) cli::format_inline("{.val {v}}"))
