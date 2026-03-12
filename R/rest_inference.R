@@ -247,7 +247,8 @@ print.sfr_endpoint <- function(x, ...) {
 #' 1. The `token` argument (if provided)
 #' 2. The `SNOWFLAKE_PAT` environment variable
 #' 3. The `SNOWFLAKE_TOKEN` environment variable
-#' 4. A JWT generated from the connection's key-pair auth (if `conn` provided)
+#' 4. The SPCS OAuth token at `/snowflake/session/token` (Workspace Notebooks)
+#' 5. A JWT generated from the connection's key-pair auth (if `conn` provided)
 #'
 #' @param token Character or NULL. An explicit token (PAT or JWT).
 #' @param conn An `sfr_connection` object, or NULL. When provided and no
@@ -271,6 +272,14 @@ sfr_pat <- function(token = NULL, conn = NULL) {
 
   pat <- Sys.getenv("SNOWFLAKE_TOKEN", "")
   if (nzchar(pat)) return(pat)
+
+  # SPCS OAuth token (Workspace Notebooks)
+  spcs_token_path <- "/snowflake/session/token"
+  if (file.exists(spcs_token_path)) {
+    spcs_token <- trimws(paste(readLines(spcs_token_path, warn = FALSE),
+                               collapse = ""))
+    if (nzchar(spcs_token)) return(spcs_token)
+  }
 
   # Auto-generate JWT from connection's key-pair auth
   if (!is.null(conn) && is_sfr_connection(conn)) {
