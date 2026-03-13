@@ -152,11 +152,17 @@
 #' }
 #'
 #' @export
-sfr_service_endpoint <- function(conn, service_name) {
+sfr_service_endpoint <- function(conn, service_name,
+                                 database = NULL, schema = NULL) {
   validate_connection(conn)
   stopifnot(is.character(service_name), length(service_name) == 1L)
 
-  fqn <- sfr_fqn(conn, toupper(service_name))
+  svc <- toupper(service_name)
+  if (grepl("\\.", svc)) {
+    fqn <- svc
+  } else {
+    fqn <- sfr_fqn(conn, svc, database = database, schema = schema)
+  }
 
   # Query endpoints -- returns ingress_url for public access
   endpoints <- sfr_query(
