@@ -142,6 +142,71 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 
 
 # =============================================================================
+# Version pinning helpers
+# =============================================================================
+
+# Packages that are critical sub-dependencies of tidymodels and must be
+# version-pinned when a tidymodels workflow is registered.  These packages
+# serialise internal structures (blueprints, model specs) that are
+# version-sensitive.
+.tidymodels_core_pkgs <- c(
+  "hardhat", "workflows", "parsnip", "recipes",
+  "rsample", "tune", "yardstick", "dials", "butcher"
+)
+
+#' Build version-pinned conda_deps from the current R environment
+#'
+#' Snapshots the current R version and the versions of all packages in
+#' `predict_pkgs` (plus known critical sub-dependencies) and merges them
+#' into `conda_deps` as exact pins.  User-supplied pins in `conda_deps`
+#' are never overridden.
+#'
+#' @param predict_pkgs Character vector of R package names needed at
+#'   inference time.
+#' @param conda_deps Character vector of conda dependencies (may be NULL).
+#' @returns Character vector of conda dependencies with version pins.
+#' @keywords internal
+.pin_r_versions <- function(predict_pkgs, conda_deps) {
+  if (is.null(conda_deps)) conda_deps <- character(0)
+
+  # Identify which conda dep names already have explicit version constraints
+  already_pinned <- vapply(conda_deps, function(dep) {
+    grepl("[=<>]", dep)
+  }, logical(1))
+  pinned_names <- sub("[=<>!].*", "", conda_deps[already_pinned])
+
+  # Pin r-base to the exact current R major.minor.patch
+  if (!any(grepl("^r-base", pinned_names))) {
+    r_ver <- paste(R.version$major, R.version$minor, sep = ".")
+    conda_deps <- c(paste0("r-base=", r_ver), conda_deps)
+  }
+
+  # Expand predict_pkgs: if "tidymodels" is requested, add core sub-deps
+  pkgs_to_pin <- predict_pkgs
+  if ("tidymodels" %in% predict_pkgs) {
+    pkgs_to_pin <- unique(c(pkgs_to_pin, .tidymodels_core_pkgs))
+  }
+
+  # For each package, pin to current installed version if not already pinned
+  for (pkg in pkgs_to_pin) {
+    conda_name <- paste0("r-", pkg)
+    if (conda_name %in% pinned_names) next
+    if (!requireNamespace(pkg, quietly = TRUE)) next
+
+    ver <- as.character(utils::packageVersion(pkg))
+    conda_deps <- c(conda_deps, paste0(conda_name, "=", ver))
+  }
+
+  cli::cli_inform(c(
+    "i" = "Auto-pinned {length(conda_deps)} conda deps from current R environment.",
+    "i" = "Set {.arg pin_versions = FALSE} to disable."
+  ))
+
+  conda_deps
+}
+
+
+# =============================================================================
 # Log model
 # =============================================================================
 
@@ -166,19 +231,19 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #'   Valid types: `"integer"`, `"double"`, `"string"`, `"boolean"`.
 #' @param output_cols Named list mapping output column names to types.
 #' @param conda_deps Character vector. Conda packages for the model
-#'   environment. Defaults include `r-base>=4.1`, `rpy2>=3.5`, and
-#'   `numpy<2.0`.
+#'   environment. Defaults include `r-base`, `rpy2>=3.5`, and `numpy<2.0`.
 #'
-#'   **Package version warning:** The SPCS inference container resolves
-#'   package versions at image build time. Without `numpy<2.0`, adding
-#'   `r-base` and `rpy2` causes the conda solver to pick Python 3.12 +
-#'   numpy 2.x. Under numpy 2.x the inference server's JSON
-#'   deserialisation produces a `numpy.recarray` instead of a
-#'   `pandas.DataFrame`, causing a server-side crash (`recarray has no
-#'   attribute fillna`). Pinning `numpy<2.0` also causes the solver to
-#'   select Python 3.11 (the same version used by pure-Python model
-#'   containers), which completely avoids the bug.
-#'   If you override `conda_deps`, ensure you include `numpy<2.0`.
+#'   When `pin_versions = TRUE` (the default), exact version pins are
+#'   auto-generated from the current R session for `r-base` and all
+#'   packages in `predict_pkgs` (plus critical sub-dependencies for
+#'   tidymodels).  Any explicit version constraints you provide in
+#'   `conda_deps` take precedence over auto-pins.
+#'
+#'   **Package version warning:** Without `numpy<2.0`, adding `r-base`
+#'   and `rpy2` causes the conda solver to pick Python 3.12 + numpy 2.x,
+#'   which crashes the inference server (`recarray has no attribute
+#'   fillna`).  If you override `conda_deps`, ensure you include
+#'   `numpy<2.0`.
 #' @param pip_requirements Character vector. Additional pip packages.
 #' @param target_platforms Character. One of `"SNOWPARK_CONTAINER_SERVICES"`,
 #'   `"WAREHOUSE"`, or both. Default: `"SNOWPARK_CONTAINER_SERVICES"`.
@@ -192,6 +257,13 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #' @param metrics Named list. Metrics to attach to the model version.
 #' @param sample_input A data.frame. Optional sample input for signature
 #'   validation.
+#' @param pin_versions Logical. If `TRUE` (the default), automatically pins
+#'   the R version and all `predict_pkgs` (plus critical tidymodels
+#'   sub-dependencies) to their currently installed versions.  This
+#'   ensures the SPCS container environment exactly matches the training
+#'   environment, preventing deserialization failures such as
+#'   `hardhat::forge()` blueprint mismatches.  Set to `FALSE` to use
+#'   floating version constraints.
 #' @param ... Additional arguments passed to the underlying Python
 #'   `Registry.log_model()`.
 #'
@@ -224,12 +296,20 @@ sfr_log_model <- function(reg,
                           comment = NULL,
                           metrics = NULL,
                           sample_input = NULL,
+                          pin_versions = TRUE,
                           ...) {
   ctx <- resolve_registry_context(reg)
 
   # Save model to temp .rds file
   model_path <- tempfile(fileext = ".rds")
   saveRDS(model, model_path)
+
+  # Auto-pin R and package versions to match the current environment.
+  # This prevents SPCS container version drift that causes deserialization
+  # failures (e.g. hardhat::forge blueprint mismatch).
+  if (pin_versions) {
+    conda_deps <- .pin_r_versions(predict_pkgs, conda_deps)
+  }
 
   # Convert R types to Python-friendly types
   py_predict_pkgs <- as.list(predict_pkgs)
