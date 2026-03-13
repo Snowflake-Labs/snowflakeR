@@ -180,7 +180,7 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   # from resolving a newer R release whose packages haven't been rebuilt yet.
   if (!any(grepl("^r-base", existing_names))) {
     r_ver <- paste0(R.version$major, ".", R.version$minor)
-    r_pin <- paste0("r-base=", r_ver)
+    r_pin <- paste0("r-base==", r_ver)
     conda_deps <- c(r_pin, conda_deps)
   }
 
@@ -215,18 +215,19 @@ sfr_input_cols <- function(data, exclude = character(0)) {
     }
   }
 
-  # Use exact '=' pins because the Workspace R environment is installed
-  # from conda-forge (via sfnb_multilang with a pinned R version), so every
-  # package version present here is guaranteed to exist on conda-forge.
-  # Exact pins ensure the SPCS container gets identical versions, avoiding
-  # serialization mismatches (e.g. hardhat blueprint format changes).
+  # Use '==' (PEP 440 exact match) because the Snowflake ML SDK validates
+  # version specifiers using pip-style syntax, not conda's single '='.
+  # The Workspace R environment is installed from conda-forge, so every
+  # package version here is guaranteed to exist there.  Exact pins ensure
+  # the SPCS container gets identical versions, avoiding serialization
+  # mismatches (e.g. hardhat blueprint format changes).
   for (pkg in pkgs_to_pin) {
     conda_name <- paste0("r-", pkg)
     if (conda_name %in% existing_names) next
     if (!requireNamespace(pkg, quietly = TRUE)) next
 
     ver <- as.character(utils::packageVersion(pkg))
-    conda_deps <- c(conda_deps, paste0(conda_name, "=", ver))
+    conda_deps <- c(conda_deps, paste0(conda_name, "==", ver))
   }
 
   cli::cli_inform(c(
