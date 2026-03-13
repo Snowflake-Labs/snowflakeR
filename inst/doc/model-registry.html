@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Model Registry: Log, Deploy, and Serve R Models</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Model Registry: Log, Deploy, and Serve R
+Models</h1>
+
+
+
+<p>The Snowflake Model Registry lets you version, manage, and deploy ML
+models directly in Snowflake. <code>snowflakeR</code> makes this
+accessible from R – you train models in R, and the package handles the
+Python bridging behind the scenes.</p>
+<div id="how-it-works" class="section level2">
+<h2>How it works</h2>
+<p>When you call <code>sfr_log_model()</code>, snowflakeR:</p>
+<ol style="list-style-type: decimal">
+<li>Saves your R model to an <code>.rds</code> file</li>
+<li>Auto-generates a Python <code>CustomModel</code> wrapper that uses
+<code>rpy2</code> to load and call your R model</li>
+<li>Registers the wrapped model in Snowflake’s Model Registry</li>
+<li>At inference time (in SPCS), the wrapper loads R, restores the
+model, and runs your predict function</li>
+</ol>
+<p>You never write Python – the package handles everything.</p>
+</div>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="co"># Optional: target a specific db/schema for the registry</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>reg <span class="ot">&lt;-</span> <span class="fu">sfr_model_registry</span>(conn, <span class="at">database =</span> <span class="st">&quot;ML_DB&quot;</span>, <span class="at">schema =</span> <span class="st">&quot;MODELS&quot;</span>)</span></code></pre></div>
+<p>You can pass either <code>reg</code> or <code>conn</code> as the
+first argument to all registry functions. Using <code>conn</code>
+directly uses the session’s current database/schema.</p>
+</div>
+<div id="train-a-model" class="section level2">
+<h2>Train a model</h2>
+<p>Train any R model as you normally would:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># Simple linear model</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">lm</span>(mpg <span class="sc">~</span> wt <span class="sc">+</span> hp <span class="sc">+</span> cyl, <span class="at">data =</span> mtcars)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">summary</span>(model)</span></code></pre></div>
+</div>
+<div id="test-locally-before-registering" class="section level2">
+<h2>Test locally before registering</h2>
+<p><code>sfr_predict_local()</code> runs the exact same prediction logic
+that will execute inside Snowflake, but entirely in R (no Python
+bridge):</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>test_data <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">wt =</span> <span class="fu">c</span>(<span class="fl">2.5</span>, <span class="fl">3.0</span>, <span class="fl">3.5</span>), <span class="at">hp =</span> <span class="fu">c</span>(<span class="dv">110</span>, <span class="dv">150</span>, <span class="dv">200</span>), <span class="at">cyl =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">6</span>, <span class="dv">8</span>))</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>preds <span class="ot">&lt;-</span> <span class="fu">sfr_predict_local</span>(model, test_data)</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>preds</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;   prediction</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; 1   24.46</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; 2   20.12</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; 3   15.18</span></span></code></pre></div>
+</div>
+<div id="log-the-model-to-snowflake" class="section level2">
+<h2>Log the model to Snowflake</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>mv <span class="ot">&lt;-</span> <span class="fu">sfr_log_model</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  reg,</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">model       =</span> model,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">model_name  =</span> <span class="st">&quot;MTCARS_MPG&quot;</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">input_cols  =</span> <span class="fu">list</span>(<span class="at">wt =</span> <span class="st">&quot;double&quot;</span>, <span class="at">hp =</span> <span class="st">&quot;double&quot;</span>, <span class="at">cyl =</span> <span class="st">&quot;integer&quot;</span>),</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">output_cols =</span> <span class="fu">list</span>(<span class="at">prediction =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="at">comment     =</span> <span class="st">&quot;Linear regression predicting MPG from weight, horsepower, cylinders&quot;</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>)</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>mv</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_model_version&gt;</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   model: &quot;MTCARS_MPG&quot;</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;   version: &quot;V1&quot;</span></span></code></pre></div>
+<div id="key-parameters" class="section level3">
+<h3>Key parameters</h3>
+<table>
+<colgroup>
+<col width="45%" />
+<col width="54%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>model</code></td>
+<td>Any R object that can be <code>saveRDS()</code>’d</td>
+</tr>
+<tr class="even">
+<td><code>model_name</code></td>
+<td>Registry name (uppercase recommended)</td>
+</tr>
+<tr class="odd">
+<td><code>input_cols</code></td>
+<td>Named list: column name -&gt; type (<code>&quot;double&quot;</code>,
+<code>&quot;integer&quot;</code>, <code>&quot;string&quot;</code>,
+<code>&quot;boolean&quot;</code>)</td>
+</tr>
+<tr class="even">
+<td><code>output_cols</code></td>
+<td>Named list: output column name -&gt; type</td>
+</tr>
+<tr class="odd">
+<td><code>predict_fn</code></td>
+<td>R function name (default: <code>&quot;predict&quot;</code>)</td>
+</tr>
+<tr class="even">
+<td><code>predict_pkgs</code></td>
+<td>R packages needed at inference time (e.g.,
+<code>c(&quot;forecast&quot;, &quot;xgboost&quot;)</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>conda_deps</code></td>
+<td>Additional conda packages (r-base and rpy2 are always included)</td>
+</tr>
+<tr class="even">
+<td><code>target_platforms</code></td>
+<td><code>&quot;SNOWPARK_CONTAINER_SERVICES&quot;</code> (default) or
+<code>&quot;WAREHOUSE&quot;</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="custom-prediction-code" class="section level3">
+<h3>Custom prediction code</h3>
+<p>For models that need special prediction logic (e.g.,
+<code>forecast</code>, or multi-step pipelines), use
+<code>predict_body</code>:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Example: forecast model with custom output</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>mv <span class="ot">&lt;-</span> <span class="fu">sfr_log_model</span>(</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  reg,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">model        =</span> arima_model,</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">model_name   =</span> <span class="st">&quot;SALES_FORECAST&quot;</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">predict_fn   =</span> <span class="st">&quot;forecast&quot;</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="at">predict_pkgs =</span> <span class="fu">c</span>(<span class="st">&quot;forecast&quot;</span>),</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>  <span class="at">predict_body =</span> <span class="st">&#39;</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="st">    pred_{{UID}} &lt;- forecast({{MODEL}}, h = {{N}})</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="st">    result_{{UID}} &lt;- data.frame(</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="st">      period = seq_len({{N}}),</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="st">      point_forecast = as.numeric(pred_{{UID}}$mean),</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="st">      lower_95 = as.numeric(pred_{{UID}}$lower[,2]),</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="st">      upper_95 = as.numeric(pred_{{UID}}$upper[,2])</span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="st">    )</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="st">  &#39;</span>,</span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>  <span class="at">input_cols  =</span> <span class="fu">list</span>(<span class="at">period =</span> <span class="st">&quot;integer&quot;</span>),</span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>  <span class="at">output_cols =</span> <span class="fu">list</span>(</span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>    <span class="at">period =</span> <span class="st">&quot;integer&quot;</span>, <span class="at">point_forecast =</span> <span class="st">&quot;double&quot;</span>,</span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a>    <span class="at">lower_95 =</span> <span class="st">&quot;double&quot;</span>, <span class="at">upper_95 =</span> <span class="st">&quot;double&quot;</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a>  )</span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a>)</span></code></pre></div>
+<p>Template variables:</p>
+<ul>
+<li><code>{{MODEL}}</code> – the loaded R model object</li>
+<li><code>{{INPUT}}</code> – the input data.frame</li>
+<li><code>{{UID}}</code> – unique ID for variable naming (prevents
+collisions)</li>
+<li><code>{{N}}</code> – number of rows in input</li>
+</ul>
+</div>
+</div>
+<div id="manage-models" class="section level2">
+<h2>Manage models</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># List all models</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">sfr_show_models</span>(reg)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co"># Get a specific model</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fu">sfr_get_model</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>m</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_model&gt; &quot;MTCARS_MPG&quot;</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   versions: &quot;V1&quot;</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;   default: &quot;V1&quot;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co"># Show versions</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="fu">sfr_show_model_versions</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>)</span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co"># Get a specific version</span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a>mv <span class="ot">&lt;-</span> <span class="fu">sfr_get_model_version</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V1&quot;</span>)</span></code></pre></div>
+</div>
+<div id="metrics" class="section level2">
+<h2>Metrics</h2>
+<p>Attach evaluation metrics to model versions for tracking and
+comparison:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Set metrics</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="fu">sfr_set_model_metric</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V1&quot;</span>, <span class="st">&quot;rmse&quot;</span>, <span class="fl">2.45</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="fu">sfr_set_model_metric</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V1&quot;</span>, <span class="st">&quot;r_squared&quot;</span>, <span class="fl">0.87</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co"># Retrieve metrics</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">sfr_show_model_metrics</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V1&quot;</span>)</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; $rmse</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; [1] 2.45</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; $r_squared</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; [1] 0.87</span></span></code></pre></div>
+</div>
+<div id="version-management" class="section level2">
+<h2>Version management</h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># Log a new version of the same model</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>model_v2 <span class="ot">&lt;-</span> <span class="fu">lm</span>(mpg <span class="sc">~</span> wt <span class="sc">+</span> hp <span class="sc">+</span> cyl <span class="sc">+</span> disp, <span class="at">data =</span> mtcars)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>mv2 <span class="ot">&lt;-</span> <span class="fu">sfr_log_model</span>(</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  reg,</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">model        =</span> model_v2,</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  <span class="at">model_name   =</span> <span class="st">&quot;MTCARS_MPG&quot;</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  <span class="at">version_name =</span> <span class="st">&quot;V2&quot;</span>,</span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>  <span class="at">input_cols   =</span> <span class="fu">list</span>(<span class="at">wt =</span> <span class="st">&quot;double&quot;</span>, <span class="at">hp =</span> <span class="st">&quot;double&quot;</span>, <span class="at">cyl =</span> <span class="st">&quot;integer&quot;</span>, <span class="at">disp =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>  <span class="at">output_cols  =</span> <span class="fu">list</span>(<span class="at">prediction =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>  <span class="at">comment      =</span> <span class="st">&quot;V2: added displacement&quot;</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>)</span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co"># Set default version</span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="fu">sfr_set_default_model_version</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V2&quot;</span>)</span></code></pre></div>
+</div>
+<div id="remote-inference-spcs" class="section level2">
+<h2>Remote inference (SPCS)</h2>
+<p>Once deployed, run inference directly in Snowflake:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># Predict using a Snowpark DataFrame (runs in Snowflake, not locally)</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>new_data <span class="ot">&lt;-</span> <span class="fu">sfr_query</span>(conn, <span class="st">&quot;SELECT wt, hp, cyl FROM car_data LIMIT 100&quot;</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>preds <span class="ot">&lt;-</span> <span class="fu">sfr_predict</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, new_data)</span></code></pre></div>
+</div>
+<div id="deploy-as-an-spcs-service" class="section level2">
+<h2>Deploy as an SPCS service</h2>
+<p>For real-time inference endpoints:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">sfr_deploy_model</span>(</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  reg,</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">model_name   =</span> <span class="st">&quot;MTCARS_MPG&quot;</span>,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">version_name =</span> <span class="st">&quot;V2&quot;</span>,</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">service_name =</span> <span class="st">&quot;mpg_service&quot;</span>,</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">compute_pool =</span> <span class="st">&quot;ML_POOL&quot;</span>,</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="at">image_repo   =</span> <span class="st">&quot;my_db.my_schema.my_repo&quot;</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>)</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co"># Predict via the service</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>preds <span class="ot">&lt;-</span> <span class="fu">sfr_predict</span>(</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>  reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, new_data,</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>  <span class="at">service_name =</span> <span class="st">&quot;mpg_service&quot;</span></span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a>)</span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a></span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a><span class="co"># Clean up</span></span>
+<span id="cb10-17"><a href="#cb10-17" tabindex="-1"></a><span class="fu">sfr_undeploy_model</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>, <span class="st">&quot;V2&quot;</span>, <span class="st">&quot;mpg_service&quot;</span>)</span></code></pre></div>
+</div>
+<div id="clean-up" class="section level2">
+<h2>Clean up</h2>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">sfr_delete_model</span>(reg, <span class="st">&quot;MTCARS_MPG&quot;</span>)</span></code></pre></div>
+</div>
+<div id="container-package-versions-important" class="section level2">
+<h2>Container package versions (important)</h2>
+<p>When <code>sfr_deploy_model()</code> or <code>create_service()</code>
+builds the SPCS container image, it resolves conda/pip package versions
+at build time. R model containers include <code>r-base</code> and
+<code>rpy2</code>, which can affect which versions of numpy, pandas, and
+Python itself get installed.</p>
+<p><strong>Key points:</strong></p>
+<ul>
+<li>Without a <code>numpy&lt;2.0</code> pin, the conda solver picks
+<strong>Python 3.12</strong> + <strong>numpy 2.x</strong> for R model
+containers. Pure Python models get <strong>Python 3.11</strong> + numpy
+2.x (which works fine).</li>
+<li>Under Python 3.12 + numpy 2.x the SPCS inference server’s JSON
+deserialisation produces a <code>numpy.recarray</code> instead of a
+<code>pandas.DataFrame</code>. This causes an HTTP 500 crash:
+<code>recarray has no attribute fillna</code>.</li>
+<li>Pinning <code>numpy&lt;2.0</code> also causes the solver to select
+<strong>Python 3.11</strong> (the same version used by pure-Python
+containers), which completely avoids the bug. Our testing confirmed:
+Python 3.11.14 + numpy 1.26.4.</li>
+<li><code>snowflakeR</code> includes <code>numpy&lt;2.0</code> in the
+default <code>conda_deps</code>. If you override
+<code>conda_deps</code>, <strong>make sure to include
+<code>numpy&lt;2.0</code></strong>.</li>
+</ul>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Default (safe) -- numpy&lt;2.0 is pinned automatically:</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>mv <span class="ot">&lt;-</span> <span class="fu">sfr_log_model</span>(conn, model, <span class="at">model_name =</span> <span class="st">&quot;MY_MODEL&quot;</span>,</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>                    <span class="at">input_cols =</span> <span class="fu">list</span>(<span class="at">x =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>                    <span class="at">output_cols =</span> <span class="fu">list</span>(<span class="at">prediction =</span> <span class="st">&quot;double&quot;</span>))</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="co"># Custom conda deps -- remember to include the numpy pin:</span></span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>mv <span class="ot">&lt;-</span> <span class="fu">sfr_log_model</span>(conn, model, <span class="at">model_name =</span> <span class="st">&quot;MY_MODEL&quot;</span>,</span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>                    <span class="at">input_cols =</span> <span class="fu">list</span>(<span class="at">x =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>                    <span class="at">output_cols =</span> <span class="fu">list</span>(<span class="at">prediction =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a>                    <span class="at">conda_deps =</span> <span class="fu">c</span>(<span class="st">&quot;r-base&gt;=4.1&quot;</span>, <span class="st">&quot;rpy2&gt;=3.5&quot;</span>,</span>
+<span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a>                                   <span class="st">&quot;numpy&lt;2.0&quot;</span>, <span class="st">&quot;r-forecast&quot;</span>))</span></code></pre></div>
+</div>
+<div id="supported-model-types" class="section level2">
+<h2>Supported model types</h2>
+<p>Any R model that can be serialised with <code>saveRDS()</code> works,
+including:</p>
+<ul>
+<li><code>lm()</code>, <code>glm()</code> (base R)</li>
+<li><code>randomForest::randomForest()</code></li>
+<li><code>xgboost::xgb.train()</code></li>
+<li><code>ranger::ranger()</code></li>
+<li><code>forecast::auto.arima()</code>,
+<code>forecast::ets()</code></li>
+<li><code>tidymodels</code> workflows</li>
+<li>Custom S3/S4 model objects</li>
+</ul>
+<p>The only requirement is that the model has a <code>predict()</code>
+method (or you provide custom prediction code via
+<code>predict_body</code>).</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

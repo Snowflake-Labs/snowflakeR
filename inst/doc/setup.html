@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Setup &amp; Prerequisites</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Setup &amp; Prerequisites</h1>
+
+
+
+<p>This vignette covers everything you need <strong>before</strong>
+using <code>snowflakeR</code> – system requirements, Python setup,
+authentication, and environment-specific configuration. For usage, see
+<code>vignette(&quot;getting-started&quot;)</code>.</p>
+<div id="quick-reference" class="section level2">
+<h2>Quick reference</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Requirement</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R</td>
+<td>&gt;= 4.1.0</td>
+</tr>
+<tr class="even">
+<td>Python</td>
+<td>&gt;= 3.9 (3.11 recommended)</td>
+</tr>
+<tr class="odd">
+<td><code>snowflake-ml-python</code></td>
+<td>&gt;= 1.5.0</td>
+</tr>
+<tr class="even">
+<td><code>snowflake-snowpark-python</code></td>
+<td>(latest)</td>
+</tr>
+<tr class="odd">
+<td><code>reticulate</code></td>
+<td>&gt;= 1.34</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="system-requirements" class="section level2">
+<h2>1. System requirements</h2>
+<div id="r" class="section level3">
+<h3>R</h3>
+<p>Install R &gt;= 4.1.0 from <a href="https://cran.r-project.org/">CRAN</a> or via your system package
+manager. <code>snowflakeR</code> uses the base pipe (<code>|&gt;</code>)
+and other features introduced in R 4.1.</p>
+</div>
+<div id="python" class="section level3">
+<h3>Python</h3>
+<p><code>snowflakeR</code> uses <code>reticulate</code> to call the
+Snowflake ML Python SDK under the hood. You need Python &gt;= 3.9
+available on your system. We recommend Python 3.11 for best
+compatibility with <code>snowflake-ml-python</code>.</p>
+</div>
+<div id="conda-recommended-or-pip" class="section level3">
+<h3>Conda (recommended) or pip</h3>
+<p>We strongly recommend using <strong>conda</strong> (or
+<code>micromamba</code>) to manage the Python environment. This avoids
+version conflicts between <code>snowflake-ml-python</code>,
+<code>pandas</code>, <code>pyarrow</code>, and other dependencies.
+<code>pip</code> works fine too if you prefer virtualenvs.</p>
+</div>
+</div>
+<div id="installing-snowflaker" class="section level2">
+<h2>2. Installing snowflakeR</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Install from GitHub</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co"># install.packages(&quot;pak&quot;)</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>pak<span class="sc">::</span><span class="fu">pak</span>(<span class="st">&quot;Snowflake-Labs/snowflakeR&quot;</span>)</span></code></pre></div>
+</div>
+<div id="setting-up-the-python-environment" class="section level2">
+<h2>3. Setting up the Python environment</h2>
+<p>Choose <strong>one</strong> of the following approaches.</p>
+<div id="option-a-automatic-recommended-for-most-users" class="section level3">
+<h3>Option A: Automatic (recommended for most users)</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="fu">sfr_install_python_deps</span>()</span></code></pre></div>
+<p>This creates a conda environment called <code>r-snowflakeR</code>
+with Python 3.11 and all required packages. After running this once,
+<code>reticulate</code> will automatically find and use the
+environment.</p>
+</div>
+<div id="option-b-conda-manual" class="section level3">
+<h3>Option B: Conda (manual)</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="ex">conda</span> create <span class="at">-n</span> r-snowflakeR python=3.11 <span class="at">-y</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="ex">conda</span> activate r-snowflakeR</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="ex">pip</span> install snowflake-ml-python snowflake-snowpark-python</span></code></pre></div>
+<p>Then tell R to use it:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># In your .Renviron or at the top of your script</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">Sys.setenv</span>(<span class="at">RETICULATE_PYTHON =</span> <span class="st">&quot;~/.conda/envs/r-snowflakeR/bin/python&quot;</span>)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co"># Or in R:</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>reticulate<span class="sc">::</span><span class="fu">use_condaenv</span>(<span class="st">&quot;r-snowflakeR&quot;</span>)</span></code></pre></div>
+</div>
+<div id="option-c-pip-virtualenv" class="section level3">
+<h3>Option C: pip / virtualenv</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="ex">python3.11</span> <span class="at">-m</span> venv ~/.virtualenvs/r-snowflakeR</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="bu">source</span> ~/.virtualenvs/r-snowflakeR/bin/activate</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="ex">pip</span> install snowflake-ml-python snowflake-snowpark-python</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>reticulate<span class="sc">::</span><span class="fu">use_virtualenv</span>(<span class="st">&quot;~/.virtualenvs/r-snowflakeR&quot;</span>)</span></code></pre></div>
+</div>
+<div id="option-d-system-python" class="section level3">
+<h3>Option D: System Python</h3>
+<p>If you install the Snowflake packages into your system Python:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="ex">pip</span> install snowflake-ml-python snowflake-snowpark-python</span></code></pre></div>
+<p>No extra <code>reticulate</code> configuration needed – it will find
+your system Python automatically.</p>
+</div>
+</div>
+<div id="verifying-the-setup" class="section level2">
+<h2>4. Verifying the setup</h2>
+<p>After installing <code>snowflakeR</code> and setting up Python,
+verify everything works:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="fu">sfr_check_environment</span>()</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; R version: &quot;4.3.1&quot;</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; v reticulate available</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt; Python: &quot;/path/to/python&quot;</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; v snowflake-ml-python available</span></span></code></pre></div>
+<p>This checks:</p>
+<ul>
+<li>R version</li>
+<li><code>reticulate</code> availability</li>
+<li>Python discovery</li>
+<li><code>snowflake-ml-python</code> import</li>
+<li><code>snowflakeauth</code> availability (optional)</li>
+</ul>
+</div>
+<div id="authentication" class="section level2">
+<h2>5. Authentication</h2>
+<p><code>snowflakeR</code> supports multiple authentication methods.
+Choose the one that fits your environment.</p>
+<div id="connections.toml-recommended-for-local-use" class="section level3">
+<h3>connections.toml (recommended for local use)</h3>
+<p>Create <code>~/.snowflake/connections.toml</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode toml"><code class="sourceCode toml"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="kw">[default]</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="dt">account</span> <span class="op">=</span> <span class="st">&quot;xy12345.us-east-1&quot;</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="dt">user</span> <span class="op">=</span> <span class="st">&quot;MYUSER&quot;</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="dt">authenticator</span> <span class="op">=</span> <span class="st">&quot;externalbrowser&quot;</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="dt">warehouse</span> <span class="op">=</span> <span class="st">&quot;COMPUTE_WH&quot;</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="dt">database</span> <span class="op">=</span> <span class="st">&quot;MY_DB&quot;</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="dt">schema</span> <span class="op">=</span> <span class="st">&quot;PUBLIC&quot;</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="kw">[production]</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="dt">account</span> <span class="op">=</span> <span class="st">&quot;xy12345.us-east-1&quot;</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="dt">user</span> <span class="op">=</span> <span class="st">&quot;SVC_USER&quot;</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="dt">private_key_path</span> <span class="op">=</span> <span class="st">&quot;~/.snowflake/rsa_key.p8&quot;</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="dt">warehouse</span> <span class="op">=</span> <span class="st">&quot;PROD_WH&quot;</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="dt">database</span> <span class="op">=</span> <span class="st">&quot;PROD_DB&quot;</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="dt">schema</span> <span class="op">=</span> <span class="st">&quot;ML&quot;</span></span></code></pre></div>
+<p>Then connect with:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()                    <span class="co"># uses [default]</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>(<span class="at">name =</span> <span class="st">&quot;production&quot;</span>) <span class="co"># uses [production]</span></span></code></pre></div>
+<p>If <code>snowflakeauth</code> is installed, <code>snowflakeR</code>
+uses it for credential resolution. If not, <code>snowflakeR</code> reads
+the TOML file directly.</p>
+</div>
+<div id="key-pair-authentication" class="section level3">
+<h3>Key-pair authentication</h3>
+<p>Generate a key pair:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="ex">openssl</span> genrsa 2048 <span class="kw">|</span> <span class="ex">openssl</span> pkcs8 <span class="at">-topk8</span> <span class="at">-inform</span> PEM <span class="at">-out</span> rsa_key.p8 <span class="at">-nocrypt</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="ex">openssl</span> rsa <span class="at">-in</span> rsa_key.p8 <span class="at">-pubout</span> <span class="at">-out</span> rsa_key.pub</span></code></pre></div>
+<p>Register the public key with your Snowflake user, then:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>(</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">account          =</span> <span class="st">&quot;xy12345.us-east-1&quot;</span>,</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">user             =</span> <span class="st">&quot;MYUSER&quot;</span>,</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>  <span class="at">private_key_file =</span> <span class="st">&quot;~/.snowflake/rsa_key.p8&quot;</span></span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>)</span></code></pre></div>
+<p>This is the recommended method for CI/CD and automated workflows.</p>
+</div>
+<div id="external-browser-sso" class="section level3">
+<h3>External browser (SSO)</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>(</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>  <span class="at">account       =</span> <span class="st">&quot;xy12345.us-east-1&quot;</span>,</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="at">user          =</span> <span class="st">&quot;MYUSER&quot;</span>,</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="at">authenticator =</span> <span class="st">&quot;externalbrowser&quot;</span></span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>)</span></code></pre></div>
+<p>Opens your browser for SSO. Good for interactive local sessions.</p>
+</div>
+<div id="workspace-notebooks-auto-detect" class="section level3">
+<h3>Workspace Notebooks (auto-detect)</h3>
+<p>No configuration needed. See the Workspace Notebooks section
+below.</p>
+</div>
+</div>
+<div id="environment-specific-setup" class="section level2">
+<h2>6. Environment-specific setup</h2>
+<div id="rstudio-posit-workbench" class="section level3">
+<h3>RStudio / Posit Workbench</h3>
+<p>This is the most common setup. After steps 2-3 above, configure
+<code>reticulate</code> to find your Python:</p>
+<p><strong>Option 1: <code>.Renviron</code> file</strong> (recommended –
+persists across sessions)</p>
+<p>Create or edit <code>~/.Renviron</code>:</p>
+<pre><code>RETICULATE_PYTHON=~/.conda/envs/r-snowflakeR/bin/python</code></pre>
+<p>Restart R after editing.</p>
+<p><strong>Option 2: RStudio Python settings</strong></p>
+<p>Go to <strong>Tools &gt; Global Options &gt; Python</strong> and
+select the <code>r-snowflakeR</code> interpreter.</p>
+<p><strong>Option 3: Per-script</strong></p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>reticulate<span class="sc">::</span><span class="fu">use_condaenv</span>(<span class="st">&quot;r-snowflakeR&quot;</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span></code></pre></div>
+<blockquote>
+<p><strong>Note</strong>: <code>reticulate</code> locks the Python
+version on first use in an R session. Make sure to configure Python
+<em>before</em> calling any <code>snowflakeR</code> functions.</p>
+</blockquote>
+</div>
+<div id="vs-code" class="section level3">
+<h3>VS Code</h3>
+<ol style="list-style-type: decimal">
+<li>Install the <a href="https://marketplace.visualstudio.com/items?itemName=REditorSupport.r">R
+Extension for VS Code</a>.</li>
+<li>Set the Python path in your workspace <code>.Renviron</code> or in
+VS Code settings:</li>
+</ol>
+<div class="sourceCode" id="cb16"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a>  <span class="dt">&quot;r.rterm.option&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;--no-save&quot;</span><span class="ot">,</span> <span class="st">&quot;--no-restore&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a>  <span class="dt">&quot;python.defaultInterpreterPath&quot;</span><span class="fu">:</span> <span class="st">&quot;~/.conda/envs/r-snowflakeR/bin/python&quot;</span></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<ol start="3" style="list-style-type: decimal">
+<li>For Jupyter notebooks in VS Code with an R kernel, install
+<code>IRkernel</code>:</li>
+</ol>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>IRkernel<span class="sc">::</span><span class="fu">installspec</span>()</span></code></pre></div>
+<p>The <code>.Renviron</code> approach works the same as in RStudio.</p>
+</div>
+<div id="jupyter-notebooks-local" class="section level3">
+<h3>Jupyter Notebooks (local)</h3>
+<p>There are two ways to use <code>snowflakeR</code> in local Jupyter
+notebooks:</p>
+<p><strong>Option A: R kernel (native R)</strong></p>
+<p>Install <code>IRkernel</code> in your R environment:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;IRkernel&quot;</span>)</span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a>IRkernel<span class="sc">::</span><span class="fu">installspec</span>(<span class="at">user =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+<p>Then create a notebook with the R kernel. <code>snowflakeR</code>
+code runs natively:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span></code></pre></div>
+<p>Make sure the R kernel can find Python by setting
+<code>RETICULATE_PYTHON</code> in <code>~/.Renviron</code> before
+launching Jupyter.</p>
+<p><strong>Option B: Python kernel + rpy2</strong></p>
+<p>This mirrors the Workspace Notebook pattern. Install
+<code>rpy2</code> in your Python environment:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="ex">pip</span> install rpy2</span></code></pre></div>
+<p>In a Python notebook:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="op">%</span>load_ext rpy2.ipython</span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span></code></pre></div>
+</div>
+<div id="snowflake-workspace-notebooks" class="section level3">
+<h3>Snowflake Workspace Notebooks</h3>
+<p>Workspace Notebooks are managed Jupyter environments inside
+Snowflake. They run a <strong>Python kernel</strong> – R is available
+via <code>rpy2</code> and <code>%%R</code> magic cells.</p>
+<p>The R environment is installed by the <a href="https://github.com/Snowflake-Labs/snowflake-notebook-multilang"><code>sfnb-multilang</code></a>
+toolkit, which handles micromamba, R, rpy2, and package installation.
+The <code>snowflakeR</code> package ships demo notebooks in
+<code>inst/notebooks/</code> – find them with:</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="fu">system.file</span>(<span class="st">&quot;notebooks&quot;</span>, <span class="at">package =</span> <span class="st">&quot;snowflakeR&quot;</span>)</span></code></pre></div>
+<p>Upload the notebook(s) you need to your Workspace and follow the
+instructions in the first cell. Key notebooks:</p>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Notebook</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>workspace_quickstart.ipynb</code></td>
+<td>Connection, config, queries, ggplot2</td>
+</tr>
+<tr class="even">
+<td><code>workspace_model_registry.ipynb</code></td>
+<td>Log, deploy, and serve R models</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_feature_store.ipynb</code></td>
+<td>Feature Store: entities, views, training data</td>
+</tr>
+<tr class="even">
+<td><code>workspace_forecasting_demo.ipynb</code></td>
+<td>Time series forecasting with forecast + ggplot2</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key differences from local:</strong></p>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Aspect</th>
+<th>Local</th>
+<th>Workspace</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R kernel</td>
+<td>Native R</td>
+<td>Python + <code>%%R</code></td>
+</tr>
+<tr class="even">
+<td>Python/R env</td>
+<td>You manage</td>
+<td><code>sfnb_setup.install_r()</code></td>
+</tr>
+<tr class="odd">
+<td>Authentication</td>
+<td><code>connections.toml</code> / key-pair</td>
+<td>Auto-detected (SPCS OAuth)</td>
+</tr>
+<tr class="even">
+<td>Package install</td>
+<td><code>install.packages()</code></td>
+<td>YAML config + <code>install.packages()</code></td>
+</tr>
+<tr class="odd">
+<td>Execution context</td>
+<td>Usually set by connection</td>
+<td>Must set explicitly (<a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context">docs</a>)</td>
+</tr>
+<tr class="even">
+<td>Plotting</td>
+<td>Native plot pane</td>
+<td><code>%%R -w W -h H</code> + <code>print(p)</code></td>
+</tr>
+<tr class="odd">
+<td>Session lifecycle</td>
+<td>Persistent</td>
+<td>Re-setup each session (~1-2 min)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Setup steps:</strong></p>
+<ol style="list-style-type: decimal">
+<li><strong>Install R and register <code>%%R</code> magic</strong> (run
+once per session, ~1-2 minutes):</li>
+</ol>
+<div class="sourceCode" id="cb24"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a><span class="co"># Python cell</span></span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r</span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>install_r()</span></code></pre></div>
+<p>Each notebook directory includes <code>sfnb_setup.py</code>, which
+auto-detects the environment and installs <code>sfnb-multilang</code>
+from PyPI if needed. For advanced configurations (ADBC, custom packages,
+Scala/Julia), pass keyword arguments or a YAML config:
+<code>install_r(config=&quot;configs/snowflaker.yaml&quot;)</code>.</p>
+<ol start="2" style="list-style-type: decimal">
+<li><strong>Install and load <code>snowflakeR</code>:</strong></li>
+</ol>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a><span class="fu">options</span>(<span class="at">repos =</span> <span class="fu">c</span>(<span class="at">CRAN =</span> <span class="st">&quot;https://cloud.r-project.org&quot;</span>))</span>
+<span id="cb25-3"><a href="#cb25-3" tabindex="-1"></a></span>
+<span id="cb25-4"><a href="#cb25-4" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">nzchar</span>(<span class="fu">Sys.getenv</span>(<span class="st">&quot;SNOWFLAKER_PATH&quot;</span>))) {</span>
+<span id="cb25-5"><a href="#cb25-5" tabindex="-1"></a>  <span class="fu">install.packages</span>(<span class="fu">Sys.getenv</span>(<span class="st">&quot;SNOWFLAKER_PATH&quot;</span>), <span class="at">repos =</span> <span class="cn">NULL</span>, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>)</span>
+<span id="cb25-6"><a href="#cb25-6" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb25-7"><a href="#cb25-7" tabindex="-1"></a>  <span class="fu">install.packages</span>(<span class="st">&quot;pak&quot;</span>, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb25-8"><a href="#cb25-8" tabindex="-1"></a>  pak<span class="sc">::</span><span class="fu">pak</span>(<span class="st">&quot;Snowflake-Labs/snowflakeR&quot;</span>, <span class="at">ask =</span> <span class="cn">FALSE</span>, <span class="at">upgrade =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb25-9"><a href="#cb25-9" tabindex="-1"></a>}</span>
+<span id="cb25-10"><a href="#cb25-10" tabindex="-1"></a></span>
+<span id="cb25-11"><a href="#cb25-11" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb25-12"><a href="#cb25-12" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb25-13"><a href="#cb25-13" tabindex="-1"></a></span>
+<span id="cb25-14"><a href="#cb25-14" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_load_notebook_config</span>(conn)</span></code></pre></div>
+<p>All table references should use fully qualified names via
+<code>sfr_fqn()</code>:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" tabindex="-1"></a><span class="fu">sfr_write_table</span>(conn, <span class="fu">sfr_fqn</span>(conn, <span class="st">&quot;MY_TABLE&quot;</span>), my_data)</span></code></pre></div>
+<p>See <code>vignette(&quot;workspace-notebooks&quot;)</code> for the full
+Workspace guide including output helpers, authentication details, and
+Python-R data exchange.</p>
+</div>
+<div id="docker-ci-headless-environments" class="section level3">
+<h3>Docker / CI / headless environments</h3>
+<p>For automated pipelines, containers, or GitHub Actions:</p>
+<ol style="list-style-type: decimal">
+<li>Install R and Python in your Dockerfile or CI step.</li>
+<li>Use <strong>key-pair authentication</strong> (no browser available
+for SSO).</li>
+<li>Set environment variables:</li>
+</ol>
+<div class="sourceCode" id="cb27"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb27-1"><a href="#cb27-1" tabindex="-1"></a><span class="bu">export</span> <span class="va">SNOWFLAKE_ACCOUNT</span><span class="op">=</span><span class="st">&quot;xy12345.us-east-1&quot;</span></span>
+<span id="cb27-2"><a href="#cb27-2" tabindex="-1"></a><span class="bu">export</span> <span class="va">SNOWFLAKE_USER</span><span class="op">=</span><span class="st">&quot;SVC_USER&quot;</span></span>
+<span id="cb27-3"><a href="#cb27-3" tabindex="-1"></a><span class="bu">export</span> <span class="va">RETICULATE_PYTHON</span><span class="op">=</span><span class="st">&quot;/usr/bin/python3&quot;</span></span></code></pre></div>
+<ol start="4" style="list-style-type: decimal">
+<li>Or use a <code>connections.toml</code> mounted into the
+container.</li>
+</ol>
+<p>For CI that only runs unit tests (no Snowflake connection needed),
+the Python environment just needs <code>snowflake-ml-python</code>
+installed so that <code>reticulate</code> can import the modules. The
+offline unit tests use mock objects.</p>
+<p>See <code>.github/workflows/R-CMD-check.yml</code> in the repo for a
+working GitHub Actions example.</p>
+</div>
+</div>
+<div id="optional-dependencies" class="section level2">
+<h2>7. Optional dependencies</h2>
+<p>These R packages are optional but enhance
+<code>snowflakeR</code>:</p>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Package</th>
+<th>What it enables</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>RSnowflake</code></td>
+<td>DBI-compliant database access (<code>dbGetQuery</code>,
+<code>dbWriteTable</code>, <code>dbplyr</code>, Connections Pane). See
+<a href="https://github.com/Snowflake-Labs/RSnowflake">RSnowflake</a>.</td>
+</tr>
+<tr class="even">
+<td><code>snowflakeauth</code></td>
+<td><code>connections.toml</code> / <code>config.toml</code> credential
+management</td>
+</tr>
+<tr class="odd">
+<td><code>httr2</code></td>
+<td>Pure-R REST inference via <code>sfr_predict_rest()</code></td>
+</tr>
+<tr class="even">
+<td><code>knitr</code> + <code>rmarkdown</code></td>
+<td>Building vignettes from source</td>
+</tr>
+</tbody>
+</table>
+<p><code>snowflakeR</code> provides SQL querying via
+<code>sfr_query()</code> and <code>sfr_execute()</code> using the
+Python/Snowpark bridge. For full DBI compliance, <code>dbplyr</code>
+integration, and the RStudio Connections Pane, install
+<code>RSnowflake</code> and use <code>sfr_dbi_connection()</code> to
+bridge from an <code>sfr_connection</code>:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" tabindex="-1"></a>dbi_con <span class="ot">&lt;-</span> <span class="fu">sfr_dbi_connection</span>(conn)</span>
+<span id="cb28-2"><a href="#cb28-2" tabindex="-1"></a>DBI<span class="sc">::</span><span class="fu">dbGetQuery</span>(dbi_con, <span class="st">&quot;SELECT 1&quot;</span>)</span>
+<span id="cb28-3"><a href="#cb28-3" tabindex="-1"></a></span>
+<span id="cb28-4"><a href="#cb28-4" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb28-5"><a href="#cb28-5" tabindex="-1"></a><span class="fu">tbl</span>(dbi_con, <span class="st">&quot;MY_TABLE&quot;</span>) <span class="sc">|&gt;</span> <span class="fu">filter</span>(score <span class="sc">&gt;</span> <span class="dv">90</span>) <span class="sc">|&gt;</span> <span class="fu">collect</span>()</span></code></pre></div>
+<p>Install all optional dependencies at once:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" tabindex="-1"></a>pak<span class="sc">::</span><span class="fu">pak</span>(<span class="st">&quot;Snowflake-Labs/snowflakeR&quot;</span>, <span class="at">dependencies =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+</div>
+<div id="troubleshooting" class="section level2">
+<h2>8. Troubleshooting</h2>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Issue</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>reticulate</code> can’t find Python</td>
+<td>Set <code>RETICULATE_PYTHON</code> in <code>.Renviron</code> or call
+<code>reticulate::use_condaenv()</code></td>
+</tr>
+<tr class="even">
+<td><code>snowflake.ml</code> import fails</td>
+<td>Run <code>sfr_install_python_deps()</code> or
+<code>pip install snowflake-ml-python</code></td>
+</tr>
+<tr class="odd">
+<td>Python version mismatch</td>
+<td>Ensure Python &gt;= 3.9; check with
+<code>reticulate::py_config()</code></td>
+</tr>
+<tr class="even">
+<td><code>sfr_connect()</code> hangs</td>
+<td>If using <code>externalbrowser</code>, check your browser opened a
+Snowflake tab</td>
+</tr>
+<tr class="odd">
+<td><code>sfr_connect()</code> fails with “account required”</td>
+<td>Set up <code>connections.toml</code> or pass <code>account</code>
+explicitly</td>
+</tr>
+<tr class="even">
+<td><code>reticulate</code> uses wrong Python</td>
+<td>Call <code>reticulate::use_condaenv()</code> <em>before</em> loading
+<code>snowflakeR</code></td>
+</tr>
+<tr class="odd">
+<td>R packages missing in Workspace</td>
+<td>Add to YAML config or install interactively via
+<code>install.packages()</code></td>
+</tr>
+<tr class="even">
+<td><code>%%R</code> not recognised in Workspace</td>
+<td>Run <code>%load_ext rpy2.ipython</code> in a Python cell</td>
+</tr>
+<tr class="odd">
+<td>Conda solve takes forever</td>
+<td>Use <code>pip install</code> inside a conda env (see Option B
+above)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="next-steps" class="section level2">
+<h2>Next steps</h2>
+<ul>
+<li><code>vignette(&quot;getting-started&quot;)</code> – Connecting, queries,
+DBI/dbplyr</li>
+<li><code>vignette(&quot;model-registry&quot;)</code> – Logging and deploying R
+models</li>
+<li><code>vignette(&quot;feature-store&quot;)</code> – Feature management and
+training data</li>
+<li><code>vignette(&quot;workspace-notebooks&quot;)</code> – Full Workspace
+Notebook guide</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

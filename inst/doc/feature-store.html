@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Feature Store: Manage Features and Generate Training Data</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Feature Store: Manage Features and Generate
+Training Data</h1>
+
+
+
+<p>The Snowflake Feature Store provides a centralised repository for
+feature engineering pipelines, enabling consistent feature reuse across
+training and inference. <code>snowflakeR</code> wraps the full Feature
+Store Python API, giving you an R-native interface.</p>
+<div id="concepts" class="section level2">
+<h2>Concepts</h2>
+<ul>
+<li><strong>Entity</strong>: Defines join keys for features (e.g.,
+<code>CUSTOMER_ID</code>). Immutable once created.</li>
+<li><strong>Feature View</strong>: A set of features derived from a SQL
+query, tied to one or more entities. Can be automatically refreshed
+(managed) or manually maintained (external).</li>
+<li><strong>Feature Store</strong>: A schema in Snowflake that holds
+entities, feature views, and metadata.</li>
+</ul>
+</div>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="co"># Connect to (or create) a Feature Store</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>fs <span class="ot">&lt;-</span> <span class="fu">sfr_feature_store</span>(</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>  conn,</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="at">database  =</span> <span class="st">&quot;ML_DB&quot;</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  <span class="at">schema    =</span> <span class="st">&quot;FEATURES&quot;</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>  <span class="at">warehouse =</span> <span class="st">&quot;ML_WH&quot;</span>,</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>  <span class="at">create    =</span> <span class="cn">TRUE</span>  <span class="co"># Creates schema + tags if they don&#39;t exist</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a>)</span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>fs</span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_feature_store&gt; &quot;ML_DB&quot;.&quot;FEATURES&quot;</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a><span class="co">#&gt;   warehouse: &quot;ML_WH&quot;</span></span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a><span class="co">#&gt;   mode: &quot;create&quot;</span></span></code></pre></div>
+<div id="one-time-admin-setup" class="section level3">
+<h3>One-time admin setup</h3>
+<p>For first-time setup with proper role/privilege provisioning:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">sfr_setup_feature_store</span>(conn, <span class="st">&quot;ML_DB&quot;</span>, <span class="st">&quot;FEATURES&quot;</span>, <span class="st">&quot;ML_WH&quot;</span>)</span></code></pre></div>
+</div>
+</div>
+<div id="entities" class="section level2">
+<h2>Entities</h2>
+<p>Entities define the join keys that link features to business
+objects:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Create entities</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>customer <span class="ot">&lt;-</span> <span class="fu">sfr_create_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>, <span class="st">&quot;CUSTOMER_ID&quot;</span>, <span class="at">desc =</span> <span class="st">&quot;Customer entity&quot;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>product  <span class="ot">&lt;-</span> <span class="fu">sfr_create_entity</span>(fs, <span class="st">&quot;PRODUCT&quot;</span>, <span class="st">&quot;PRODUCT_ID&quot;</span>, <span class="at">desc =</span> <span class="st">&quot;Product entity&quot;</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>customer</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_entity&gt; &quot;CUSTOMER&quot;</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt;   join_keys: &quot;CUSTOMER_ID&quot;</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co"># List all entities</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="fu">sfr_list_entities</span>(fs)</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co"># Get a specific entity</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>customer <span class="ot">&lt;-</span> <span class="fu">sfr_get_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>)</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co"># Update description</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="fu">sfr_update_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>, <span class="at">desc =</span> <span class="st">&quot;Primary customer entity with demographics&quot;</span>)</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co"># Delete an entity (fails if referenced by Feature Views)</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="fu">sfr_delete_entity</span>(fs, <span class="st">&quot;PRODUCT&quot;</span>)</span></code></pre></div>
+</div>
+<div id="feature-views" class="section level2">
+<h2>Feature Views</h2>
+<p>Feature Views define the SQL transformation that produces features.
+There are two approaches.</p>
+<div id="two-step-draft-then-register" class="section level3">
+<h3>Two-step: draft then register</h3>
+<p>This mirrors the Python API exactly and is useful when you want to
+inspect the draft before materialising:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Step 1: Create a local draft</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>fv_draft <span class="ot">&lt;-</span> <span class="fu">sfr_feature_view</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">name         =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">entities     =</span> customer,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">features     =</span> <span class="st">&quot;</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="st">    SELECT</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="st">      customer_id,</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="st">      AVG(order_total) AS avg_order_total,</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="st">      COUNT(*) AS order_count,</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="st">      MAX(order_date) AS last_order_date</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="st">    FROM orders</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="st">    GROUP BY customer_id</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="st">  &quot;</span>,</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="at">refresh_freq =</span> <span class="st">&quot;1 hour&quot;</span>,</span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  <span class="at">desc         =</span> <span class="st">&quot;Customer aggregate features from orders&quot;</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>)</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>fv_draft</span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_feature_view&gt; &quot;CUSTOMER_FEATURES&quot; [draft]</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;   entities: &quot;CUSTOMER&quot;</span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;   refresh: &quot;1 hour&quot;</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co"># Step 2: Register (materialise as a dynamic table)</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_register_feature_view</span>(fs, fv_draft, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt; Feature View &quot;CUSTOMER_FEATURES&quot; version &quot;v1&quot; registered.</span></span></code></pre></div>
+</div>
+<div id="one-step-convenience" class="section level3">
+<h3>One-step convenience</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  fs,</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">name         =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">version      =</span> <span class="st">&quot;v1&quot;</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">entities     =</span> customer,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">features     =</span> <span class="st">&quot;</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="st">    SELECT customer_id, AVG(order_total) AS avg_order_total,</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="st">           COUNT(*) AS order_count</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="st">    FROM orders GROUP BY customer_id</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="st">  &quot;</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>  <span class="at">refresh_freq =</span> <span class="st">&quot;1 hour&quot;</span>,</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>  <span class="at">desc         =</span> <span class="st">&quot;Customer order aggregates&quot;</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="using-dbplyr-for-features" class="section level3">
+<h3>Using dbplyr for features</h3>
+<p>You can define features using dplyr pipelines instead of raw SQL. The
+<code>features</code> argument accepts dbplyr lazy tables. This requires
+the <a href="https://github.com/Snowflake-Labs/RSnowflake">RSnowflake</a>
+package for DBI/dbplyr connectivity:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">library</span>(dbplyr)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co"># Get a DBI connection from the sfr_connection</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>dbi_con <span class="ot">&lt;-</span> <span class="fu">sfr_dbi_connection</span>(conn)</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>orders_tbl <span class="ot">&lt;-</span> <span class="fu">tbl</span>(dbi_con, <span class="st">&quot;ORDERS&quot;</span>)</span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>customer_features_query <span class="ot">&lt;-</span> orders_tbl <span class="sc">|&gt;</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>  <span class="fu">group_by</span>(customer_id) <span class="sc">|&gt;</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>    <span class="at">avg_order_total =</span> <span class="fu">mean</span>(order_total, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>    <span class="at">order_count =</span> <span class="fu">n</span>(),</span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a>    <span class="at">last_order_date =</span> <span class="fu">max</span>(order_date, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a>  )</span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a>  fs,</span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>  <span class="at">name     =</span> <span class="st">&quot;CUSTOMER_FEATURES_DBPLYR&quot;</span>,</span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>  <span class="at">version  =</span> <span class="st">&quot;v1&quot;</span>,</span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a>  <span class="at">entities =</span> customer,</span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>  <span class="at">features =</span> customer_features_query,  <span class="co"># dbplyr lazy table -&gt; SQL</span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>  <span class="at">desc     =</span> <span class="st">&quot;Customer features built with dplyr&quot;</span></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="external-manually-managed-feature-views" class="section level3">
+<h3>External (manually managed) Feature Views</h3>
+<p>Omit <code>refresh_freq</code> to create a Feature View without
+automatic refresh. You maintain the underlying table yourself (e.g., via
+dbt):</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>fv_external <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  fs,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">name     =</span> <span class="st">&quot;CUSTOMER_DEMOGRAPHICS&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">version  =</span> <span class="st">&quot;v1&quot;</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">entities =</span> customer,</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="at">features =</span> <span class="st">&quot;SELECT * FROM customer_demographics_table&quot;</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="co"># No refresh_freq -&gt; external Feature View</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="time-series-features" class="section level3">
+<h3>Time-series features</h3>
+<p>For point-in-time correct joins, specify a
+<code>timestamp_col</code>:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>fv_ts <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  fs,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">name          =</span> <span class="st">&quot;CUSTOMER_ACTIVITY&quot;</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">version       =</span> <span class="st">&quot;v1&quot;</span>,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">entities      =</span> customer,</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">features      =</span> <span class="st">&quot;SELECT customer_id, event_ts, page_views, clicks FROM activity&quot;</span>,</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  <span class="at">timestamp_col =</span> <span class="st">&quot;event_ts&quot;</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  <span class="at">refresh_freq  =</span> <span class="st">&quot;30 minutes&quot;</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+</div>
+<div id="managing-feature-views" class="section level2">
+<h2>Managing Feature Views</h2>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># List all Feature Views</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="fu">sfr_list_feature_views</span>(fs)</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co"># Filter by entity or name</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="fu">sfr_list_feature_views</span>(fs, <span class="at">entity_name =</span> <span class="st">&quot;CUSTOMER&quot;</span>)</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="fu">sfr_list_feature_views</span>(fs, <span class="at">feature_view_name =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>)</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co"># Get a specific version</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_get_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co"># Show all versions of a Feature View</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="fu">sfr_show_fv_versions</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>)</span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co"># Read feature data</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a>feature_data <span class="ot">&lt;-</span> <span class="fu">sfr_read_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="fu">head</span>(feature_data)</span></code></pre></div>
+<div id="refresh-management" class="section level3">
+<h3>Refresh management</h3>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Manually trigger a refresh</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="fu">sfr_refresh_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co"># Check refresh history</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>history <span class="ot">&lt;-</span> <span class="fu">sfr_get_refresh_history</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>history</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt;              name    state      refresh_start_time ...</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt; 1 CUSTOMER_FE...  SUCCEEDED 2026-02-10 14:53:58  ...</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co"># Pause automatic refresh</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="fu">sfr_suspend_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a></span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a><span class="co"># Resume automatic refresh</span></span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a><span class="fu">sfr_resume_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span></code></pre></div>
+</div>
+</div>
+<div id="generate-training-data" class="section level2">
+<h2>Generate Training Data</h2>
+<p>Join spine (label) data with features using point-in-time correct
+joins:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>training_data <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  fs,</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">spine =</span> <span class="st">&quot;</span></span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="st">    SELECT customer_id, churn_date AS event_ts, churned AS label</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="st">    FROM churn_labels</span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="st">  &quot;</span>,</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(</span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">name =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>),</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">name =</span> <span class="st">&quot;CUSTOMER_ACTIVITY&quot;</span>, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  ),</span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>  <span class="at">spine_timestamp_col =</span> <span class="st">&quot;event_ts&quot;</span>,</span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a>  <span class="at">spine_label_cols    =</span> <span class="st">&quot;label&quot;</span></span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a>)</span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a></span>
+<span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a><span class="fu">head</span>(training_data)</span>
+<span id="cb11-16"><a href="#cb11-16" tabindex="-1"></a><span class="co">#&gt;   customer_id event_ts label avg_order_total order_count page_views clicks</span></span>
+<span id="cb11-17"><a href="#cb11-17" tabindex="-1"></a><span class="co">#&gt; 1       C001  2026-... 1          45.20          12         320     45</span></span>
+<span id="cb11-18"><a href="#cb11-18" tabindex="-1"></a><span class="co">#&gt; ...</span></span></code></pre></div>
+<p>You can also pass registered <code>sfr_feature_view</code> objects
+directly:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>fv1 <span class="ot">&lt;-</span> <span class="fu">sfr_get_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>fv2 <span class="ot">&lt;-</span> <span class="fu">sfr_get_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_ACTIVITY&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>training_data <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  fs,</span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>  <span class="at">spine    =</span> <span class="st">&quot;SELECT customer_id, churned FROM churn_labels&quot;</span>,</span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(fv1, fv2),</span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>  <span class="at">spine_label_cols =</span> <span class="st">&quot;churned&quot;</span></span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>)</span></code></pre></div>
+<div id="materialise-training-data-to-a-table" class="section level3">
+<h3>Materialise training data to a table</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>training_data <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>  fs,</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="at">spine    =</span> <span class="st">&quot;SELECT customer_id, churned FROM churn_labels&quot;</span>,</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(fv1, fv2),</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="at">save_as  =</span> <span class="st">&quot;CHURN_TRAINING_SET_V1&quot;</span></span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+</div>
+<div id="retrieve-features-for-inference" class="section level2">
+<h2>Retrieve Features for Inference</h2>
+<p>At inference time, fetch the latest feature values without labels or
+point-in-time logic:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>features_for_scoring <span class="ot">&lt;-</span> <span class="fu">sfr_retrieve_features</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  fs,</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">spine    =</span> <span class="st">&quot;SELECT customer_id FROM customers_to_score&quot;</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(fv1, fv2)</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="clean-up" class="section level2">
+<h2>Clean up</h2>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="fu">sfr_delete_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="fu">sfr_delete_feature_view</span>(fs, <span class="st">&quot;CUSTOMER_ACTIVITY&quot;</span>, <span class="st">&quot;v1&quot;</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">sfr_delete_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>)</span></code></pre></div>
+</div>
+<div id="end-to-end-workflow" class="section level2">
+<h2>End-to-end workflow</h2>
+<p>Here’s a complete example tying everything together:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co"># 1. Connect</span></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>fs   <span class="ot">&lt;-</span> <span class="fu">sfr_feature_store</span>(conn, <span class="at">database =</span> <span class="st">&quot;ML_DB&quot;</span>, <span class="at">schema =</span> <span class="st">&quot;FEATURES&quot;</span>,</span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>                          <span class="at">warehouse =</span> <span class="st">&quot;ML_WH&quot;</span>, <span class="at">create =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a>reg  <span class="ot">&lt;-</span> <span class="fu">sfr_model_registry</span>(conn, <span class="at">database =</span> <span class="st">&quot;ML_DB&quot;</span>, <span class="at">schema =</span> <span class="st">&quot;MODELS&quot;</span>)</span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a></span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co"># 2. Create entity + feature view</span></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a>entity <span class="ot">&lt;-</span> <span class="fu">sfr_create_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>, <span class="st">&quot;CUSTOMER_ID&quot;</span>)</span>
+<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
+<span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a>  fs, <span class="st">&quot;CUST_FV&quot;</span>, <span class="st">&quot;v1&quot;</span>, <span class="at">entities =</span> entity,</span>
+<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a>  <span class="at">features =</span> <span class="st">&quot;SELECT customer_id, avg_spend, tenure FROM customer_summary&quot;</span>,</span>
+<span id="cb16-14"><a href="#cb16-14" tabindex="-1"></a>  <span class="at">refresh_freq =</span> <span class="st">&quot;1 hour&quot;</span></span>
+<span id="cb16-15"><a href="#cb16-15" tabindex="-1"></a>)</span>
+<span id="cb16-16"><a href="#cb16-16" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" tabindex="-1"></a><span class="co"># 3. Generate training data</span></span>
+<span id="cb16-18"><a href="#cb16-18" tabindex="-1"></a>training <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
+<span id="cb16-19"><a href="#cb16-19" tabindex="-1"></a>  fs,</span>
+<span id="cb16-20"><a href="#cb16-20" tabindex="-1"></a>  <span class="at">spine =</span> <span class="st">&quot;SELECT customer_id, churned FROM labels&quot;</span>,</span>
+<span id="cb16-21"><a href="#cb16-21" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">name =</span> <span class="st">&quot;CUST_FV&quot;</span>, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>)),</span>
+<span id="cb16-22"><a href="#cb16-22" tabindex="-1"></a>  <span class="at">spine_label_cols =</span> <span class="st">&quot;churned&quot;</span></span>
+<span id="cb16-23"><a href="#cb16-23" tabindex="-1"></a>)</span>
+<span id="cb16-24"><a href="#cb16-24" tabindex="-1"></a></span>
+<span id="cb16-25"><a href="#cb16-25" tabindex="-1"></a><span class="co"># 4. Train in R</span></span>
+<span id="cb16-26"><a href="#cb16-26" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">glm</span>(churned <span class="sc">~</span> avg_spend <span class="sc">+</span> tenure, <span class="at">data =</span> training, <span class="at">family =</span> binomial)</span>
+<span id="cb16-27"><a href="#cb16-27" tabindex="-1"></a></span>
+<span id="cb16-28"><a href="#cb16-28" tabindex="-1"></a><span class="co"># 5. Test locally</span></span>
+<span id="cb16-29"><a href="#cb16-29" tabindex="-1"></a><span class="fu">sfr_predict_local</span>(model, training[<span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>, <span class="fu">c</span>(<span class="st">&quot;avg_spend&quot;</span>, <span class="st">&quot;tenure&quot;</span>)])</span>
+<span id="cb16-30"><a href="#cb16-30" tabindex="-1"></a></span>
+<span id="cb16-31"><a href="#cb16-31" tabindex="-1"></a><span class="co"># 6. Register</span></span>
+<span id="cb16-32"><a href="#cb16-32" tabindex="-1"></a><span class="fu">sfr_log_model</span>(</span>
+<span id="cb16-33"><a href="#cb16-33" tabindex="-1"></a>  reg, model, <span class="st">&quot;CHURN_MODEL&quot;</span>,</span>
+<span id="cb16-34"><a href="#cb16-34" tabindex="-1"></a>  <span class="at">input_cols  =</span> <span class="fu">list</span>(<span class="at">avg_spend =</span> <span class="st">&quot;double&quot;</span>, <span class="at">tenure =</span> <span class="st">&quot;double&quot;</span>),</span>
+<span id="cb16-35"><a href="#cb16-35" tabindex="-1"></a>  <span class="at">output_cols =</span> <span class="fu">list</span>(<span class="at">prediction =</span> <span class="st">&quot;double&quot;</span>)</span>
+<span id="cb16-36"><a href="#cb16-36" tabindex="-1"></a>)</span>
+<span id="cb16-37"><a href="#cb16-37" tabindex="-1"></a></span>
+<span id="cb16-38"><a href="#cb16-38" tabindex="-1"></a><span class="co"># 7. Score new customers</span></span>
+<span id="cb16-39"><a href="#cb16-39" tabindex="-1"></a>new_features <span class="ot">&lt;-</span> <span class="fu">sfr_retrieve_features</span>(</span>
+<span id="cb16-40"><a href="#cb16-40" tabindex="-1"></a>  fs,</span>
+<span id="cb16-41"><a href="#cb16-41" tabindex="-1"></a>  <span class="at">spine =</span> <span class="st">&quot;SELECT customer_id FROM active_customers&quot;</span>,</span>
+<span id="cb16-42"><a href="#cb16-42" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">name =</span> <span class="st">&quot;CUST_FV&quot;</span>, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>))</span>
+<span id="cb16-43"><a href="#cb16-43" tabindex="-1"></a>)</span>
+<span id="cb16-44"><a href="#cb16-44" tabindex="-1"></a>predictions <span class="ot">&lt;-</span> <span class="fu">sfr_predict</span>(reg, <span class="st">&quot;CHURN_MODEL&quot;</span>, new_features)</span></code></pre></div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

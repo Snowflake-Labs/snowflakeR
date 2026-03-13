@@ -175,10 +175,16 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   }, logical(1))
   pinned_names <- sub("[=<>!].*", "", conda_deps[already_pinned])
 
-  # Pin r-base to the exact current R major.minor.patch
+  # Pin r-base to the current R major.minor series.  We use >=major.minor
+  # rather than an exact patch pin because conda-forge may lag behind the
+  # very latest R patch release (e.g. R 4.5.3 may not be available yet).
+  # Matching on major.minor is sufficient to prevent serialization
+  # incompatibilities across R versions.
   if (!any(grepl("^r-base", pinned_names))) {
-    r_ver <- paste(R.version$major, R.version$minor, sep = ".")
-    conda_deps <- c(paste0("r-base=", r_ver), conda_deps)
+    r_major <- R.version$major
+    r_minor <- strsplit(R.version$minor, "\\.")[[1]][1]
+    r_pin <- paste0("r-base>=", r_major, ".", r_minor)
+    conda_deps <- c(r_pin, conda_deps)
   }
 
   # Expand predict_pkgs: if "tidymodels" is requested, add core sub-deps

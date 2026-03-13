@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Using snowflakeR in Workspace Notebooks</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Using snowflakeR in Workspace
+Notebooks</h1>
+
+
+
+<p>Snowflake Workspace Notebooks provide a managed Jupyter environment
+with a Python kernel. <code>snowflakeR</code> works seamlessly in this
+environment via <code>rpy2</code> and <code>%%R</code> magic cells,
+giving R users full access to Snowflake ML features without leaving the
+notebook.</p>
+<p>This vignette covers the Workspace-specific setup and patterns. For
+general <code>snowflakeR</code> usage, see
+<code>vignette(&quot;getting-started&quot;)</code>.</p>
+<div id="how-r-cells-work" class="section level2">
+<h2>How <code>%%R</code> Cells Work</h2>
+<p>Workspace Notebooks only support Python cells – there is no R kernel
+option. However, when you start a cell with <code>%%R</code>, you are
+using an IPython “cell magic” that tells the Python kernel: “don’t
+execute this as Python – hand it to rpy2, which will execute it as R.”
+The cell contents are pure R code; rpy2 passes it to the embedded R
+interpreter, runs it, and returns any output or plots back to the
+notebook. To you as the user, it feels like writing in an R notebook –
+the Python kernel orchestrating behind the scenes is an implementation
+detail you can ignore.</p>
+<p>The setup cells (Steps 1-3 below) are the only Python code you need
+to run. After that, everything is <code>%%R</code>.</p>
+</div>
+<div id="architecture" class="section level2">
+<h2>Architecture</h2>
+<p>In a Workspace Notebook, the data flow is:</p>
+<pre><code>Python Kernel (Jupyter)
+  |-- rpy2 (Python-R bridge)
+  |     |-- %%R magic cells (R code execution)
+  |     |-- snowflakeR (R package, ML platform features)
+  |     |     |-- reticulate (R-Python bridge)
+  |     |           |-- snowflake-ml-python (Snowflake ML SDK)
+  |     |                 |-- Snowpark Session (built-in)
+  |     |
+  |     |-- RSnowflake (R package, DBI/dbplyr, optional)
+  |           |-- Snowflake SQL API v2 (reads, small writes)
+  |           |-- reticulate -&gt; write_pandas (bulk writes via SPCS path)
+  |           |-- ADBC (optional, Arrow-native reads)
+  |
+  |-- Active Snowpark Session (auto-detected by sfr_connect() / RSnowflake)</code></pre>
+<p><code>snowflakeR</code> uses <code>reticulate</code> to call the
+Snowflake ML Python SDK, while <code>RSnowflake</code> connects directly
+to Snowflake via HTTPS (no Python needed). Both work in Workspace
+Notebooks. For ML workflows (Model Registry, Feature Store), use
+<code>snowflakeR</code>. For standard DBI/dbplyr database operations,
+install <code>RSnowflake</code> and use
+<code>sfr_dbi_connection()</code>.</p>
+</div>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<p><code>snowflakeR</code> ships a <strong>self-contained
+<code>notebooks/</code> directory</strong> with all the scripts, config,
+and helpers needed. Upload the folder contents to your Workspace, then
+follow the steps below.</p>
+<p>To find the directory after installing the package:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">system.file</span>(<span class="st">&quot;notebooks&quot;</span>, <span class="at">package =</span> <span class="st">&quot;snowflakeR&quot;</span>)</span></code></pre></div>
+<div id="step-0-configure-execution-context" class="section level3">
+<h3>Step 0: Configure execution context</h3>
+<p>Workspace Notebooks do <a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context">not
+auto-set database or schema</a>. Copy
+<code>notebook_config.yaml.template</code> to
+<code>notebook_config.yaml</code> and set your warehouse, database, and
+schema:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">context</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="at">  </span><span class="fu">warehouse</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_WAREHOUSE&quot;</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="at">  </span><span class="fu">database</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_DATABASE&quot;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_SCHEMA&quot;</span></span></code></pre></div>
+<p>All notebooks read this file. Table references use fully qualified
+names (<code>DATABASE.SCHEMA.TABLE</code>) via
+<code>sfr_fqn()</code>.</p>
+</div>
+<div id="step-1-install-the-r-environment-and-register-r-magic" class="section level3">
+<h3>Step 1: Install the R environment and register <code>%%R</code>
+magic</h3>
+<p>Workspace Notebooks run in containers without R pre-installed. The <a href="https://github.com/Snowflake-Labs/snowflake-notebook-multilang"><code>sfnb-multilang</code></a>
+toolkit handles installation. Each notebook directory includes an
+<code>sfnb_setup.py</code> bootstrap file that auto-detects the
+environment and installs the toolkit if needed:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Python cell -- run once per session (~1-2 minutes)</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>install_r()</span></code></pre></div>
+<p>This single call installs R via <code>micromamba</code> +
+conda-forge, registers the <code>%%R</code> cell magic via
+<code>rpy2</code>, and configures the R environment. Everything is
+installed in <strong>user-space</strong> – no <code>sudo</code> or root
+access is required.</p>
+<p>For more advanced configurations (ADBC, DuckDB, custom packages,
+Scala/Julia), pass keyword arguments or a YAML config file:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>install_r(r_adbc<span class="op">=</span><span class="va">True</span>)                      <span class="co"># enable ADBC</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>install_r(config<span class="op">=</span><span class="st">&quot;configs/snowflaker.yaml&quot;</span>)  <span class="co"># use preset config</span></span></code></pre></div>
+<p>See the preset configs in the
+<code>snowflake-notebook-multilang</code> repo under
+<code>configs/</code> for examples.</p>
+<p><strong>Alternative (no sfnb_setup.py):</strong> If you prefer not to
+use the bootstrap file, you can inline the setup directly in a notebook
+cell (~25 lines):</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="cf">try</span>:</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>    <span class="im">from</span> sfnb_multilang <span class="im">import</span> install</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="cf">except</span> <span class="pp">ImportError</span>:</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>    <span class="im">import</span> subprocess, sys</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>    subprocess.check_call([sys.executable, <span class="st">&quot;-m&quot;</span>, <span class="st">&quot;pip&quot;</span>, <span class="st">&quot;install&quot;</span>, <span class="st">&quot;-q&quot;</span>, <span class="st">&quot;sfnb-multilang&quot;</span>])</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>    <span class="im">from</span> sfnb_multilang <span class="im">import</span> install</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>install(languages<span class="op">=</span>[<span class="st">&quot;r&quot;</span>])</span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="im">from</span> r_helpers <span class="im">import</span> setup_r_environment</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>setup_r_environment()</span></code></pre></div>
+<p><strong>Licensing:</strong> All software installed by the toolkit is
+freely-licensed open-source. <code>micromamba</code> is BSD-3-Clause
+(developed by the <a href="https://github.com/mamba-org">mamba-org</a>
+community, not affiliated with Anaconda, Inc.). All packages come from
+<a href="https://conda-forge.org/">conda-forge</a>, a community-driven
+open-source collection entirely separate from Anaconda’s default
+repository. R is GPL-licensed, and CRAN packages carry their own
+open-source licenses. You can use all of this freely in commercial
+environments.</p>
+<p><strong>External Access Integration (EAI):</strong> The toolkit
+downloads packages from external hosts (<code>micro.mamba.pm</code>,
+<code>conda.anaconda.org</code>, <code>repo.anaconda.com</code>, and
+optionally <code>cloud.r-project.org</code>). Snowflake blocks outbound
+traffic by default, so you must attach an <a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-external-access">External
+Access Integration</a> that allows these hosts. The toolkit can generate
+the required EAI SQL for you – see the <a href="https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md">network
+rules documentation</a>.</p>
+</div>
+<div id="step-2-install-and-load-snowflaker" class="section level3">
+<h3>Step 2: Install and load snowflakeR</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="fu">options</span>(<span class="at">repos =</span> <span class="fu">c</span>(<span class="at">CRAN =</span> <span class="st">&quot;https://cloud.r-project.org&quot;</span>))</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>deps <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;reticulate&quot;</span>, <span class="st">&quot;cli&quot;</span>, <span class="st">&quot;rlang&quot;</span>)</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="cf">for</span> (pkg <span class="cf">in</span> deps) {</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">requireNamespace</span>(pkg, <span class="at">quietly =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>    <span class="fu">install.packages</span>(pkg, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>}</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">nzchar</span>(<span class="fu">Sys.getenv</span>(<span class="st">&quot;SNOWFLAKER_PATH&quot;</span>))) {</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="fu">install.packages</span>(<span class="fu">Sys.getenv</span>(<span class="st">&quot;SNOWFLAKER_PATH&quot;</span>), <span class="at">repos =</span> <span class="cn">NULL</span>, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>)</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>  <span class="fu">install.packages</span>(<span class="st">&quot;pak&quot;</span>, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>  pak<span class="sc">::</span><span class="fu">pak</span>(<span class="st">&quot;Snowflake-Labs/snowflakeR&quot;</span>, <span class="at">ask =</span> <span class="cn">FALSE</span>, <span class="at">upgrade =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>}</span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span></code></pre></div>
+<p>When running from the internal monorepo, <code>sfnb_setup.py</code>
+automatically sets <code>SNOWFLAKER_PATH</code> to the local package
+source. From the public repository, the <code>else</code> branch
+installs from GitHub via <code>pak</code>.</p>
+</div>
+<div id="installing-additional-r-packages" class="section level3">
+<h3>Installing additional R packages</h3>
+<p>You can also install packages interactively from <code>%%R</code>
+cells. Workspace Notebooks have no interactive stdin, so use this
+pattern to suppress prompts and compilation noise:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="fu">options</span>(<span class="at">repos =</span> <span class="fu">c</span>(<span class="at">CRAN =</span> <span class="st">&quot;https://cloud.r-project.org&quot;</span>))</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;forecast&quot;</span>, <span class="at">type =</span> <span class="st">&quot;source&quot;</span>, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="fu">suppressPackageStartupMessages</span>(<span class="fu">library</span>(forecast))</span></code></pre></div>
+<ul>
+<li><code>options(repos = ...)</code> – suppresses the CRAN mirror
+selection prompt</li>
+<li><code>type = &quot;source&quot;</code> – suppresses the “binary vs source”
+prompt (no Linux binaries on CRAN)</li>
+<li><code>quiet = TRUE</code> – suppresses verbose compilation
+output</li>
+<li><code>suppressPackageStartupMessages()</code> – suppresses startup
+banners</li>
+</ul>
+<p>For packages that have their own interactive prompts (e.g.,
+<code>pak::pak()</code>), use <code>ask = FALSE</code> or
+<code>upgrade = &quot;never&quot;</code>.</p>
+<p><strong>System library dependencies:</strong> R packages with
+compiled C/C++ code may depend on system libraries (e.g.,
+<code>sf</code> needs <code>libgdal</code>). Since you don’t have root
+access in the container, <code>install.packages()</code> will fail if
+those libraries are missing. Use conda-forge equivalents (e.g.,
+<code>r-sf</code>) in your YAML config preset’s
+<code>conda_packages</code> list instead – conda-forge bundles the
+required system libraries.</p>
+<p><strong>Persistence:</strong> Packages installed interactively don’t
+persist across container recycles. Add regularly-used packages to a YAML
+config preset (see <code>configs/snowflaker.yaml</code> in the
+<code>sfnb-multilang</code> toolkit) for automatic reinstallation.</p>
+</div>
+<div id="step-5-connect-and-set-execution-context" class="section level3">
+<h3>Step 5: Connect and set execution context</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()   <span class="co"># auto-detects Workspace session</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co"># Load config and set USE WAREHOUSE / DATABASE / SCHEMA</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_load_notebook_config</span>(conn)</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co"># Use fully qualified names for all table operations</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="fu">sfr_fqn</span>(conn, <span class="st">&quot;MY_TABLE&quot;</span>)</span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; &quot;MY_DATABASE.MY_SCHEMA.MY_TABLE&quot;</span></span></code></pre></div>
+</div>
+</div>
+<div id="connecting-auto-detection" class="section level2">
+<h2>Connecting: Auto-detection</h2>
+<p>The biggest convenience in Workspace Notebooks:
+<code>sfr_connect()</code> automatically detects the active Snowpark
+session. No credentials, no configuration files.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>conn</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co">#&gt; &lt;sfr_connection&gt;</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co">#&gt;   environment: &quot;workspace&quot;</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt;   auth: &quot;session_token&quot;</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt;   account: &quot;xy12345&quot;</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;   database: &quot;MY_DB&quot;</span></span></code></pre></div>
+<p>Internally, <code>sfr_connect()</code> calls
+<code>get_active_session()</code> from the Snowpark Python library. If
+that succeeds (it always does in Workspace Notebooks), it wraps the
+session in an <code>sfr_connection</code> object.</p>
+<p>When running locally, <code>sfr_connect()</code> falls back to
+<code>connections.toml</code> or explicit parameters. Your code works in
+both environments without changes.</p>
+</div>
+<div id="r-magic-patterns" class="section level2">
+<h2><code>%%R</code> magic patterns</h2>
+<div id="basic-r-cell" class="section level3">
+<h3>Basic R cell</h3>
+<p>Every cell starting with <code>%%R</code> has its contents executed
+as R code by rpy2. The R session persists across cells, so variables,
+loaded packages, and connections carry over.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">sfr_query</span>(conn, <span class="st">&quot;SELECT * FROM my_table LIMIT 10&quot;</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="fu">head</span>(result)</span></code></pre></div>
+</div>
+<div id="passing-data-from-python-to-r--i-flag" class="section level3">
+<h3>Passing data from Python to R (<code>-i</code> flag)</h3>
+<p>Since <code>%%R</code> cells run inside a Python kernel, you can pass
+variables between Python and R using the <code>-i</code> (input) and
+<code>-o</code> (output) flags. rpy2 handles type conversion
+automatically (pandas DataFrames become R data.frames, scalars map to R
+vectors, etc.).</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Python cell</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>py_data <span class="op">=</span> pd.DataFrame({<span class="st">&quot;x&quot;</span>: [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], <span class="st">&quot;y&quot;</span>: [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]})</span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="sc">%%</span>R <span class="sc">-</span>i py_data</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co"># py_data is now an R data.frame</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="fu">str</span>(py_data)</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="fu">summary</span>(py_data)</span></code></pre></div>
+</div>
+<div id="passing-data-from-r-to-python--o-flag" class="section level3">
+<h3>Passing data from R to Python (<code>-o</code> flag)</h3>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="sc">%%</span>R <span class="sc">-</span>o r_result</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>r_result <span class="ot">&lt;-</span> <span class="fu">sfr_query</span>(conn, <span class="st">&quot;SELECT * FROM my_table&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># Python cell -- r_result is now a pandas DataFrame</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>r_result.head()</span></code></pre></div>
+</div>
+<div id="plot-sizing--w-and--h-flags" class="section level3">
+<h3>Plot sizing (<code>-w</code> and <code>-h</code> flags)</h3>
+<p>Workspace Notebooks need explicit plot dimensions:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="sc">%%</span>R <span class="sc">-</span>w <span class="dv">700</span> <span class="sc">-</span>h <span class="dv">450</span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>p <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(mtcars, <span class="fu">aes</span>(<span class="at">x =</span> wt, <span class="at">y =</span> mpg)) <span class="sc">+</span></span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a></span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="fu">print</span>(p)  <span class="co"># print() is required to render in Workspace</span></span></code></pre></div>
+</div>
+</div>
+<div id="output-helpers" class="section level2">
+<h2>Output helpers</h2>
+<p>Workspace Notebooks add extra line breaks to R output.
+<code>snowflakeR</code> includes helper functions for cleaner
+display:</p>
+<table>
+<colgroup>
+<col width="30%" />
+<col width="30%" />
+<col width="39%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Function</th>
+<th>Replaces</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>rprint(x)</code></td>
+<td><code>print(x)</code></td>
+<td>Clean printing of any object</td>
+</tr>
+<tr class="even">
+<td><code>rview(df, n)</code></td>
+<td><code>head(df)</code></td>
+<td>View data frame with optional row limit</td>
+</tr>
+<tr class="odd">
+<td><code>rglimpse(df)</code></td>
+<td><code>glimpse(df)</code></td>
+<td>Compact data frame structure</td>
+</tr>
+<tr class="even">
+<td><code>rcat(...)</code></td>
+<td><code>cat(...)</code></td>
+<td>Clean <code>cat()</code> output</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">sfr_query</span>(conn, <span class="st">&quot;SELECT * FROM my_table&quot;</span>)</span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a><span class="co"># Instead of print(df):</span></span>
+<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a><span class="fu">rprint</span>(df)</span>
+<span id="cb17-6"><a href="#cb17-6" tabindex="-1"></a></span>
+<span id="cb17-7"><a href="#cb17-7" tabindex="-1"></a><span class="co"># Instead of head(df, 10):</span></span>
+<span id="cb17-8"><a href="#cb17-8" tabindex="-1"></a><span class="fu">rview</span>(df, <span class="at">n =</span> <span class="dv">10</span>)</span>
+<span id="cb17-9"><a href="#cb17-9" tabindex="-1"></a></span>
+<span id="cb17-10"><a href="#cb17-10" tabindex="-1"></a><span class="co"># Instead of str(df):</span></span>
+<span id="cb17-11"><a href="#cb17-11" tabindex="-1"></a><span class="fu">rglimpse</span>(df)</span></code></pre></div>
+</div>
+<div id="bulk-write-performance" class="section level2">
+<h2>Bulk Write Performance</h2>
+<p>When writing large data from R in Workspace Notebooks, RSnowflake
+automatically routes through ADBC (if installed) or the Python Snowpark
+session as a fallback. Both paths use the <strong>internal SPCS
+gateway</strong> (<code>SNOWFLAKE_HOST</code>) with SPCS OAuth
+authentication – zero-config, no public endpoint or PAT required.</p>
+<p>The preferred data flow for bulk writes in Workspace is:</p>
+<pre><code>R data.frame  --&gt;  ADBC bulk ingest (PUT + COPY INTO)
+                   via internal SPCS gateway (SNOWFLAKE_HOST)
+                   Arrow-native, ~7s for 50K rows</code></pre>
+<p>Fallback (when ADBC is not installed):</p>
+<pre><code>R data.frame  --&gt;  reticulate::r_to_py()  --&gt;  pandas DataFrame
+                                                     |
+                                          session.write_pandas()
+                                                     |
+                                     Internal SPCS gateway (PUT + COPY INTO)
+                                     ~2.5s for 50K rows</code></pre>
+<p>Outside Workspace, RSnowflake uses ADBC (if available) for bulk
+writes via the public endpoint. See the RSnowflake
+<code>getting-started</code> vignette for the full
+<code>upload_method</code> options table.</p>
+</div>
+<div id="pat-management" class="section level2">
+<h2>PAT management</h2>
+<p>Most <code>snowflakeR</code> operations use the Snowpark session
+directly (no extra auth needed). A <strong>Programmatic Access Token
+(PAT)</strong> is only required for:</p>
+<ul>
+<li><code>sfr_predict_rest()</code> – pure-R REST inference against SPCS
+endpoints (the Workspace session token is not authorised for SPCS
+ingress)</li>
+</ul>
+<p>For REST inference in local environments, create a PAT in
+<strong>Snowsight &gt; Account &gt; Programmatic Access Tokens</strong>
+and set:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="fu">Sys.setenv</span>(<span class="at">SNOWFLAKE_PAT =</span> <span class="st">&quot;your_token&quot;</span>)</span></code></pre></div>
+<p>For Workspace Notebooks, use <code>sfr_predict()</code>
+(Python-bridge predict) instead of <code>sfr_predict_rest()</code> – it
+routes through the Snowpark session and requires no separate token.</p>
+</div>
+<div id="local-vs-workspace-differences" class="section level2">
+<h2>Local vs Workspace differences</h2>
+<table>
+<colgroup>
+<col width="16%" />
+<col width="44%" />
+<col width="38%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Aspect</th>
+<th>Local (RStudio/Posit)</th>
+<th>Workspace Notebook</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>R kernel</strong></td>
+<td>Native R</td>
+<td>Python + <code>%%R</code> magic</td>
+</tr>
+<tr class="even">
+<td><strong>Authentication</strong></td>
+<td><code>connections.toml</code>, key-pair, browser</td>
+<td>Auto-detected session</td>
+</tr>
+<tr class="odd">
+<td><strong>Package install</strong></td>
+<td><code>install.packages()</code></td>
+<td><code>micromamba</code> + <code>install.packages()</code></td>
+</tr>
+<tr class="even">
+<td><strong>Plotting</strong></td>
+<td>Native plot pane</td>
+<td><code>%%R -w W -h H</code> + <code>print(p)</code></td>
+</tr>
+<tr class="odd">
+<td><strong>Output</strong></td>
+<td>Standard</td>
+<td>Use <code>rprint()</code> / <code>rview()</code> helpers</td>
+</tr>
+<tr class="even">
+<td><strong>Session persistence</strong></td>
+<td>Persistent</td>
+<td>Re-setup each session (~1-2 min)</td>
+</tr>
+<tr class="odd">
+<td><strong>Python interop</strong></td>
+<td><code>reticulate</code></td>
+<td><code>rpy2</code> (bidirectional)</td>
+</tr>
+<tr class="even">
+<td><strong><code>sfr_connect()</code></strong></td>
+<td>Reads credentials</td>
+<td>Wraps active session</td>
+</tr>
+</tbody>
+</table>
+<p>The key design goal: <strong>your <code>snowflakeR</code> code is
+identical</strong> in both environments. Only the setup differs.</p>
+</div>
+<div id="typical-workflow" class="section level2">
+<h2>Typical workflow</h2>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="co"># Cell 1 (Python): Install R and register %%R magic</span></span>
+<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r</span>
+<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>install_r()</span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a><span class="co"># Cell 2 (R): Load, connect, and set execution context</span></span>
+<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
+<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
+<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_load_notebook_config</span>(conn)</span>
+<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a></span>
+<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a>fs   <span class="ot">&lt;-</span> <span class="fu">sfr_feature_store</span>(conn)</span>
+<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a>reg  <span class="ot">&lt;-</span> <span class="fu">sfr_model_registry</span>(conn)</span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
+<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a><span class="co"># Cell 3 (R): Generate training data</span></span>
+<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>training <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
+<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>  fs,</span>
+<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>  <span class="at">spine =</span> <span class="st">&quot;SELECT customer_id, churned FROM labels&quot;</span>,</span>
+<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a>  <span class="at">features =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">name =</span> <span class="st">&quot;CUST_FEATURES&quot;</span>, <span class="at">version =</span> <span class="st">&quot;v1&quot;</span>)),</span>
+<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>  <span class="at">spine_label_cols =</span> <span class="st">&quot;churned&quot;</span></span>
+<span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a><span class="sc">%%</span>R <span class="sc">-</span>o predictions</span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a><span class="co"># Cell 4 (R): Train and predict</span></span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">glm</span>(churned <span class="sc">~</span> ., <span class="at">data =</span> training, <span class="at">family =</span> binomial)</span>
+<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>predictions <span class="ot">&lt;-</span> <span class="fu">sfr_predict_local</span>(model, training)</span></code></pre></div>
+<div class="sourceCode" id="cb25"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a><span class="co"># Cell 5 (Python): Visualise or further processing</span></span>
+<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a>predictions.head()</span></code></pre></div>
+</div>
+<div id="interactive-notebooks" class="section level2">
+<h2>Interactive notebooks</h2>
+<p>For runnable notebook versions of the examples above, see the
+self-contained <code>notebooks/</code> directory included with the
+package:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" tabindex="-1"></a><span class="fu">system.file</span>(<span class="st">&quot;notebooks&quot;</span>, <span class="at">package =</span> <span class="st">&quot;snowflakeR&quot;</span>)</span></code></pre></div>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Notebook</th>
+<th>Environment</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>workspace_quickstart.ipynb</code></td>
+<td>Workspace</td>
+<td>Connection, config, queries, ggplot2</td>
+</tr>
+<tr class="even">
+<td><code>local_quickstart.ipynb</code></td>
+<td>Local (RStudio, Jupyter)</td>
+<td>Same content, native R kernel</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_model_registry.ipynb</code></td>
+<td>Workspace</td>
+<td>Model Registry: log, deploy, serve R models</td>
+</tr>
+<tr class="even">
+<td><code>workspace_feature_store.ipynb</code></td>
+<td>Workspace</td>
+<td>Feature Store: entities, views, training data</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_forecasting_demo.ipynb</code></td>
+<td>Workspace</td>
+<td>Time series forecasting with forecast + ggplot2</td>
+</tr>
+<tr class="even">
+<td><code>local_model_registry.ipynb</code></td>
+<td>Local</td>
+<td>Model Registry for local R environments</td>
+</tr>
+<tr class="odd">
+<td><code>local_feature_store.ipynb</code></td>
+<td>Local</td>
+<td>Feature Store for local R environments</td>
+</tr>
+<tr class="even">
+<td><code>local_forecasting_demo.ipynb</code></td>
+<td>Local</td>
+<td>Forecasting demo for local R environments</td>
+</tr>
+</tbody>
+</table>
+<p>Both notebooks use <code>notebook_config.yaml</code> for execution
+context and <code>sfr_fqn()</code> for fully qualified table names.
+Upload the entire folder to your Workspace or copy to a local directory
+to get started.</p>
+</div>
+<div id="troubleshooting" class="section level2">
+<h2>Troubleshooting</h2>
+<table>
+<colgroup>
+<col width="41%" />
+<col width="58%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Issue</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>rpy2</code> not found</td>
+<td>Run <code>from sfnb_setup import install_r; install_r()</code></td>
+</tr>
+<tr class="even">
+<td><code>%%R</code> not recognised</td>
+<td>Run <code>%load_ext rpy2.ipython</code></td>
+</tr>
+<tr class="odd">
+<td>Extra line breaks in output</td>
+<td>Use <code>rprint()</code>, <code>rview()</code>,
+<code>rglimpse()</code></td>
+</tr>
+<tr class="even">
+<td>Package not found</td>
+<td>Add to a YAML config preset or install interactively</td>
+</tr>
+<tr class="odd">
+<td><code>sfr_connect()</code> fails</td>
+<td>Ensure the Python kernel has an active Snowpark session</td>
+</tr>
+<tr class="even">
+<td>Plot not showing</td>
+<td>Add <code>print(p)</code> and use <code>-w</code> / <code>-h</code>
+flags</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
