@@ -184,6 +184,24 @@ sfr_input_cols <- function(data, exclude = character(0)) {
     conda_deps <- c(r_pin, conda_deps)
   }
 
+  # Warn if the running R version is very recent -- conda-forge typically
+  # needs 2-4 weeks after a new R release to rebuild all R packages.
+  r_release <- tryCatch(
+    as.Date(paste(R.version$year, R.version$month, R.version$day, sep = "-")),
+    error = function(e) NA
+  )
+  if (!is.na(r_release)) {
+    age_days <- as.numeric(Sys.Date() - r_release)
+    if (age_days < 30) {
+      cli::cli_warn(c(
+        "!" = "R {paste0(R.version$major, '.', R.version$minor)} was released only {age_days} day{?s} ago.",
+        "i" = "conda-forge may not have rebuilt all R packages for this version yet.",
+        "i" = "If model registration or SPCS inference fails, pin an older R version",
+        " " = "in your sfnb_multilang YAML config (e.g. {.code r_version: \"4.5.2\"})."
+      ))
+    }
+  }
+
   # Expand predict_pkgs: if "tidymodels" is requested, add core sub-deps
   # that carry version-sensitive serialised structures (blueprints, specs).
   # We version-pin only the sub-packages, not the tidymodels meta-package
