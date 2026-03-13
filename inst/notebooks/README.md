@@ -65,7 +65,7 @@ Table references use fully qualified names (`DATABASE.SCHEMA.TABLE`) as
 **Public standalone install** (when `sfnb-multilang` is not bundled):
 
 ```python
-!pip install sfnb-multilang
+!pip install "sfnb-multilang @ https://github.com/Snowflake-Labs/snowflake-notebook-multilang/archive/refs/heads/main.zip"
 from sfnb_multilang import install
 install(languages=["r"])
 ```
