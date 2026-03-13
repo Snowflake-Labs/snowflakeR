@@ -256,11 +256,27 @@ def _build_generic_predict_r_code(
     and returns predictions on the training data instead of erroring.
     Tidymodels predict() explicitly rejects ``newdata`` with an error,
     so the fallback always fires for tidymodels workflows.
+
+    Column names are lowercased to match the training-time convention
+    established by snowflakeR's .bridge_dict_to_df() helper, which
+    lowercases Snowflake's UPPER-case identifiers.  Without this,
+    hardhat::forge() fails because the blueprint stores lowercase names
+    but the SPCS inference server sends UPPER-case columns.
     """
     return textwrap.dedent("""\
+        names({{INPUT}}) <- tolower(names({{INPUT}}))
         pred_{{UID}} <- tryCatch(
             predict({{MODEL}}, newdata = {{INPUT}}),
-            error = function(e) predict({{MODEL}}, new_data = {{INPUT}})
+            error = function(e) {
+                tryCatch(
+                    predict({{MODEL}}, new_data = {{INPUT}}),
+                    error = function(e2) {
+                        msg <- conditionMessage(e2)
+                        if (!nzchar(msg)) msg <- paste(utils::capture.output(print(e2)), collapse = "\\n")
+                        stop(paste("predict() failed:", msg), call. = FALSE)
+                    }
+                )
+            }
         )
 
         if (is.data.frame(pred_{{UID}})) {
@@ -281,6 +297,7 @@ def _build_custom_function_r_code(
 ) -> str:
     """Build R code for an arbitrary R function call."""
     return textwrap.dedent(f"""\
+        names({{{{INPUT}}}}) <- tolower(names({{{{INPUT}}}}))
         pred_{{{{UID}}}} <- {func_name}({{{{MODEL}}}}, {{{{INPUT}}}})
 
         if (is.data.frame(pred_{{{{UID}}}})) {{
@@ -298,6 +315,7 @@ def _build_custom_function_r_code(
 def _build_forecast_with_xreg_r_code() -> str:
     """Build R code for forecast with exogenous regressors."""
     return textwrap.dedent("""\
+        names({{INPUT}}) <- tolower(names({{INPUT}}))
         xreg_{{UID}} <- as.matrix({{INPUT}})
 
         pred_{{UID}} <- forecast({{MODEL}}, xreg = xreg_{{UID}}, h = {{N}})
