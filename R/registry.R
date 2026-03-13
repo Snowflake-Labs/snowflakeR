@@ -169,18 +169,17 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 .pin_r_versions <- function(predict_pkgs, conda_deps) {
   if (is.null(conda_deps)) conda_deps <- character(0)
 
-  # Identify which conda dep names already have explicit version constraints
-  already_pinned <- vapply(conda_deps, function(dep) {
-    grepl("[=<>]", dep)
-  }, logical(1))
-  pinned_names <- sub("[=<>!].*", "", conda_deps[already_pinned])
+  # Extract the base package name from every existing conda dep,
+  # regardless of whether it has a version constraint or not.
+  # e.g. "r-xgboost" -> "r-xgboost", "numpy<2.0" -> "numpy"
+  existing_names <- sub("[=<>!].*", "", conda_deps)
 
   # Pin r-base to the current R major.minor series.  We use >=major.minor
   # rather than an exact patch pin because conda-forge may lag behind the
   # very latest R patch release (e.g. R 4.5.3 may not be available yet).
   # Matching on major.minor is sufficient to prevent serialization
   # incompatibilities across R versions.
-  if (!any(grepl("^r-base", pinned_names))) {
+  if (!any(grepl("^r-base", existing_names))) {
     r_major <- R.version$major
     r_minor <- strsplit(R.version$minor, "\\.")[[1]][1]
     r_pin <- paste0("r-base>=", r_major, ".", r_minor)
@@ -201,7 +200,7 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   # on conda-forge yet.
   for (pkg in pkgs_to_pin) {
     conda_name <- paste0("r-", pkg)
-    if (conda_name %in% pinned_names) next
+    if (conda_name %in% existing_names) next
     if (!requireNamespace(pkg, quietly = TRUE)) next
 
     ver <- as.character(utils::packageVersion(pkg))
