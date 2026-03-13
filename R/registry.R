@@ -188,10 +188,15 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 
   # Expand predict_pkgs: if "tidymodels" is requested, add core sub-deps
   # that carry version-sensitive serialised structures (blueprints, specs).
-  # We pin only the sub-packages, not the tidymodels meta-package itself.
+  # We version-pin only the sub-packages, not the tidymodels meta-package
+  # itself (its version may not exist on conda-forge).  But we still need
+  # the meta-package installed so library(tidymodels) works at predict time.
   pkgs_to_pin <- setdiff(predict_pkgs, "tidymodels")
   if ("tidymodels" %in% predict_pkgs) {
     pkgs_to_pin <- unique(c(pkgs_to_pin, .tidymodels_core_pkgs))
+    if (!"r-tidymodels" %in% existing_names) {
+      conda_deps <- c(conda_deps, "r-tidymodels")
+    }
   }
 
   # Use >= (not =) because Workspace may run package versions newer than
