@@ -239,6 +239,63 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 }
 
 
+#' Check that predict_pkgs have conda-forge counterparts
+#'
+#' SPCS containers install R packages exclusively from conda-forge.
+#' Packages installed from CRAN or GitHub in Workspace will NOT be
+#' available at inference time.  This function warns the user if any
+#' predict_pkgs don't appear in the resolved conda_deps.
+#'
+#' @param predict_pkgs Character vector of R package names.
+#' @param conda_deps Character vector of conda dependencies.
+#' @keywords internal
+.check_conda_forge_availability <- function(predict_pkgs, conda_deps) {
+  if (length(predict_pkgs) == 0L) return(invisible(NULL))
+
+  conda_names <- sub("[=<>!].*", "", conda_deps %||% character(0))
+
+  missing <- character(0)
+  for (pkg in predict_pkgs) {
+    conda_name <- paste0("r-", pkg)
+    if (!(conda_name %in% conda_names)) next
+    # Package IS in conda_deps -- check if it was installed from conda-forge
+    # by looking for the conda-meta record.  If no record, it was likely
+    # installed from CRAN.
+    meta_dir <- file.path(Sys.getenv("CONDA_PREFIX", ""), "conda-meta")
+    if (!nzchar(meta_dir) || !dir.exists(meta_dir)) {
+      meta_dir <- file.path(
+        path.expand("~/.local/share/mamba/envs/workspace_env"), "conda-meta"
+      )
+    }
+    # If we can't find conda-meta, skip the check
+    if (!dir.exists(meta_dir)) return(invisible(NULL))
+  }
+
+  # Check for packages in predict_pkgs that have NO conda-forge entry at all
+  for (pkg in predict_pkgs) {
+    conda_name <- paste0("r-", pkg)
+    if (conda_name %in% conda_names) next
+    # Not in conda_deps -- might be a meta-package like "tidymodels"
+    # which we handle specially (added as unversioned r-tidymodels)
+    if (pkg == "tidymodels" && "r-tidymodels" %in% conda_names) next
+    missing <- c(missing, pkg)
+  }
+
+  if (length(missing) > 0L) {
+    cli::cli_warn(c(
+      "!" = "{length(missing)} predict package{?s} not found in conda_deps: {.val {missing}}.",
+      "i" = "SPCS containers install R packages from {.strong conda-forge only}.",
+      "i" = "Packages installed from CRAN or GitHub in Workspace will {.strong not}",
+      " " = "be available at inference time.",
+      "i" = "Ensure each package is available on conda-forge as {.code r-<pkgname>}.",
+      "i" = "Add missing packages to {.arg conda_deps} (e.g. {.code c('r-mypackage')})."
+    ))
+  }
+
+  invisible(NULL)
+}
+
+
 # =============================================================================
 # Log model
 # =============================================================================
@@ -257,6 +314,11 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #' @param predict_fn Character. R function name for inference. Default:
 #'   `"predict"`.
 #' @param predict_pkgs Character vector. R packages needed at inference time.
+#'   **These packages must be available on conda-forge** (as `r-<pkgname>`)
+#'   because the SPCS inference container installs packages exclusively from
+#'   conda-forge.  Packages installed from CRAN or GitHub in Workspace will
+#'   NOT be available in the container.  A warning is emitted if any packages
+#'   appear to be missing from conda-forge.
 #' @param predict_body Character. Optional custom R code for prediction
 #'   (advanced). Use template variables `{{MODEL}}`, `{{INPUT}}`, `{{UID}}`,
 #'   `{{N}}`.
@@ -343,6 +405,11 @@ sfr_log_model <- function(reg,
   if (pin_versions) {
     conda_deps <- .pin_r_versions(predict_pkgs, conda_deps)
   }
+
+  # Warn about CRAN-only packages.  SPCS containers install R packages
+  # from conda-forge only -- CRAN packages are not available at inference
+  # time.  Check that every predict_pkg has a conda-forge counterpart.
+  .check_conda_forge_availability(predict_pkgs, conda_deps)
 
   # Convert R types to Python-friendly types
   py_predict_pkgs <- as.list(predict_pkgs)
