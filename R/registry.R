@@ -174,15 +174,13 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   # e.g. "r-xgboost" -> "r-xgboost", "numpy<2.0" -> "numpy"
   existing_names <- sub("[=<>!].*", "", conda_deps)
 
-  # Pin r-base to the current R major.minor series.  We use >=major.minor
-  # rather than an exact patch pin because conda-forge may lag behind the
-  # very latest R patch release (e.g. R 4.5.3 may not be available yet).
-  # Matching on major.minor is sufficient to prevent serialization
-  # incompatibilities across R versions.
+  # Pin r-base to the exact installed R version.  The Workspace R was
+  # installed from conda-forge (via sfnb_multilang), so the exact version
+  # is guaranteed to exist there.  An exact pin prevents the SPCS container
+  # from resolving a newer R release whose packages haven't been rebuilt yet.
   if (!any(grepl("^r-base", existing_names))) {
-    r_major <- R.version$major
-    r_minor <- strsplit(R.version$minor, "\\.")[[1]][1]
-    r_pin <- paste0("r-base>=", r_major, ".", r_minor)
+    r_ver <- paste0(R.version$major, ".", R.version$minor)
+    r_pin <- paste0("r-base=", r_ver)
     conda_deps <- c(r_pin, conda_deps)
   }
 
@@ -199,17 +197,18 @@ sfr_input_cols <- function(data, exclude = character(0)) {
     }
   }
 
-  # Use >= (not =) because Workspace may run package versions newer than
-  # what conda-forge has published.  >= prevents downgrades (the real risk
-  # for deserialization failures) without failing if the exact patch isn't
-  # on conda-forge yet.
+  # Use exact '=' pins because the Workspace R environment is installed
+  # from conda-forge (via sfnb_multilang with a pinned R version), so every
+  # package version present here is guaranteed to exist on conda-forge.
+  # Exact pins ensure the SPCS container gets identical versions, avoiding
+  # serialization mismatches (e.g. hardhat blueprint format changes).
   for (pkg in pkgs_to_pin) {
     conda_name <- paste0("r-", pkg)
     if (conda_name %in% existing_names) next
     if (!requireNamespace(pkg, quietly = TRUE)) next
 
     ver <- as.character(utils::packageVersion(pkg))
-    conda_deps <- c(conda_deps, paste0(conda_name, ">=", ver))
+    conda_deps <- c(conda_deps, paste0(conda_name, "=", ver))
   }
 
   cli::cli_inform(c(
