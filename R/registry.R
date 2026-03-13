@@ -194,7 +194,7 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   pkgs_to_pin <- setdiff(predict_pkgs, "tidymodels")
   if ("tidymodels" %in% predict_pkgs) {
     pkgs_to_pin <- unique(c(pkgs_to_pin, .tidymodels_core_pkgs))
-    if (!"r-tidymodels" %in% existing_names) {
+    if (!("r-tidymodels" %in% existing_names)) {
       conda_deps <- c(conda_deps, "r-tidymodels")
     }
   }
