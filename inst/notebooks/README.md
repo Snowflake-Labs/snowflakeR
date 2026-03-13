@@ -104,3 +104,36 @@ DBI compliance and `dbplyr` integration, install the companion
 
 A standalone test notebook for the **RSnowflake** DBI package is available at
 `RSnowflake/inst/notebooks/workspace_rsnowflake_test.ipynb`.
+
+## Troubleshooting: Model Registry & SPCS Inference
+
+### `hardhat::forge()` error with empty message
+
+If SPCS inference fails with `Error in hardhat::forge(new_data, blueprint = ...):`
+followed by an empty message, this is almost always a **column name case mismatch**.
+
+`snowflakeR` lowercases column names from Snowflake (R convention), so the model
+blueprint stores lowercase names. SPCS sends UPPER-case columns (Snowflake
+convention). The built-in predict templates handle this automatically with
+`tolower()`. If you use custom `predict_body`, add `names({{INPUT}}) <- tolower(names({{INPUT}}))`
+at the top.
+
+The empty error message occurs because `rlang`/`cli` error formatting uses ANSI
+codes that get stripped during JSON serialization in the SPCS HTTP response.
+
+### `basic_string::substr` crash
+
+This C++ error from rpy2 hides the real R error. Run a Python diagnostic cell
+to call the model's predict function directly and see the actual error message.
+
+### Package not found in SPCS container
+
+SPCS containers install R packages **from conda-forge only**. Packages
+installed from CRAN or GitHub in Workspace will not be available at inference
+time. Ensure all `predict_pkgs` have conda-forge counterparts (`r-<pkgname>`).
+
+### Version pinning
+
+`sfr_log_model()` auto-pins R and package versions by default (`pin_versions = TRUE`).
+This prevents version drift between training and inference environments.
+Version pins use `==` (PEP 440 syntax), not `=` (conda syntax).
