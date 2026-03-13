@@ -188,19 +188,24 @@ sfr_input_cols <- function(data, exclude = character(0)) {
   }
 
   # Expand predict_pkgs: if "tidymodels" is requested, add core sub-deps
-  pkgs_to_pin <- predict_pkgs
+  # that carry version-sensitive serialised structures (blueprints, specs).
+  # We pin only the sub-packages, not the tidymodels meta-package itself.
+  pkgs_to_pin <- setdiff(predict_pkgs, "tidymodels")
   if ("tidymodels" %in% predict_pkgs) {
     pkgs_to_pin <- unique(c(pkgs_to_pin, .tidymodels_core_pkgs))
   }
 
-  # For each package, pin to current installed version if not already pinned
+  # Use >= (not =) because Workspace may run package versions newer than
+  # what conda-forge has published.  >= prevents downgrades (the real risk
+  # for deserialization failures) without failing if the exact patch isn't
+  # on conda-forge yet.
   for (pkg in pkgs_to_pin) {
     conda_name <- paste0("r-", pkg)
     if (conda_name %in% pinned_names) next
     if (!requireNamespace(pkg, quietly = TRUE)) next
 
     ver <- as.character(utils::packageVersion(pkg))
-    conda_deps <- c(conda_deps, paste0(conda_name, "=", ver))
+    conda_deps <- c(conda_deps, paste0(conda_name, ">=", ver))
   }
 
   cli::cli_inform(c(
