@@ -15,11 +15,38 @@ R users never import this directly - they use the sfr_* R functions which
 call this module via reticulate.
 """
 
+import contextlib
+import io
 import uuid
 import textwrap
 from typing import Dict, List, Optional, Any
 
 import pandas as pd
+
+
+def _quiet_call(fn, *args, **kwargs):
+    """Run *fn* with stdout/stderr redirected to buffers.
+
+    Prevents Snowpark's internal logging and SQL echo from reaching
+    rpy2's C++ output handler, which crashes with basic_string::substr
+    when strings exceed buffer boundaries.
+
+    On success the captured output is discarded.  On failure the captured
+    output is appended to the exception so diagnostics are preserved.
+    """
+    out_buf = io.StringIO()
+    err_buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out_buf), \
+             contextlib.redirect_stderr(err_buf):
+            return fn(*args, **kwargs)
+    except Exception as e:
+        captured = (err_buf.getvalue() + out_buf.getvalue()).strip()
+        if captured:
+            raise RuntimeError(
+                f"{e}\n\n--- captured output ---\n{captured}"
+            ) from e
+        raise
 
 
 def _pandas_to_r_dict(pdf):
@@ -473,7 +500,7 @@ def registry_log_model(
     if options:
         log_kwargs["options"] = options
 
-    mv = reg.log_model(**log_kwargs)
+    mv = _quiet_call(reg.log_model, **log_kwargs)
 
     return {
         "success": True,
@@ -595,8 +622,11 @@ def registry_predict(
     if service_name:
         run_kwargs["service_name"] = service_name
 
-    result = mv.run(sp_df, **run_kwargs)
-    result_df = result.to_pandas()
+    def _run_and_collect():
+        r = mv.run(sp_df, **run_kwargs)
+        return r.to_pandas()
+
+    result_df = _quiet_call(_run_and_collect)
     result_df.columns = [c.strip('"').lower() for c in result_df.columns]
 
     d = _pandas_to_r_dict(result_df)
@@ -654,7 +684,7 @@ def registry_delete_model(
         reg_kwargs["schema_name"] = schema_name
 
     reg = Registry(**reg_kwargs)
-    reg.delete_model(model_name)
+    _quiet_call(reg.delete_model, model_name)
     return True
 
 
@@ -791,7 +821,8 @@ def registry_create_service(
         except Exception:
             pass
 
-    mv.create_service(
+    _quiet_call(
+        mv.create_service,
         service_name=service_name,
         service_compute_pool=compute_pool,
         image_repo=image_repo,
@@ -828,7 +859,7 @@ def registry_delete_service(
     reg = Registry(**reg_kwargs)
     m = reg.get_model(model_name)
     mv = m.version(version_name)
-    mv.delete_service(service_name)
+    _quiet_call(mv.delete_service, service_name)
     return True
 
 
