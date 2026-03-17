@@ -4,34 +4,45 @@
 \alias{sfr_query}
 \title{Execute a SQL query and return results}
 \usage{
-sfr_query(conn, sql, .keep_case = FALSE)
+sfr_query(
+  conn,
+  sql,
+  .keep_case = !getOption("snowflakeR.lowercase_columns", FALSE)
+)
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object from \code{\link[=sfr_connect]{sfr_connect()}}.}
 
 \item{sql}{Character. SQL query string.}
 
-\item{.keep_case}{Logical. If \code{TRUE}, preserve original column name
-casing from Snowflake. Default: \code{FALSE} (lowercase).}
+\item{.keep_case}{Logical. If \code{TRUE} (default), preserve original column
+name casing from Snowflake. Set to \code{FALSE} to lowercase column names.
+The default respects the global option \code{snowflakeR.lowercase_columns}.}
 }
 \value{
 A data.frame with query results.
 }
 \description{
 Runs a SQL query against Snowflake and returns the result as an R
-data.frame. The entire pandas/numpy conversion is done on the Python
-side (via JSON round-trip) to avoid NumPy 1.x/2.x ABI issues that
-can cause reticulate to fail when converting numpy-backed DataFrames.
+data.frame. When an \code{RSnowflake} DBI connection is available on the
+\code{sfr_connection} (see \code{\link[=sfr_dbi_connection]{sfr_dbi_connection()}}), the query is executed
+via the pure-R REST API path. Otherwise, it falls back to the Python
+Snowpark bridge.
 }
 \details{
-Column names are lowercased by default for R friendliness. Use
-\code{.keep_case = TRUE} to preserve original Snowflake casing (needed
-for DBI/dbplyr compatibility).
+Column names are returned \strong{as-is from Snowflake} by default (UPPER
+case for unquoted identifiers). This matches the Python connector,
+Snowpark, and RSnowflake DBI behaviour and ensures consistency with
+the Model Registry / SPCS inference pipeline.
+
+To globally restore the legacy lowercase behaviour, set
+\code{options(snowflakeR.lowercase_columns = TRUE)}.
 }
 \examples{
 \dontrun{
 conn <- sfr_connect()
 result <- sfr_query(conn, "SELECT CURRENT_TIMESTAMP() AS now")
+result$NOW
 }
 
 }

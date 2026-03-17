@@ -6,7 +6,7 @@
 \alias{_PACKAGE}
 \title{snowflakeR: R Interface to the Snowflake ML Platform}
 \description{
-Provides native R functions for working with the Snowflake ML platform, including Model Registry (log, deploy, and serve R models), Feature Store (create and manage feature views using dplyr/dbplyr or SQL), and data connectivity. Uses 'reticulate' to bridge to the 'snowflake-ml-python' SDK while presenting an idiomatic R API. Supports both Snowflake Workspace Notebooks and local R environments. Integrates with 'snowflakeauth' for 'connections.toml'/'config.toml' credential management when available.
+Provides native R functions for working with the Snowflake ML platform, including Model Registry (log, deploy, and serve R models), Feature Store (create and manage feature views using dplyr/dbplyr or SQL), and REST inference to SPCS model serving endpoints. Uses 'reticulate' to bridge to the 'snowflake-ml-python' SDK for ML operations. Standard database connectivity (DBI, dbplyr) is provided by the 'RSnowflake' package. Supports both Snowflake Workspace Notebooks and local R environments.
 }
 \seealso{
 Useful links:

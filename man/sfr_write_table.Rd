@@ -4,7 +4,13 @@
 \alias{sfr_write_table}
 \title{Write a data.frame to a Snowflake table}
 \usage{
-sfr_write_table(conn, table_name, value, overwrite = FALSE)
+sfr_write_table(
+  conn,
+  table_name,
+  value,
+  overwrite = FALSE,
+  .uppercase_cols = !getOption("snowflakeR.preserve_write_case", FALSE)
+)
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object.}
@@ -15,10 +21,29 @@ sfr_write_table(conn, table_name, value, overwrite = FALSE)
 
 \item{overwrite}{Logical. If \code{TRUE}, replaces the table. If \code{FALSE}
 (default), appends or creates.}
+
+\item{.uppercase_cols}{Logical. If \code{TRUE} (default), column names are
+uppercased before writing. Set to \code{FALSE} to preserve original casing.
+Default respects \code{getOption("snowflakeR.preserve_write_case")}.}
 }
 \value{
 Invisibly returns \code{TRUE}.
 }
 \description{
-Write a data.frame to a Snowflake table
+By default, column names are uppercased before writing so that the
+resulting Snowflake columns are stored as standard unquoted identifiers
+(e.g. \code{CYL}, not \code{"cyl"}).
+}
+\details{
+This is necessary because the Snowpark \code{create_dataframe(pandas_df)}
+path double-quotes \strong{every} column name from the pandas DataFrame to
+preserve its exact case.  Without uppercasing first, an R data.frame
+with lowercase names like \code{mtcars} would produce quoted lowercase
+columns (\code{"mpg"}, \code{"cyl"}) that are unreachable via normal unquoted
+SQL.  The uppercasing is applied to a \strong{local copy} -- the caller's
+original data.frame is not modified (R copy-on-modify semantics).
+
+Set \code{.uppercase_cols = FALSE} to preserve the original column names
+exactly (they will be stored as quoted identifiers in Snowflake and
+must be referenced with double-quotes in SQL).
 }

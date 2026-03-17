@@ -7,7 +7,7 @@
 sfr_dbi_connection(conn)
 }
 \arguments{
-\item{conn}{An \code{sfr_connection} object from \code{\link{sfr_connect}}.}
+\item{conn}{An \code{sfr_connection} object from \code{\link[=sfr_connect]{sfr_connect()}}.}
 }
 \value{
 An \code{RSnowflake::SnowflakeConnection} object.
@@ -27,4 +27,5 @@ sfr_conn <- sfr_connect(name = "my_profile")
 dbi_con  <- sfr_dbi_connection(sfr_conn)
 DBI::dbGetQuery(dbi_con, "SELECT 1")
 }
+
 }

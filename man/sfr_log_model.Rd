@@ -20,6 +20,7 @@ sfr_log_model(
   comment = NULL,
   metrics = NULL,
   sample_input = NULL,
+  pin_versions = TRUE,
   ...
 )
 }
@@ -37,7 +38,12 @@ an \code{sfr_connection} object from \code{\link[=sfr_connect]{sfr_connect()}} (
 \item{predict_fn}{Character. R function name for inference. Default:
 \code{"predict"}.}
 
-\item{predict_pkgs}{Character vector. R packages needed at inference time.}
+\item{predict_pkgs}{Character vector. R packages needed at inference time.
+\strong{These packages must be available on conda-forge} (as \verb{r-<pkgname>})
+because the SPCS inference container installs packages exclusively from
+conda-forge.  Packages installed from CRAN or GitHub in Workspace will
+NOT be available in the container.  A warning is emitted if any packages
+appear to be missing from conda-forge.}
 
 \item{predict_body}{Character. Optional custom R code for prediction
 (advanced). Use template variables \code{{{MODEL}}}, \code{{{INPUT}}}, \code{{{UID}}},
@@ -49,7 +55,18 @@ Valid types: \code{"integer"}, \code{"double"}, \code{"string"}, \code{"boolean"
 \item{output_cols}{Named list mapping output column names to types.}
 
 \item{conda_deps}{Character vector. Conda packages for the model
-environment. Defaults include \code{r-base} and \code{rpy2}.}
+environment. Defaults include \code{r-base}, \code{rpy2>=3.5}, and \code{numpy<2.0}.
+
+When \code{pin_versions = TRUE} (the default), exact version pins are
+auto-generated from the current R session for \code{r-base} and all
+packages in \code{predict_pkgs} (plus critical sub-dependencies for
+tidymodels).  Any explicit version constraints you provide in
+\code{conda_deps} take precedence over auto-pins.
+
+\strong{Package version warning:} Without \code{numpy<2.0}, adding \code{r-base}
+and \code{rpy2} causes the conda solver to pick Python 3.12 + numpy 2.x,
+which crashes the inference server (\verb{recarray has no attribute fillna}).  If you override \code{conda_deps}, ensure you include
+\code{numpy<2.0}.}
 
 \item{pip_requirements}{Character vector. Additional pip packages.}
 
@@ -68,6 +85,14 @@ a container) or test locally with \code{\link[=sfr_predict_local]{sfr_predict_lo
 
 \item{sample_input}{A data.frame. Optional sample input for signature
 validation.}
+
+\item{pin_versions}{Logical. If \code{TRUE} (the default), automatically pins
+the R version and all \code{predict_pkgs} (plus critical tidymodels
+sub-dependencies) to their currently installed versions.  This
+ensures the SPCS container environment exactly matches the training
+environment, preventing deserialization failures such as
+\code{hardhat::forge()} blueprint mismatches.  Set to \code{FALSE} to use
+floating version constraints.}
 
 \item{...}{Additional arguments passed to the underlying Python
 \code{Registry.log_model()}.}

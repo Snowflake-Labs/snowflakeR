@@ -22,6 +22,7 @@ Resolves an auth token from (in order):
 \item The \code{token} argument (if provided)
 \item The \code{SNOWFLAKE_PAT} environment variable
 \item The \code{SNOWFLAKE_TOKEN} environment variable
+\item The SPCS OAuth token at \verb{/snowflake/session/token} (Workspace Notebooks)
 \item A JWT generated from the connection's key-pair auth (if \code{conn} provided)
 }
 }

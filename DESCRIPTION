@@ -35,6 +35,8 @@ Suggests:
     RcppTOML,
     httr2 (>= 1.0.0),
     testthat (>= 3.0.0),
+    foreach,
+    iterators,
     dplyr,
     dbplyr,
     arrow,

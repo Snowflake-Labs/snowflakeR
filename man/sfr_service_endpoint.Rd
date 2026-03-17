@@ -4,7 +4,7 @@
 \alias{sfr_service_endpoint}
 \title{Discover the REST endpoint URL for an SPCS model service}
 \usage{
-sfr_service_endpoint(conn, service_name)
+sfr_service_endpoint(conn, service_name, database = NULL, schema = NULL)
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object.}
