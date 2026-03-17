@@ -17,7 +17,7 @@ registerDoSnowflake(
 \item{mode}{Character.
 \itemize{
 \item \code{"local"} -- socket cluster in the current container (default).
-\item \code{"tasks"} -- Snowflake Task graph + SPCS jobs (not yet implemented).
+\item \code{"tasks"} -- Snowflake Task graph + SPCS jobs.
 \item \code{"spcs"} -- stage-based SPCS job dispatch (not yet implemented).
 \item \code{"queue"} -- persistent worker pool with queue (not yet implemented).
 }}
@@ -26,7 +26,15 @@ registerDoSnowflake(
 \code{"auto"} (default) detects available CPU cores and reserves one for
 the main thread.}
 
-\item{...}{Additional backend-specific options (reserved for future modes).}
+\item{...}{Backend-specific options. For \code{mode = "tasks"}:
+\itemize{
+\item \code{compute_pool} (required) -- name of the SPCS compute pool.
+\item \code{image_uri} (required) -- worker Docker image URI in image repo.
+\item \code{stage} -- stage name (default \code{"DOSNOWFLAKE_STAGE"}).
+\item \code{timeout_min} -- max minutes to wait for completion (default 30).
+\item \code{poll_sec} -- seconds between status polls (default 5).
+\item \code{chunks_per_job} -- number of SPCS jobs to create (default \code{"auto"}).
+}}
 }
 \value{
 Invisibly returns \code{TRUE}.
