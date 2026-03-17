@@ -18,13 +18,19 @@
 #' @param conn An `sfr_connection` object from [sfr_connect()].
 #' @param mode Character.
 #'   * `"local"` -- socket cluster in the current container (default).
-#'   * `"tasks"` -- Snowflake Task graph + SPCS jobs (not yet implemented).
+#'   * `"tasks"` -- Snowflake Task graph + SPCS jobs.
 #'   * `"spcs"` -- stage-based SPCS job dispatch (not yet implemented).
 #'   * `"queue"` -- persistent worker pool with queue (not yet implemented).
 #' @param workers Integer or `"auto"`. Number of parallel workers.
 #'   `"auto"` (default) detects available CPU cores and reserves one for
 #'   the main thread.
-#' @param ... Additional backend-specific options (reserved for future modes).
+#' @param ... Backend-specific options. For `mode = "tasks"`:
+#'   * `compute_pool` (required) -- name of the SPCS compute pool.
+#'   * `image_uri` (required) -- worker Docker image URI in image repo.
+#'   * `stage` -- stage name (default `"DOSNOWFLAKE_STAGE"`).
+#'   * `timeout_min` -- max minutes to wait for completion (default 30).
+#'   * `poll_sec` -- seconds between status polls (default 5).
+#'   * `chunks_per_job` -- number of SPCS jobs to create (default `"auto"`).
 #'
 #' @returns Invisibly returns `TRUE`.
 #'
@@ -59,11 +65,11 @@ registerDoSnowflake <- function(conn,
 
   mode <- match.arg(mode)
 
-  if (mode != "local") {
+  if (mode %in% c("spcs", "queue")) {
     cli::cli_abort(c(
       "Mode {.val {mode}} is not yet implemented.",
-      "i" = "Currently only {.val local} mode is available.",
-      "i" = "Remote modes ({.val tasks}, {.val spcs}, {.val queue}) are planned for future releases."
+      "i" = "Currently {.val local} and {.val tasks} modes are available.",
+      "i" = "Modes {.val spcs} and {.val queue} are planned for future releases."
     ))
   }
 
@@ -74,16 +80,32 @@ registerDoSnowflake <- function(conn,
     options = list(...)
   )
 
-  foreach::setDoPar(
-    fun  = .doSnowflakeLocal,
-    data = backend_data,
-    info = .doSnowflakeInfo
+  backend_fn <- switch(mode,
+    local = .doSnowflakeLocal,
+    tasks = .doSnowflakeTasks
   )
 
-  resolved_workers <- .resolve_snowflake_workers(workers)
-  cli::cli_inform(
-    "Registered {.fn doSnowflake} backend (mode = {.val {mode}}, workers = {.val {resolved_workers}})."
+  info_fn <- switch(mode,
+    local = .doSnowflakeInfo,
+    tasks = .doSnowflakeTasksInfo
   )
+
+  foreach::setDoPar(
+    fun  = backend_fn,
+    data = backend_data,
+    info = info_fn
+  )
+
+  if (mode == "local") {
+    resolved_workers <- .resolve_snowflake_workers(workers)
+    cli::cli_inform(
+      "Registered {.fn doSnowflake} backend (mode = {.val {mode}}, workers = {.val {resolved_workers}})."
+    )
+  } else {
+    cli::cli_inform(
+      "Registered {.fn doSnowflake} backend (mode = {.val {mode}})."
+    )
+  }
   invisible(TRUE)
 }
 

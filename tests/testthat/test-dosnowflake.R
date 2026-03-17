@@ -30,9 +30,18 @@ test_that("registerDoSnowflake registers the backend and reports name/workers", 
 
 test_that("registerDoSnowflake rejects unimplemented modes", {
   conn <- mock_conn()
-  expect_error(registerDoSnowflake(conn, mode = "tasks"),  "not yet implemented")
   expect_error(registerDoSnowflake(conn, mode = "spcs"),   "not yet implemented")
   expect_error(registerDoSnowflake(conn, mode = "queue"),  "not yet implemented")
+})
+
+test_that("registerDoSnowflake accepts tasks mode", {
+  conn <- mock_conn()
+  expect_message(
+    registerDoSnowflake(conn, mode = "tasks",
+                        compute_pool = "TEST_POOL",
+                        image_uri = "/db/schema/repo/worker:latest")
+  )
+  expect_equal(foreach::getDoParName(), "doSnowflake")
 })
 
 test_that("registerDoSnowflake errors without foreach installed", {

@@ -1,0 +1,40 @@
+# =============================================================================
+# snowflakeR -- Base Config
+# =============================================================================
+# R environment for snowflakeR notebooks (quickstart, model registry,
+# doSnowflake). Installs snowflakeR from GitHub Releases for fast setup.
+#
+# Usage:
+#   from sfnb_setup import install_r, install_r_packages
+#   install_r(config="snowflaker_config.yaml")
+#   install_r_packages(config="snowflaker_config.yaml", packages=["snowflakeR"])
+# =============================================================================
+
+env_name: "workspace_env"
+
+languages:
+  r:
+    enabled: true
+    r_version: "4.5.2"
+    conda_packages:
+      - r-cli
+      - r-rlang>=1.0.0
+      - r-reticulate>=1.25
+      - r-tidyverse
+      - r-dbplyr
+      - r-httr2>=1.0.0
+      - r-lazyeval
+      - r-dbi>=1.2.0
+      - r-jsonlite
+    cran_packages: []
+    addons:
+      adbc: false
+      duckdb: false
+    tarballs:
+      snowflakeR: "https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+
+  scala:
+    enabled: false
+
+  julia:
+    enabled: false
