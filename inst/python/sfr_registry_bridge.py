@@ -257,14 +257,12 @@ def _build_generic_predict_r_code(
     Tidymodels predict() explicitly rejects ``newdata`` with an error,
     so the fallback always fires for tidymodels workflows.
 
-    Column names are lowercased to match the training-time convention
-    established by snowflakeR's .bridge_dict_to_df() helper, which
-    lowercases Snowflake's UPPER-case identifiers.  Without this,
-    hardhat::forge() fails because the blueprint stores lowercase names
-    but the SPCS inference server sends UPPER-case columns.
+    Column names are preserved as-is from the inference server.  Since
+    snowflakeR now preserves Snowflake's native UPPER-case column names
+    throughout the pipeline (training data, model signature, inference
+    input), no case conversion is needed here.
     """
     return textwrap.dedent("""\
-        names({{INPUT}}) <- tolower(names({{INPUT}}))
         pred_{{UID}} <- tryCatch(
             predict({{MODEL}}, newdata = {{INPUT}}),
             error = function(e) {
@@ -297,7 +295,6 @@ def _build_custom_function_r_code(
 ) -> str:
     """Build R code for an arbitrary R function call."""
     return textwrap.dedent(f"""\
-        names({{{{INPUT}}}}) <- tolower(names({{{{INPUT}}}}))
         pred_{{{{UID}}}} <- {func_name}({{{{MODEL}}}}, {{{{INPUT}}}})
 
         if (is.data.frame(pred_{{{{UID}}}})) {{
@@ -315,7 +312,6 @@ def _build_custom_function_r_code(
 def _build_forecast_with_xreg_r_code() -> str:
     """Build R code for forecast with exogenous regressors."""
     return textwrap.dedent("""\
-        names({{INPUT}}) <- tolower(names({{INPUT}}))
         xreg_{{UID}} <- as.matrix({{INPUT}})
 
         pred_{{UID}} <- forecast({{MODEL}}, xreg = xreg_{{UID}}, h = {{N}})
@@ -374,7 +370,7 @@ def _build_signature(
                     f"Valid types: {list(_DTYPE_MAP.keys())}"
                 )
             dt = getattr(DataType, _DTYPE_MAP[dtype_key])
-            specs.append(FeatureSpec(name=name.upper(), dtype=dt))
+            specs.append(FeatureSpec(name=name, dtype=dt))
         return specs
 
     return ModelSignature(
@@ -472,7 +468,7 @@ def registry_log_model(
 
     if sample_input is None and input_cols:
         sample_rows = {
-            name.upper(): (
+            name: (
                 [1]
                 if dtype.lower() in ("integer", "int", "int64")
                 else [1.0]
@@ -486,7 +482,7 @@ def registry_log_model(
         }
         sample_input = pd.DataFrame(sample_rows)
     elif sample_input is not None:
-        sample_input.columns = [c.upper() for c in sample_input.columns]
+        pass  # preserve column names as-is
 
     reg_kwargs = {"session": session}
     if database_name:
@@ -633,7 +629,6 @@ def registry_predict(
     else:
         mv = m.default
 
-    input_data.columns = [c.upper() for c in input_data.columns]
     sp_df = session.create_dataframe(input_data)
 
     run_kwargs = {"function_name": function_name}
@@ -645,7 +640,7 @@ def registry_predict(
         return r.to_pandas()
 
     result_df = _quiet_call(_run_and_collect)
-    result_df.columns = [c.strip('"').lower() for c in result_df.columns]
+    result_df.columns = [c.strip('"') for c in result_df.columns]
 
     d = _pandas_to_r_dict(result_df)
 

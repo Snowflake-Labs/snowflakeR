@@ -72,20 +72,17 @@
   if (is.list(body) && !is.data.frame(body) &&
       length(body) > 0 && is.atomic(body[[1]])) {
     df <- as.data.frame(body, stringsAsFactors = FALSE)
-    names(df) <- tolower(names(df))
     return(df)
   }
 
   # Format: array of records [{col: val}, ...]
   if (is.data.frame(body)) {
-    names(body) <- tolower(names(body))
     return(body)
   }
 
   if (is.list(body) && length(body) > 0 && is.list(body[[1]]) &&
       !is.null(names(body[[1]]))) {
     df <- do.call(rbind, lapply(body, as.data.frame, stringsAsFactors = FALSE))
-    names(df) <- tolower(names(df))
     return(df)
   }
 
@@ -94,8 +91,7 @@
     split <- body$dataframe_split
     mat <- do.call(rbind, split$data)
     df <- as.data.frame(mat, stringsAsFactors = FALSE)
-    names(df) <- tolower(split$columns)
-    # Coerce to numeric where possible
+    names(df) <- split$columns
     for (col in names(df)) {
       num <- suppressWarnings(as.numeric(df[[col]]))
       if (!any(is.na(num))) df[[col]] <- num
@@ -107,7 +103,6 @@
   # This is the standard SPCS inference response format.
   if (!is.null(body$data) && is.list(body$data) && length(body$data) > 0) {
     rows <- lapply(body$data, function(row) {
-      # Each row is [index, {col1: val1, col2: val2, ...}]
       if (is.list(row) && length(row) >= 2 && is.list(row[[2]])) {
         row[[2]]
       } else if (is.list(row) && !is.null(names(row))) {
@@ -117,7 +112,6 @@
       }
     })
     df <- do.call(rbind, lapply(rows, as.data.frame, stringsAsFactors = FALSE))
-    names(df) <- tolower(names(df))
     return(df)
   }
 
@@ -167,8 +161,7 @@ sfr_service_endpoint <- function(conn, service_name,
   # Query endpoints -- returns ingress_url for public access
   endpoints <- sfr_query(
     conn,
-    paste("SHOW ENDPOINTS IN SERVICE", fqn),
-    .keep_case = FALSE
+    paste("SHOW ENDPOINTS IN SERVICE", fqn)
   )
 
   if (nrow(endpoints) == 0L) {
@@ -180,13 +173,12 @@ sfr_service_endpoint <- function(conn, service_name,
 
   # Look for the 'inference' endpoint (the default name)
   ingress_url <- NULL
-  if ("ingress_url" %in% names(endpoints)) {
-    # Prefer the 'inference' endpoint if multiple exist
-    inf_row <- endpoints[tolower(endpoints$name) == "inference", , drop = FALSE]
+  if ("INGRESS_URL" %in% names(endpoints)) {
+    inf_row <- endpoints[tolower(endpoints$NAME) == "inference", , drop = FALSE]
     if (nrow(inf_row) > 0) {
-      ingress_url <- inf_row$ingress_url[1]
+      ingress_url <- inf_row$INGRESS_URL[1]
     } else {
-      ingress_url <- endpoints$ingress_url[1]
+      ingress_url <- endpoints$INGRESS_URL[1]
     }
   }
 

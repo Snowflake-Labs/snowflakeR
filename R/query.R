@@ -9,13 +9,19 @@
 #' via the pure-R REST API path. Otherwise, it falls back to the Python
 #' Snowpark bridge.
 #'
-#' Column names are lowercased by default for R friendliness. Use
-#' `.keep_case = TRUE` to preserve original Snowflake casing.
+#' Column names are returned **as-is from Snowflake** by default (UPPER
+#' case for unquoted identifiers). This matches the Python connector,
+#' Snowpark, and RSnowflake DBI behaviour and ensures consistency with
+#' the Model Registry / SPCS inference pipeline.
+#'
+#' To globally restore the legacy lowercase behaviour, set
+#' `options(snowflakeR.lowercase_columns = TRUE)`.
 #'
 #' @param conn An `sfr_connection` object from [sfr_connect()].
 #' @param sql Character. SQL query string.
-#' @param .keep_case Logical. If `TRUE`, preserve original column name
-#'   casing from Snowflake. Default: `FALSE` (lowercase).
+#' @param .keep_case Logical. If `TRUE` (default), preserve original column
+#'   name casing from Snowflake. Set to `FALSE` to lowercase column names.
+#'   The default respects the global option `snowflakeR.lowercase_columns`.
 #'
 #' @returns A data.frame with query results.
 #'
@@ -23,10 +29,12 @@
 #' \dontrun{
 #' conn <- sfr_connect()
 #' result <- sfr_query(conn, "SELECT CURRENT_TIMESTAMP() AS now")
+#' result$NOW
 #' }
 #'
 #' @export
-sfr_query <- function(conn, sql, .keep_case = FALSE) {
+sfr_query <- function(conn, sql,
+                      .keep_case = !getOption("snowflakeR.lowercase_columns", FALSE)) {
   validate_connection(conn)
   stopifnot(is.character(sql), length(sql) == 1L)
 

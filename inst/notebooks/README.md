@@ -112,11 +112,14 @@ A standalone test notebook for the **RSnowflake** DBI package is available at
 If SPCS inference fails with `Error in hardhat::forge(new_data, blueprint = ...):`
 followed by an empty message, this is almost always a **column name case mismatch**.
 
-`snowflakeR` lowercases column names from Snowflake (R convention), so the model
-blueprint stores lowercase names. SPCS sends UPPER-case columns (Snowflake
-convention). The built-in predict templates handle this automatically with
-`tolower()`. If you use custom `predict_body`, add `names({{INPUT}}) <- tolower(names({{INPUT}}))`
-at the top.
+`snowflakeR` preserves column names as-is from Snowflake (UPPER case for
+unquoted identifiers). Column names are consistent throughout the entire pipeline
+(training, registration, inference) so this error should not occur with default
+settings. If it does, verify that `names(new_data)` matches the columns the
+model was trained on.
+
+If you use `options(snowflakeR.lowercase_columns = TRUE)`, ensure this setting
+is consistent between training and inference environments.
 
 The empty error message occurs because `rlang`/`cli` error formatting uses ANSI
 codes that get stripped during JSON serialization in the SPCS HTTP response.

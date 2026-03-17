@@ -230,8 +230,7 @@ def _r_df_to_pandas(r_obj):
     except Exception:
         pass
 
-    # Fallback: coerce every column to character so S4/complex
-    # objects become their text representation.
+    # Fallback 1: coerce complex columns to character, keep simple types.
     try:
         r_df_chr = ro.r(
             'function(df) as.data.frame('
@@ -245,6 +244,18 @@ def _r_df_to_pandas(r_obj):
         )(r_obj)
         with (ro.default_converter + pandas2ri.converter).context():
             return ro.conversion.get_conversion().rpy2py(r_df_chr)
+    except Exception:
+        pass
+
+    # Fallback 2: coerce ALL columns to character (nuclear option).
+    try:
+        r_df_all_chr = ro.r(
+            'function(df) as.data.frame('
+            'lapply(df, function(col) as.character(col)),'
+            'stringsAsFactors=FALSE)'
+        )(r_obj)
+        with (ro.default_converter + pandas2ri.converter).context():
+            return ro.conversion.get_conversion().rpy2py(r_df_all_chr)
     except Exception as exc:
         print(f"Warning: R→pandas grid conversion failed ({exc}); "
               "falling back to text output.", file=sys.stderr)
@@ -725,10 +736,7 @@ def _build_safe_r_magics_class():
                         if is_grid:
                             pdf = _r_df_to_pandas(
                                 ro.r('..__wv__$value'))
-                        elif is_lazy:
-                            pdf = _lazy_tbl_to_pandas(ro)
                             if pdf is None:
-                                # Grid conversion failed; print text repr
                                 try:
                                     txt = ro.r(
                                         'capture.output('
@@ -737,8 +745,21 @@ def _build_safe_r_magics_class():
                                         str(x) for x in txt))
                                 except Exception:
                                     pass
-                    except Exception:
-                        pass
+                        elif is_lazy:
+                            pdf = _lazy_tbl_to_pandas(ro)
+                            if pdf is None:
+                                try:
+                                    txt = ro.r(
+                                        'capture.output('
+                                        'print(..__wv__$value))')
+                                    print('\n'.join(
+                                        str(x) for x in txt))
+                                except Exception:
+                                    pass
+                    except Exception as exc:
+                        print(
+                            f"Warning: grid display failed ({exc})",
+                            file=sys.stderr)
                     finally:
                         try:
                             ro.r('rm(..__co__, ..__wv__, '

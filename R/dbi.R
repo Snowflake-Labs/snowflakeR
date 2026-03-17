@@ -167,21 +167,40 @@ sfr_read_table <- function(conn, table_name, limit = NULL) {
 
 #' Write a data.frame to a Snowflake table
 #'
+#' By default, column names are uppercased before writing so that the
+#' resulting Snowflake columns are stored as standard unquoted identifiers
+#' (e.g. `CYL`, not `"cyl"`).
+#'
+#' This is necessary because the Snowpark `create_dataframe(pandas_df)`
+#' path double-quotes **every** column name from the pandas DataFrame to
+#' preserve its exact case.  Without uppercasing first, an R data.frame
+#' with lowercase names like `mtcars` would produce quoted lowercase
+#' columns (`"mpg"`, `"cyl"`) that are unreachable via normal unquoted
+#' SQL.  The uppercasing is applied to a **local copy** -- the caller's
+#' original data.frame is not modified (R copy-on-modify semantics).
+#'
+#' Set `.uppercase_cols = FALSE` to preserve the original column names
+#' exactly (they will be stored as quoted identifiers in Snowflake and
+#' must be referenced with double-quotes in SQL).
+#'
 #' @param conn An `sfr_connection` object.
 #' @param table_name Character. Name of the target table.
 #' @param value A data.frame to write.
 #' @param overwrite Logical. If `TRUE`, replaces the table. If `FALSE`
 #'   (default), appends or creates.
+#' @param .uppercase_cols Logical. If `TRUE` (default), column names are
+#'   uppercased before writing. Set to `FALSE` to preserve original casing.
+#'   Default respects `getOption("snowflakeR.preserve_write_case")`.
 #'
 #' @returns Invisibly returns `TRUE`.
 #'
 #' @export
-sfr_write_table <- function(conn, table_name, value, overwrite = FALSE) {
+sfr_write_table <- function(conn, table_name, value, overwrite = FALSE,
+                            .uppercase_cols = !getOption("snowflakeR.preserve_write_case", FALSE)) {
   validate_connection(conn)
   stopifnot(is.data.frame(value))
 
-  names(value) <- toupper(names(value))
-
+  if (.uppercase_cols) names(value) <- toupper(names(value))
   rownames(value) <- NULL
 
   py_df <- reticulate::r_to_py(value)

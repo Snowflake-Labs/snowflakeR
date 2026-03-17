@@ -12,11 +12,18 @@
 # For large datasets, an Apache Arrow IPC transfer path would be faster --
 # see TODO.md for the roadmap item.
 #
+# Column names are preserved as-is from Snowflake by default (UPPER case
+# for unquoted identifiers).  This matches the Python connector, Snowpark,
+# and RSnowflake DBI behaviour.  Set `lowercase = TRUE` to get the legacy
+# behaviour, or set `options(snowflakeR.lowercase_columns = TRUE)` globally.
+#
 # @param result  A list with `$columns`, `$data`, `$nrows` (from the Python bridge).
-# @param lowercase Logical. Lowercase column names? Default TRUE.
+# @param lowercase Logical. Lowercase column names? Default respects the
+#   global option `snowflakeR.lowercase_columns` (which defaults to `FALSE`).
 # @returns A data.frame.
 # @noRd
-.bridge_dict_to_df <- function(result, lowercase = TRUE) {
+.bridge_dict_to_df <- function(result,
+                               lowercase = getOption("snowflakeR.lowercase_columns", FALSE)) {
   cols <- result$columns
 
   if (result$nrows == 0L) {

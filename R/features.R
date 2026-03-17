@@ -175,7 +175,8 @@ sfr_get_entity <- function(fs, name) {
     name = name,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   structure(
@@ -206,7 +207,8 @@ sfr_list_entities <- function(fs) {
     session = fs$conn$session,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   .bridge_dict_to_df(result)
@@ -232,7 +234,8 @@ sfr_delete_entity <- function(fs, name) {
     name = name,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Entity {.val {name}} deleted.")
@@ -261,7 +264,8 @@ sfr_update_entity <- function(fs, name, desc) {
     desc = desc,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Entity {.val {name}} updated.")
@@ -477,7 +481,8 @@ sfr_list_feature_views <- function(fs,
     feature_view_name = feature_view_name,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   .bridge_dict_to_df(result)
@@ -505,7 +510,8 @@ sfr_get_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   structure(
@@ -564,7 +570,8 @@ sfr_delete_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Feature View {.val {name}} version {.val {version}} deleted.")
@@ -593,7 +600,8 @@ sfr_read_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   .bridge_dict_to_df(result)
@@ -623,7 +631,8 @@ sfr_refresh_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Feature View {.val {name}} version {.val {version}} refreshed.")
@@ -654,7 +663,8 @@ sfr_suspend_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Feature View {.val {name}} version {.val {version}} suspended.")
@@ -685,7 +695,8 @@ sfr_resume_feature_view <- function(fs, name, version) {
     version = version,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   cli::cli_inform("Feature View {.val {name}} version {.val {version}} resumed.")
@@ -720,7 +731,8 @@ sfr_get_refresh_history <- function(fs, name, version, verbose = FALSE) {
     database = args$database,
     schema = args$schema,
     warehouse = args$warehouse,
-    verbose = verbose
+    verbose = verbose,
+    creation_mode = args$creation_mode
   )
 
   .bridge_dict_to_df(result)
@@ -834,7 +846,8 @@ sfr_generate_training_data <- function(fs,
     save_as = save_as,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   on.exit(unlink(json_path), add = TRUE)
@@ -880,7 +893,8 @@ sfr_retrieve_features <- function(fs, spine, features) {
     feature_view_refs = fv_refs,
     database = args$database,
     schema = args$schema,
-    warehouse = args$warehouse
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
   )
 
   on.exit(unlink(json_path), add = TRUE)

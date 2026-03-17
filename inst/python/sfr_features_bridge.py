@@ -221,13 +221,14 @@ def get_entity(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Dict[str, Any]:
     """Retrieve a registered entity by name."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     entity = fs.get_entity(name)
 
     return {
@@ -242,13 +243,14 @@ def list_entities(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """List all entities in the Feature Store. Returns a pandas DataFrame."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     return _pandas_to_r_dict(fs.list_entities().to_pandas())
 
 
@@ -258,13 +260,14 @@ def delete_entity(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Delete an entity by name."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fs.delete_entity(name)
 
 
@@ -359,13 +362,14 @@ def get_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Dict[str, Any]:
     """Retrieve a registered FeatureView by name and version."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fv = fs.get_feature_view(name, version)
 
     return {
@@ -385,13 +389,14 @@ def list_feature_views(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """List Feature Views. Returns a pandas DataFrame."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     kwargs = {}
     if entity_name:
         kwargs["entity_name"] = entity_name
@@ -408,13 +413,14 @@ def delete_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Delete a registered FeatureView."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fs.delete_feature_view(name, version)
 
 
@@ -425,13 +431,14 @@ def refresh_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Manually refresh a FeatureView."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fs.refresh_feature_view(name, version)
 
 
@@ -442,13 +449,14 @@ def read_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """Read data from a registered FeatureView. Returns pandas DataFrame."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     return _pandas_to_r_dict(fs.read_feature_view(name, version).to_pandas())
 
 
@@ -459,13 +467,14 @@ def suspend_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Suspend a FeatureView's automatic refresh."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fs.suspend_feature_view(name, version)
 
 
@@ -476,13 +485,14 @@ def resume_feature_view(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Resume a suspended FeatureView's automatic refresh."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     fs.resume_feature_view(name, version)
 
 
@@ -500,6 +510,7 @@ def generate_training_set(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """
     Generate a training set by joining spine data with Feature Views.
@@ -522,7 +533,7 @@ def generate_training_set(
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
 
     # Build spine DataFrame
     spine_df = session.sql(spine_sql)
@@ -557,6 +568,7 @@ def retrieve_features(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """
     Retrieve feature values for inference (no labels, no PIT).
@@ -576,7 +588,7 @@ def retrieve_features(
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
 
     spine_df = session.sql(spine_sql)
     fvs = [fs.get_feature_view(ref["name"], ref["version"]) for ref in feature_view_refs]
@@ -600,13 +612,14 @@ def update_entity(
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> None:
     """Update an entity's description."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     entity = fs.get_entity(name)
     fs.update_entity(name, desc=desc)
 
@@ -619,13 +632,14 @@ def get_refresh_history(
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     verbose: bool = False,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
 ) -> Any:
     """Get refresh history for a Feature View. Returns pandas DataFrame."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
-    fs = _get_feature_store(session, db, sc, wh)
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
     return _pandas_to_r_dict(fs.get_refresh_history(name, version, verbose=verbose).to_pandas())
 
 
