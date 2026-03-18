@@ -60,6 +60,8 @@ languages:
     cran_packages:
       - lares
       - Robyn
+    pip_packages:
+      - nevergrad
     addons:
       adbc: false
       duckdb: false
