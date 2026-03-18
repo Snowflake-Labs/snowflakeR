@@ -2,15 +2,27 @@
 # snowflakeR -- Credit Risk Demo Config
 # =============================================================================
 # R environment for credit risk scoring notebooks. Includes the full
-# tidymodels stack (recipes, parsnip, workflows, yardstick, rsample, tune)
-# plus XGBoost and ranger engines -- all pre-compiled from conda-forge.
+# tidymodels stack plus XGBoost and ranger -- all pre-compiled from conda-forge.
 #
-# Usage:
-#   from sfnb_setup import install_r, install_r_packages
-#   install_r(config="snowflaker_credit_risk_config.yaml")
-#   install_r_packages(config="snowflaker_credit_risk_config.yaml")
+# Usage (single cell):
+#   from sfnb_setup import setup_notebook
+#   setup_notebook(config="snowflaker_credit_risk_config.yaml")
+#
+# All sections below are OPTIONAL -- sensible defaults are used when omitted.
 # =============================================================================
 
+# -- Session context (optional) -----------------------------------------------
+# context:
+#   warehouse: "MY_WH"
+#   database: "MY_DB"
+#   schema: "MY_SCHEMA"
+
+# -- EAI settings (optional) --------------------------------------------------
+# eai:
+#   managed: "MY_EAI"
+#   supplementary_name: "MULTILANG_NOTEBOOK_EAI"
+
+# -- Language and package spec ------------------------------------------------
 env_name: "workspace_env"
 
 languages:
@@ -45,3 +57,11 @@ languages:
 
   julia:
     enabled: false
+
+# -- Credit risk specific settings (read by sfr_load_notebook_config) -----
+# credit_risk:
+#   database: "CREDIT_RISK_ML"
+#   source_schema: "RAW_DATA"
+#   feature_store_schema: "FEATURES"
+#   training_schema: "TRAINING"
+#   registry_schema: "MODELS"
