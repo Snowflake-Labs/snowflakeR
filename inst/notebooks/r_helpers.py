@@ -126,6 +126,21 @@ def setup_r_environment(install_rpy2: bool = True, register_magic: bool = True) 
         except AttributeError:
             pass
 
+    # Create timezone symlink so R/zoo/xts don't warn about mis-configured system
+    _tz_target = "/usr/share/zoneinfo/UTC"
+    _tz_link = "/var/db/timezone/localtime"
+    if os.path.isfile(_tz_target):
+        try:
+            if os.path.islink(_tz_link) and os.readlink(_tz_link) == _tz_target:
+                pass
+            else:
+                os.makedirs(os.path.dirname(_tz_link), exist_ok=True)
+                if os.path.islink(_tz_link):
+                    os.remove(_tz_link)
+                os.symlink(_tz_target, _tz_link)
+        except OSError:
+            pass
+
     # Verify R is accessible
     r_path = shutil.which('R')
     if not r_path:
