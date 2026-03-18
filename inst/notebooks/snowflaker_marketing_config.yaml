@@ -51,6 +51,8 @@ languages:
       # Robyn dependencies (conda-forge where available)
       - r-nloptr
       - r-prophet
+      - r-cmdstanr
+      - cmdstan
       - r-glmnet
       - r-doparallel
       - r-dorng
