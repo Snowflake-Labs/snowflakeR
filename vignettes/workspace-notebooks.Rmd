@@ -68,67 +68,62 @@ To find the directory after installing the package:
 system.file("notebooks", package = "snowflakeR")
 ```
 
-### Step 0: Configure execution context
+### Step 0: Configure (optional)
 
 Workspace Notebooks do
 [not auto-set database or schema](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context).
-Copy `notebook_config.yaml.template` to `notebook_config.yaml` and set your
-warehouse, database, and schema:
+Each notebook has a `_config.yaml` where you can optionally override the
+session context. If omitted, `setup_notebook()` uses the Snowpark session's
+current database/schema/warehouse:
 
 ```yaml
+# snowflaker_config.yaml -- all sections optional
 context:
   warehouse: "MY_WAREHOUSE"
   database: "MY_DATABASE"
   schema: "MY_SCHEMA"
 ```
 
-All notebooks read this file. Table references use fully qualified names
-(`DATABASE.SCHEMA.TABLE`) via `sfr_fqn()`.
+Table references use fully qualified names (`DATABASE.SCHEMA.TABLE`) via
+`sfr_fqn()`.
 
-### Step 1: Install the R environment and register `%%R` magic
+### Step 1: Bootstrap the notebook (single cell)
 
 Workspace Notebooks run in containers without R pre-installed. The
 [`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
 toolkit handles installation. Each notebook directory includes an `sfnb_setup.py`
-bootstrap file that auto-detects the environment and installs the toolkit if
-needed:
+bootstrap file. A single call to `setup_notebook()` handles everything:
 
 ```python
-# Python cell -- run once per session (~1-2 minutes)
-from sfnb_setup import install_r
-install_r()
+# Python cell -- run once per session (~45 sec fresh, ~2 sec cached)
+from sfnb_setup import setup_notebook
+setup_notebook(config="snowflaker_config.yaml", packages=["snowflakeR"])
 ```
 
-This single call installs R via `micromamba` + conda-forge, registers the `%%R`
-cell magic via `rpy2`, and configures the R environment. Everything is installed
-in **user-space** -- no `sudo` or root access is required.
+This single call:
 
-For more advanced configurations (ADBC, DuckDB, custom packages, Scala/Julia),
-pass keyword arguments or a YAML config file:
+- Sets session context (from config or session defaults)
+- Validates/creates the EAI with all required domains
+- Installs R via `micromamba` + conda-forge and registers the `%%R` magic
+- Installs R packages (from tarballs, URLs, or GitHub via `pak`)
+- Exports SPCS OAuth env vars for RSnowflake DBI connectivity
+
+Everything is installed in **user-space** -- no `sudo` or root access is required.
+
+**Alternative (step-by-step):** If you prefer separate steps:
 
 ```python
-install_r(r_adbc=True)                      # enable ADBC
-install_r(config="configs/snowflaker.yaml")  # use preset config
+from sfnb_setup import install_r, install_r_packages
+install_r(config="snowflaker_config.yaml")
+install_r_packages(config="snowflaker_config.yaml", packages=["snowflakeR"])
 ```
 
-See the preset configs in the `snowflake-notebook-multilang` repo under
-`configs/` for examples.
-
-**Alternative (no sfnb_setup.py):** If you prefer not to use the bootstrap file,
-you can inline the setup directly in a notebook cell (~25 lines):
+**Alternative (no sfnb_setup.py):** Install the toolkit directly:
 
 ```python
-try:
-    from sfnb_multilang import install
-except ImportError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sfnb-multilang"])
-    from sfnb_multilang import install
-
+!pip install sfnb-multilang
+from sfnb_multilang import install
 install(languages=["r"])
-
-from r_helpers import setup_r_environment
-setup_r_environment()
 ```
 
 **Licensing:** All software installed by the toolkit is freely-licensed
@@ -402,17 +397,16 @@ environments. Only the setup differs.
 ## Typical workflow
 
 ```python
-# Cell 1 (Python): Install R and register %%R magic
-from sfnb_setup import install_r
-install_r()
+# Cell 1 (Python): Bootstrap R, packages, EAI, and context
+from sfnb_setup import setup_notebook
+setup_notebook(config="snowflaker_config.yaml", packages=["snowflakeR"])
 ```
 
 ```r
 %%R
-# Cell 2 (R): Load, connect, and set execution context
+# Cell 2 (R): Load and connect
 library(snowflakeR)
 conn <- sfr_connect()
-conn <- sfr_load_notebook_config(conn)
 
 fs   <- sfr_feature_store(conn)
 reg  <- sfr_model_registry(conn)
@@ -461,7 +455,7 @@ system.file("notebooks", package = "snowflakeR")
 | `local_feature_store.ipynb` | Local | Feature Store for local R environments |
 | `local_forecasting_demo.ipynb` | Local | Forecasting demo for local R environments |
 
-Both notebooks use `notebook_config.yaml` for execution context and
+Workspace notebooks use `setup_notebook()` for context and EAI, and
 `sfr_fqn()` for fully qualified table names. Upload the entire folder to
 your Workspace or copy to a local directory to get started.
 
@@ -469,7 +463,7 @@ your Workspace or copy to a local directory to get started.
 
 | Issue | Solution |
 |-------|----------|
-| `rpy2` not found | Run `from sfnb_setup import install_r; install_r()` |
+| `rpy2` not found | Run `from sfnb_setup import setup_notebook; setup_notebook()` |
 | `%%R` not recognised | Run `%load_ext rpy2.ipython` |
 | Extra line breaks in output | Use `rprint()`, `rview()`, `rglimpse()` |
 | Package not found | Add to a YAML config preset or install interactively |

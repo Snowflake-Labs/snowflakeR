@@ -654,7 +654,7 @@ instructions in the first cell. Key notebooks:</p>
 <tr class="even">
 <td>Python/R env</td>
 <td>You manage</td>
-<td><code>sfnb_setup.install_r()</code></td>
+<td><code>setup_notebook()</code> from <code>sfnb_setup.py</code></td>
 </tr>
 <tr class="odd">
 <td>Authentication</td>
@@ -664,12 +664,12 @@ instructions in the first cell. Key notebooks:</p>
 <tr class="even">
 <td>Package install</td>
 <td><code>install.packages()</code></td>
-<td>YAML config + <code>install.packages()</code></td>
+<td>YAML config + tarballs or <code>pak</code></td>
 </tr>
 <tr class="odd">
 <td>Execution context</td>
 <td>Usually set by connection</td>
-<td>Must set explicitly (<a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context">docs</a>)</td>
+<td><code>setup_notebook()</code> reads config or session defaults (<a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context">docs</a>)</td>
 </tr>
 <tr class="even">
 <td>Plotting</td>

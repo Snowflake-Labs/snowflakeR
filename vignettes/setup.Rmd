@@ -328,10 +328,10 @@ in the first cell. Key notebooks:
 | Aspect | Local | Workspace |
 |---|---|---|
 | R kernel | Native R | Python + `%%R` |
-| Python/R env | You manage | `sfnb_setup.install_r()` |
+| Python/R env | You manage | `setup_notebook()` from `sfnb_setup.py` |
 | Authentication | `connections.toml` / key-pair | Auto-detected (SPCS OAuth) |
-| Package install | `install.packages()` | YAML config + `install.packages()` |
-| Execution context | Usually set by connection | Must set explicitly ([docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context)) |
+| Package install | `install.packages()` | YAML config + tarballs or `pak` |
+| Execution context | Usually set by connection | `setup_notebook()` reads config or session defaults ([docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context)) |
 | Plotting | Native plot pane | `%%R -w W -h H` + `print(p)` |
 | Session lifecycle | Persistent | Re-setup each session (~1-2 min) |
 

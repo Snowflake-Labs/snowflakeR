@@ -396,57 +396,52 @@ and helpers needed. Upload the folder contents to your Workspace, then
 follow the steps below.</p>
 <p>To find the directory after installing the package:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">system.file</span>(<span class="st">&quot;notebooks&quot;</span>, <span class="at">package =</span> <span class="st">&quot;snowflakeR&quot;</span>)</span></code></pre></div>
-<div id="step-0-configure-execution-context" class="section level3">
-<h3>Step 0: Configure execution context</h3>
+<div id="step-0-configure-optional" class="section level3">
+<h3>Step 0: Configure (optional)</h3>
 <p>Workspace Notebooks do <a href="https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context">not
-auto-set database or schema</a>. Copy
-<code>notebook_config.yaml.template</code> to
-<code>notebook_config.yaml</code> and set your warehouse, database, and
-schema:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">context</span><span class="kw">:</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="at">  </span><span class="fu">warehouse</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_WAREHOUSE&quot;</span></span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="at">  </span><span class="fu">database</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_DATABASE&quot;</span></span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_SCHEMA&quot;</span></span></code></pre></div>
-<p>All notebooks read this file. Table references use fully qualified
-names (<code>DATABASE.SCHEMA.TABLE</code>) via
-<code>sfr_fqn()</code>.</p>
+auto-set database or schema</a>. Each notebook has a
+<code>_config.yaml</code> where you can optionally override the session
+context. If omitted, <code>setup_notebook()</code> uses the Snowpark
+session’s current database/schema/warehouse:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># snowflaker_config.yaml -- all sections optional</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="fu">context</span><span class="kw">:</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="at">  </span><span class="fu">warehouse</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_WAREHOUSE&quot;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="at">  </span><span class="fu">database</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_DATABASE&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;MY_SCHEMA&quot;</span></span></code></pre></div>
+<p>Table references use fully qualified names
+(<code>DATABASE.SCHEMA.TABLE</code>) via <code>sfr_fqn()</code>.</p>
 </div>
-<div id="step-1-install-the-r-environment-and-register-r-magic" class="section level3">
-<h3>Step 1: Install the R environment and register <code>%%R</code>
-magic</h3>
+<div id="step-1-bootstrap-the-notebook-single-cell" class="section level3">
+<h3>Step 1: Bootstrap the notebook (single cell)</h3>
 <p>Workspace Notebooks run in containers without R pre-installed. The <a href="https://github.com/Snowflake-Labs/snowflake-notebook-multilang"><code>sfnb-multilang</code></a>
 toolkit handles installation. Each notebook directory includes an
-<code>sfnb_setup.py</code> bootstrap file that auto-detects the
-environment and installs the toolkit if needed:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Python cell -- run once per session (~1-2 minutes)</span></span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r</span>
-<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>install_r()</span></code></pre></div>
-<p>This single call installs R via <code>micromamba</code> +
-conda-forge, registers the <code>%%R</code> cell magic via
-<code>rpy2</code>, and configures the R environment. Everything is
-installed in <strong>user-space</strong> – no <code>sudo</code> or root
-access is required.</p>
-<p>For more advanced configurations (ADBC, DuckDB, custom packages,
-Scala/Julia), pass keyword arguments or a YAML config file:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>install_r(r_adbc<span class="op">=</span><span class="va">True</span>)                      <span class="co"># enable ADBC</span></span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>install_r(config<span class="op">=</span><span class="st">&quot;configs/snowflaker.yaml&quot;</span>)  <span class="co"># use preset config</span></span></code></pre></div>
-<p>See the preset configs in the
-<code>snowflake-notebook-multilang</code> repo under
-<code>configs/</code> for examples.</p>
-<p><strong>Alternative (no sfnb_setup.py):</strong> If you prefer not to
-use the bootstrap file, you can inline the setup directly in a notebook
-cell (~25 lines):</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="cf">try</span>:</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>    <span class="im">from</span> sfnb_multilang <span class="im">import</span> install</span>
-<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="cf">except</span> <span class="pp">ImportError</span>:</span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>    <span class="im">import</span> subprocess, sys</span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>    subprocess.check_call([sys.executable, <span class="st">&quot;-m&quot;</span>, <span class="st">&quot;pip&quot;</span>, <span class="st">&quot;install&quot;</span>, <span class="st">&quot;-q&quot;</span>, <span class="st">&quot;sfnb-multilang&quot;</span>])</span>
-<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>    <span class="im">from</span> sfnb_multilang <span class="im">import</span> install</span>
-<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a></span>
-<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>install(languages<span class="op">=</span>[<span class="st">&quot;r&quot;</span>])</span>
-<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a></span>
-<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="im">from</span> r_helpers <span class="im">import</span> setup_r_environment</span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>setup_r_environment()</span></code></pre></div>
+<code>sfnb_setup.py</code> bootstrap file. A single call to
+<code>setup_notebook()</code> handles everything:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Python cell -- run once per session (~45 sec fresh, ~2 sec cached)</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> setup_notebook</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>setup_notebook(config<span class="op">=</span><span class="st">&quot;snowflaker_config.yaml&quot;</span>, packages<span class="op">=</span>[<span class="st">&quot;snowflakeR&quot;</span>])</span></code></pre></div>
+<p>This single call:</p>
+<ul>
+<li>Sets session context (from config or session defaults)</li>
+<li>Validates/creates the EAI with all required domains</li>
+<li>Installs R via <code>micromamba</code> + conda-forge and registers
+the <code>%%R</code> magic</li>
+<li>Installs R packages (from tarballs, URLs, or GitHub via
+<code>pak</code>)</li>
+<li>Exports SPCS OAuth env vars for RSnowflake DBI connectivity</li>
+</ul>
+<p>Everything is installed in <strong>user-space</strong> – no
+<code>sudo</code> or root access is required.</p>
+<p><strong>Alternative (step-by-step):</strong> If you prefer separate
+steps:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r, install_r_packages</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>install_r(config<span class="op">=</span><span class="st">&quot;snowflaker_config.yaml&quot;</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>install_r_packages(config<span class="op">=</span><span class="st">&quot;snowflaker_config.yaml&quot;</span>, packages<span class="op">=</span>[<span class="st">&quot;snowflakeR&quot;</span>])</span></code></pre></div>
+<p><strong>Alternative (no sfnb_setup.py):</strong> Install the toolkit
+directly:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="op">!</span>pip install sfnb<span class="op">-</span>multilang</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="im">from</span> sfnb_multilang <span class="im">import</span> install</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>install(languages<span class="op">=</span>[<span class="st">&quot;r&quot;</span>])</span></code></pre></div>
 <p><strong>Licensing:</strong> All software installed by the toolkit is
 freely-licensed open-source. <code>micromamba</code> is BSD-3-Clause
 (developed by the <a href="https://github.com/mamba-org">mamba-org</a>
@@ -761,17 +756,16 @@ identical</strong> in both environments. Only the setup differs.</p>
 </div>
 <div id="typical-workflow" class="section level2">
 <h2>Typical workflow</h2>
-<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="co"># Cell 1 (Python): Install R and register %%R magic</span></span>
-<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> install_r</span>
-<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>install_r()</span></code></pre></div>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="co"># Cell 1 (Python): Bootstrap R, packages, EAI, and context</span></span>
+<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a><span class="im">from</span> sfnb_setup <span class="im">import</span> setup_notebook</span>
+<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>setup_notebook(config<span class="op">=</span><span class="st">&quot;snowflaker_config.yaml&quot;</span>, packages<span class="op">=</span>[<span class="st">&quot;snowflakeR&quot;</span>])</span></code></pre></div>
 <div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
-<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a><span class="co"># Cell 2 (R): Load, connect, and set execution context</span></span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a><span class="co"># Cell 2 (R): Load and connect</span></span>
 <span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span>
 <span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_connect</span>()</span>
-<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>conn <span class="ot">&lt;-</span> <span class="fu">sfr_load_notebook_config</span>(conn)</span>
-<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a></span>
-<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a>fs   <span class="ot">&lt;-</span> <span class="fu">sfr_feature_store</span>(conn)</span>
-<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a>reg  <span class="ot">&lt;-</span> <span class="fu">sfr_model_registry</span>(conn)</span></code></pre></div>
+<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a></span>
+<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a>fs   <span class="ot">&lt;-</span> <span class="fu">sfr_feature_store</span>(conn)</span>
+<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a>reg  <span class="ot">&lt;-</span> <span class="fu">sfr_model_registry</span>(conn)</span></code></pre></div>
 <div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="sc">%%</span>R</span>
 <span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a><span class="co"># Cell 3 (R): Generate training data</span></span>
 <span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>training <span class="ot">&lt;-</span> <span class="fu">sfr_generate_training_data</span>(</span>
@@ -849,10 +843,10 @@ package:</p>
 </tr>
 </tbody>
 </table>
-<p>Both notebooks use <code>notebook_config.yaml</code> for execution
-context and <code>sfr_fqn()</code> for fully qualified table names.
-Upload the entire folder to your Workspace or copy to a local directory
-to get started.</p>
+<p>Workspace notebooks use <code>setup_notebook()</code> for context and
+EAI, and <code>sfr_fqn()</code> for fully qualified table names. Upload
+the entire folder to your Workspace or copy to a local directory to get
+started.</p>
 </div>
 <div id="troubleshooting" class="section level2">
 <h2>Troubleshooting</h2>
@@ -870,7 +864,8 @@ to get started.</p>
 <tbody>
 <tr class="odd">
 <td><code>rpy2</code> not found</td>
-<td>Run <code>from sfnb_setup import install_r; install_r()</code></td>
+<td>Run
+<code>from sfnb_setup import setup_notebook; setup_notebook()</code></td>
 </tr>
 <tr class="even">
 <td><code>%%R</code> not recognised</td>

@@ -107,18 +107,19 @@ reg <- sfr_model_registry(conn)
 fs  <- sfr_feature_store(conn)
 ```
 
-The package also provides `rprint()`, `rview()`, `rglimpse()`, and `rcat()` helpers for rich output rendering in Workspace cells. See `vignette("workspace-notebooks")` for setup instructions, PAT management, and tips for the dual local/Workspace workflow.
+The package also provides `rprint()`, `rview()`, `rglimpse()`, and `rcat()` helpers for rich output rendering in Workspace cells. See `vignette("workspace-notebooks")` for setup instructions and tips for the dual local/Workspace workflow.
 
 > **Note:** Workspace Notebooks do [not auto-set database or schema](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context).
-> `snowflakeR` provides `sfr_load_notebook_config()` to set execution context
-> from a single YAML file, and `sfr_fqn()` to build fully qualified table
-> names (`DATABASE.SCHEMA.TABLE`). See the example notebooks below.
+> Use `setup_notebook()` from `sfnb_setup.py` to set session context
+> automatically (from the YAML config or session defaults), and
+> `sfr_fqn()` to build fully qualified table names
+> (`DATABASE.SCHEMA.TABLE`). See the example notebooks below.
 
 ## Example Notebooks
 
 `snowflakeR` ships with a **self-contained `notebooks/` directory** that has
-everything you need to get started, including setup scripts, config template,
-and Python helpers:
+everything you need to get started, including the bootstrap script and
+per-notebook config files:
 
 ```r
 # Find the notebooks directory in the installed package
@@ -141,13 +142,13 @@ open `workspace_quickstart.ipynb`. For **local** environments, open
 | `local_model_registry.ipynb` | Model Registry for local environments |
 | `workspace_feature_store.ipynb` | Feature Store: entities, views, training data (Workspace) |
 | `local_feature_store.ipynb` | Feature Store for local environments |
-| `notebook_config.yaml.template` | Single config file for warehouse, database, schema |
-| `setup_r_environment.sh` | Installs R + packages via micromamba (Workspace only) |
-| `r_packages.yaml` | R package list for the setup script |
-| `r_helpers.py` | Python helpers for rpy2 / `%%R` magic (Workspace only) |
+| `sfnb_setup.py` | All-in-one bootstrap: EAI, R runtime, packages, context (Workspace) |
+| `snowflaker_config.yaml` | Per-notebook config: context, EAI, packages |
 
-Copy `notebook_config.yaml.template` to `notebook_config.yaml` and set your
-context before running any notebook.
+For Workspace Notebooks, the first cell runs `setup_notebook()` which
+handles EAI validation, R installation, package installation, and session
+context automatically. No separate config copy step is needed -- edit the
+`_config.yaml` directly or rely on session defaults.
 
 ## Vignettes
 

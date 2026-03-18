@@ -16,65 +16,64 @@ Interactive Jupyter notebooks demonstrating the `snowflakeR` package.
 | `local_feature_store.ipynb` | Local | Feature Store for local environments |
 | `workspace_forecasting_demo.ipynb` | Workspace | Time series forecasting (ARIMA) with custom predict logic |
 | `local_forecasting_demo.ipynb` | Local | Forecasting demo for local environments |
+| `workspace_credit_risk_setup.ipynb` | Workspace | Credit risk demo: data preparation and setup |
+| `workspace_credit_risk_demo.ipynb` | Workspace | Credit risk demo: model training and registry |
 
 ### Supporting Files
 
 | File | Purpose |
 |---|---|
-| `notebook_config.yaml.template` | Configuration template (warehouse, database, schema) |
-| `r_helpers.py` | Python helpers for rpy2/%%R magic setup (Workspace only) |
+| `sfnb_setup.py` | All-in-one bootstrap: EAI, R runtime, packages, session context (Workspace) |
+| `snowflaker_config.yaml` | Per-notebook config for quickstart, model registry, feature store |
+| `snowflaker_forecast_config.yaml` | Per-notebook config for forecasting demo |
+| `snowflaker_feature_store_config.yaml` | Per-notebook config for feature store demo |
+| `snowflaker_credit_risk_config.yaml` | Per-notebook config for credit risk demo |
 
 ## Quick Start
 
-### 1. Configure your environment
+### 1. Configure your environment (optional)
 
-Copy the config template and edit with your values:
-
-```bash
-cp notebook_config.yaml.template notebook_config.yaml
-```
-
-Edit `notebook_config.yaml` -- at minimum, set:
+Edit the appropriate `_config.yaml` for your notebook. All sections are
+optional -- if omitted, `setup_notebook()` uses the Snowpark session's
+current database, schema, and warehouse as defaults:
 
 ```yaml
+# snowflaker_config.yaml (example)
 context:
   warehouse: "MY_WAREHOUSE"
   database: "MY_DATABASE"
   schema: "MY_SCHEMA"
-```
 
-All notebooks read this file to set execution context.
-Table references use fully qualified names (`DATABASE.SCHEMA.TABLE`) as
-[recommended by Snowflake](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run#set-the-execution-context).
+# eai:
+#   managed: "MY_EAI"
+
+languages:
+  r:
+    enabled: true
+    tarballs:
+      snowflakeR: "https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+```
 
 ### 2. Choose your environment
 
 **Workspace Notebooks** (Python kernel + `%%R` magic):
 
 1. Upload this folder to your Workspace
-2. Attach an **External Access Integration (EAI)** that allows outbound HTTPS
-   to `micro.mamba.pm`, `conda.anaconda.org`, and `repo.anaconda.com` (plus
-   `cloud.r-project.org` if installing CRAN packages). See the full host table
-   and example SQL in `internal/prd_eng/workspace_notebooks_eai_requirements.md`.
-3. Open `workspace_quickstart.ipynb`
-4. Run the setup cells -- the first cell installs R via the
-   [`sfnb-multilang`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
-   toolkit (micromamba + conda-forge, no root required)
-5. The notebook handles `USE WAREHOUSE/DATABASE/SCHEMA` via `sfr_load_notebook_config()`
-
-**Public standalone install** (when `sfnb-multilang` is not bundled):
-
-```python
-!pip install "sfnb-multilang @ https://github.com/Snowflake-Labs/snowflake-notebook-multilang/archive/refs/heads/main.zip"
-from sfnb_multilang import install
-install(languages=["r"])
-```
+2. Open a workspace notebook (e.g. `workspace_quickstart.ipynb`)
+3. Run the first cell -- `setup_notebook()` handles everything:
+   - Validates/creates the EAI (with all required domains)
+   - Installs R via [sfnb-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang)
+   - Installs R packages (from tarballs or GitHub)
+   - Sets session context (USE WAREHOUSE/DATABASE/SCHEMA)
+   - Exports SPCS OAuth env vars for RSnowflake DBI connectivity
+4. If this is a first-time setup and no EAI is attached yet, follow the
+   printed instructions to attach it via the Snowsight UI (one-time step)
 
 **Local R environments** (RStudio, Posit Workbench, JupyterLab with R kernel):
 
 1. Open `local_quickstart.ipynb` (or copy cells to an R script)
 2. Ensure `snowflakeR` is installed (`pak::pak("Snowflake-Labs/snowflakeR")`)
-3. Configure `connections.toml` or set `connection:` section in `notebook_config.yaml`
+3. Configure `connections.toml` or pass credentials to `sfr_connect()`
 
 ## Accessing notebooks from an installed package
 
@@ -98,7 +97,7 @@ DBI compliance and `dbplyr` integration, install the companion
 [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) package and use
 `sfr_dbi_connection()` to bridge from an `sfr_connection`. See the
 `local_quickstart.ipynb` Section 4 for examples, or the standalone
-`RSnowflake/inst/notebooks/demo_rsnowflake.ipynb`.
+`RSnowflake/inst/notebooks/workspace_rsnowflake_test.ipynb`.
 
 ## RSnowflake Test Notebook
 
