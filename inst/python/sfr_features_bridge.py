@@ -84,6 +84,9 @@ def _pandas_to_r_dict(pdf):
     return {"columns": cols, "data": data, "nrows": nrows}
 
 
+_fs_cache: Dict[tuple, Any] = {}
+
+
 def _get_feature_store(
     session,
     database: str,
@@ -92,7 +95,7 @@ def _get_feature_store(
     creation_mode: str = "FAIL_IF_NOT_EXIST",
 ):
     """
-    Get or create a FeatureStore instance.
+    Get or create a FeatureStore instance, cached by (db, schema, warehouse, mode).
 
     Args:
         session: Active Snowpark Session.
@@ -104,6 +107,10 @@ def _get_feature_store(
     Returns:
         FeatureStore instance.
     """
+    cache_key = (database, schema, default_warehouse, creation_mode)
+    if cache_key in _fs_cache:
+        return _fs_cache[cache_key]
+
     from snowflake.ml.feature_store import FeatureStore, CreationMode
 
     mode_map = {
@@ -112,13 +119,15 @@ def _get_feature_store(
     }
     mode = mode_map.get(creation_mode, CreationMode.FAIL_IF_NOT_EXIST)
 
-    return FeatureStore(
+    fs = FeatureStore(
         session=session,
         database=database,
         name=schema,
         default_warehouse=default_warehouse,
         creation_mode=mode,
     )
+    _fs_cache[cache_key] = fs
+    return fs
 
 
 def _make_entity(name: str, join_keys: List[str], desc: Optional[str] = None):
