@@ -34,12 +34,11 @@
 
   df <- as.data.frame(result$data, stringsAsFactors = FALSE)
 
-  # Replace NA sentinels with proper R NA
+  # Replace NA sentinels and any literal "NA_character_" leaks with proper R NA
 
-  na_sentinel <- "NA_SENTINEL_"
   for (col in names(df)) {
     if (is.character(df[[col]])) {
-      df[[col]][df[[col]] == na_sentinel] <- NA_character_
+      df[[col]][df[[col]] %in% c("NA_SENTINEL_", "NA_character_", "None")] <- NA_character_
     }
   }
 

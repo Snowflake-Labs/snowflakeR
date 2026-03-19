@@ -37,9 +37,10 @@ def _pandas_to_r_dict(pdf):
             vals = [v.isoformat() if isinstance(v, (datetime.datetime, datetime.date)) else v for v in vals]
 
         if na_mask.any():
-            data[col] = [_NA if is_na else v for v, is_na in zip(vals, na_mask)]
+            data[col] = [_NA if is_na else (_NA if v is None else v)
+                         for v, is_na in zip(vals, na_mask)]
         else:
-            data[col] = vals
+            data[col] = [_NA if v is None else v for v in vals]
 
     return {"columns": cols, "data": data, "nrows": nrows}
 
