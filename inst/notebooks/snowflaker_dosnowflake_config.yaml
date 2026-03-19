@@ -1,0 +1,55 @@
+# =============================================================================
+# snowflakeR -- doSnowflake Demo Config
+# =============================================================================
+# Extends the base snowflakeR config with r-foreach and r-iterators from
+# conda-forge for parallel processing via the doSnowflake backend.
+#
+# Usage (single cell):
+#   from sfnb_setup import setup_notebook
+#   setup_notebook(config="snowflaker_dosnowflake_config.yaml", packages=["snowflakeR"])
+#
+# All sections below are OPTIONAL -- sensible defaults are used when omitted.
+# =============================================================================
+
+# -- Session context (optional) -----------------------------------------------
+# context:
+#   warehouse: "MY_WH"
+#   database: "MY_DB"
+#   schema: "MY_SCHEMA"
+
+# -- EAI settings (optional) --------------------------------------------------
+# eai:
+#   managed: "MY_EAI"
+#   supplementary_name: "MULTILANG_NOTEBOOK_EAI"
+
+# -- Language and package spec ------------------------------------------------
+env_name: "workspace_env"
+
+languages:
+  r:
+    enabled: true
+    r_version: "4.5.2"
+    conda_packages:
+      - r-cli
+      - r-rlang>=1.0.0
+      - r-reticulate>=1.25
+      - r-tidyverse
+      - r-dbplyr
+      - r-httr2>=1.0.0
+      - r-lazyeval
+      - r-dbi>=1.2.0
+      - r-jsonlite
+      - r-foreach
+      - r-iterators
+    cran_packages: []
+    addons:
+      adbc: false
+      duckdb: false
+    tarballs:
+      snowflakeR: "https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+
+  scala:
+    enabled: false
+
+  julia:
+    enabled: false

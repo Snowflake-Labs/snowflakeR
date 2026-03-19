@@ -6,6 +6,51 @@
 # are planned for subsequent phases.
 
 
+# =============================================================================
+# Cluster cache -- avoids respawning R worker processes on every %dopar% call
+# =============================================================================
+.dosnowflake_env <- new.env(parent = emptyenv())
+.dosnowflake_env$cluster   <- NULL
+.dosnowflake_env$n_workers <- 0L
+
+.get_or_create_cluster <- function(n_workers) {
+  if (!is.null(.dosnowflake_env$cluster) &&
+      .dosnowflake_env$n_workers == n_workers) {
+    return(.dosnowflake_env$cluster)
+  }
+  .shutdown_cluster()
+  cl <- parallel::makeCluster(n_workers)
+  .dosnowflake_env$cluster   <- cl
+  .dosnowflake_env$n_workers <- n_workers
+  cl
+}
+
+.shutdown_cluster <- function() {
+  if (!is.null(.dosnowflake_env$cluster)) {
+    tryCatch(
+      parallel::stopCluster(.dosnowflake_env$cluster),
+      error = function(e) NULL
+    )
+    .dosnowflake_env$cluster   <- NULL
+    .dosnowflake_env$n_workers <- 0L
+  }
+  invisible(NULL)
+}
+
+#' Stop the cached doSnowflake cluster
+#'
+#' Shuts down the reusable socket cluster that `registerDoSnowflake()`
+#' maintains across `\%dopar\%` calls.
+#'
+#' @returns Invisibly returns `NULL`.
+#' @export
+stopDoSnowflake <- function() {
+  .shutdown_cluster()
+  cli::cli_inform("doSnowflake cluster stopped.")
+  invisible(NULL)
+}
+
+
 #' Register the doSnowflake parallel backend
 #'
 #' Registers a `foreach` parallel backend that dispatches iterations to
@@ -98,6 +143,10 @@ registerDoSnowflake <- function(conn,
 
   if (mode == "local") {
     resolved_workers <- .resolve_snowflake_workers(workers)
+    # Pre-warm the cluster so the first %dopar% call doesn't pay startup cost
+    if (resolved_workers > 1L) {
+      .get_or_create_cluster(resolved_workers)
+    }
     cli::cli_inform(
       "Registered {.fn doSnowflake} backend (mode = {.val {mode}}, workers = {.val {resolved_workers}})."
     )
@@ -196,36 +245,68 @@ registerDoSnowflake <- function(conn,
 
 
 # =============================================================================
-# Parallel path (socket cluster)
+# Parallel path (cached cluster + iteration chunking)
 # =============================================================================
 
 #' @noRd
 .dosnowflake_parallel <- function(obj, expr, envir, arg_list,
                                   accumulator, n_workers) {
-  cl <- parallel::makeCluster(n_workers)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
+  cl <- .get_or_create_cluster(n_workers)
 
-  # Export variables that the expression needs
   export_env <- .build_export_env(obj, expr, envir)
   if (length(ls(export_env)) > 0L) {
     parallel::clusterExport(cl, ls(export_env), envir = export_env)
   }
 
-  # Load required packages on workers
   for (pkg in obj$packages) {
     parallel::clusterCall(cl, library, pkg, character.only = TRUE)
   }
 
-  # Execute iterations across workers with load balancing
-  results <- parallel::clusterApplyLB(cl, arg_list, function(args) {
-    e <- new.env(parent = .GlobalEnv)
-    for (nm in names(args)) assign(nm, args[[nm]], pos = e)
-    tryCatch(eval(expr, envir = e), error = function(e) e)
+  chunks <- .chunk_arg_list(arg_list, n_workers)
+
+  chunk_results <- parallel::clusterApply(cl, chunks, function(chunk) {
+    lapply(chunk, function(args) {
+      e <- new.env(parent = .GlobalEnv)
+      for (nm in names(args)) assign(nm, args[[nm]], pos = e)
+      tryCatch(eval(expr, envir = e), error = function(e) e)
+    })
   })
 
-  for (i in seq_along(results)) {
-    accumulator(list(results[[i]]), i)
+  # Flatten chunks back to original iteration order
+  idx <- 1L
+  for (chunk_res in chunk_results) {
+    for (r in chunk_res) {
+      accumulator(list(r), idx)
+      idx <- idx + 1L
+    }
   }
+}
+
+
+#' Split an arg_list into n contiguous chunks for parallel dispatch
+#' @noRd
+.chunk_arg_list <- function(arg_list, n_chunks) {
+  n <- length(arg_list)
+  n_chunks <- min(n_chunks, n)
+  splits <- .balanced_split_indices(n, n_chunks)
+  lapply(splits, function(idxs) arg_list[idxs])
+}
+
+#' Compute balanced contiguous index ranges
+#' @noRd
+.balanced_split_indices <- function(n, k) {
+  base_size <- n %/% k
+  remainder <- n %% k
+  starts <- integer(k)
+  ends   <- integer(k)
+  offset <- 0L
+  for (i in seq_len(k)) {
+    size <- base_size + (if (i <= remainder) 1L else 0L)
+    starts[i] <- offset + 1L
+    ends[i]   <- offset + size
+    offset     <- offset + size
+  }
+  mapply(seq, starts, ends, SIMPLIFY = FALSE)
 }
 
 
