@@ -1,11 +1,15 @@
+force_reinstall: true
+
 languages:
   r:
     enabled: true
+    r_version: "4.5.2"
     conda_packages:
       - python=3.12
       - r-base>=4.1
       - r-reticulate>=1.25
-      - r-ipoptr
+      - r-cli
+      - r-remotes
       - cyipopt
     cran_packages: []
     pip_packages: []
