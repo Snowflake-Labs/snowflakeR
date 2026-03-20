@@ -640,9 +640,11 @@ def generate_dataset(
     print(f"[snowflakeR] Dataset cached: {cache_key} "
           f"(type={type(ds).__name__})")
 
+    # Use Snowpark DataFrame path instead of ds.read.to_pandas() to
+    # avoid Ray trying to install rpy2 on worker nodes without R.
     # TODO: Add optional Parquet path via ds.read.files() + fsspec
     # for large datasets. See internal/devops/TODO.md.
-    pdf = ds.read.to_pandas()
+    pdf = ds.read.to_snowpark_dataframe().to_pandas()
     json_path = _to_json_tempfile(pdf)
 
     return {
