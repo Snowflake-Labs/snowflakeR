@@ -98,40 +98,69 @@ mv
 
 ### Custom prediction code
 
-For models that need special prediction logic (e.g., `forecast`, or
-multi-step pipelines), use `predict_body`:
+Some models (e.g., `bsts`, `forecast`) have non-standard `predict()`
+signatures or return structures that need reshaping. For these, provide a
+`predict_body` -- custom R code executed inside the SPCS container at
+inference time.
+
+**Recommended approach: `sfr_predict_body()`**
+
+Write your predict logic as a normal R function, then let
+`sfr_predict_body()` convert it to the required template format:
 
 ```r
-# Example: forecast model with custom output
+# Define inference logic as a testable R function
+my_forecast <- function(model, input) {
+  pred   <- forecast::forecast(model, h = nrow(input))
+  result <- data.frame(
+    period         = seq_len(nrow(input)),
+    point_forecast = as.numeric(pred$mean),
+    lower_95       = as.numeric(pred$lower[, 2]),
+    upper_95       = as.numeric(pred$upper[, 2])
+  )
+}
+
+# Convert to template and register
 mv <- sfr_log_model(
   reg,
   model        = arima_model,
   model_name   = "SALES_FORECAST",
-  predict_fn   = "forecast",
   predict_pkgs = c("forecast"),
-  predict_body = '
-    pred_{{UID}} <- forecast({{MODEL}}, h = {{N}})
-    result_{{UID}} <- data.frame(
-      period = seq_len({{N}}),
-      point_forecast = as.numeric(pred_{{UID}}$mean),
-      lower_95 = as.numeric(pred_{{UID}}$lower[,2]),
-      upper_95 = as.numeric(pred_{{UID}}$upper[,2])
-    )
-  ',
-  input_cols  = list(period = "integer"),
-  output_cols = list(
+  predict_body = sfr_predict_body(my_forecast),
+  input_cols   = list(period = "integer"),
+  output_cols  = list(
     period = "integer", point_forecast = "double",
     lower_95 = "double", upper_95 = "double"
   )
 )
 ```
 
+`sfr_predict_body()` replaces the first formal with `{{MODEL}}`, the
+second with `{{INPUT}}`, and suffixes local variables with `{{UID}}` to
+prevent name collisions when multiple models run in the same container.
+
+**Alternative: raw template strings**
+
+You can also write the template directly (useful for very short snippets):
+
+```r
+predict_body = paste(
+  'pred_{{UID}} <- forecast::forecast({{MODEL}}, h = nrow({{INPUT}}))',
+  'result_{{UID}} <- data.frame(',
+  '  period = seq_len(nrow({{INPUT}})),',
+  '  point_forecast = as.numeric(pred_{{UID}}$mean)',
+  ')',
+  sep = '\n'
+)
+```
+
 Template variables:
 
-- `{{MODEL}}` -- the loaded R model object
-- `{{INPUT}}` -- the input data.frame
+- `{{MODEL}}` -- the deserialized R model object (loaded from RDS)
+- `{{INPUT}}` -- the input data.frame passed to predict
 - `{{UID}}` -- unique ID for variable naming (prevents collisions)
 - `{{N}}` -- number of rows in input
+- The code must produce a `result_{{UID}}` data.frame matching `output_cols`
 
 ## Manage models
 

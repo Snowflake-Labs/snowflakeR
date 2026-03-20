@@ -321,7 +321,8 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #'   appear to be missing from conda-forge.
 #' @param predict_body Character. Optional custom R code for prediction
 #'   (advanced). Use template variables `{{MODEL}}`, `{{INPUT}}`, `{{UID}}`,
-#'   `{{N}}`.
+#'   `{{N}}`. Instead of writing raw template strings, use
+#'   [sfr_predict_body()] to convert a normal R function to this format.
 #' @param input_cols Named list mapping input column names to types.
 #'   Valid types: `"integer"`, `"double"`, `"string"`, `"boolean"`.
 #' @param output_cols Named list mapping output column names to types.
@@ -364,14 +365,27 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #'
 #' @returns An `sfr_model_version` object.
 #'
-#' @seealso [sfr_predict_local()], [sfr_predict()], [sfr_show_models()]
+#' @seealso [sfr_predict_body()] for converting R functions to `predict_body`
+#'   templates, [sfr_predict_local()], [sfr_predict()], [sfr_show_models()]
 #'
 #' @examples
 #' \dontrun{
+#' # Simple model (default predict)
 #' conn <- sfr_connect()
 #' model <- lm(mpg ~ wt, data = mtcars)
 #' mv <- sfr_log_model(conn, model, model_name = "MTCARS_MPG",
 #'                     input_cols = list(wt = "double"),
+#'                     output_cols = list(prediction = "double"))
+#'
+#' # Custom predict logic via sfr_predict_body()
+#' my_predict <- function(model, input) {
+#'   nd     <- as.matrix(input[, c("X1", "X2"), drop = FALSE])
+#'   pred   <- predict(model, newdata = nd)
+#'   result <- data.frame(prediction = as.numeric(pred))
+#' }
+#' mv <- sfr_log_model(conn, model, model_name = "MY_MODEL",
+#'                     predict_body = sfr_predict_body(my_predict),
+#'                     input_cols = list(X1 = "double", X2 = "double"),
 #'                     output_cols = list(prediction = "double"))
 #' }
 #'
@@ -506,6 +520,8 @@ print.sfr_model_version <- function(x, ...) {
 #' mv <- sfr_log_model(reg, model = fit, model_name = "MY_MODEL",
 #'                     predict_body = body_str, ...)
 #' }
+#'
+#' @seealso [sfr_log_model()], [sfr_predict_local()]
 #'
 #' @export
 sfr_predict_body <- function(fn) {

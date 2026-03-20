@@ -47,7 +47,8 @@ appear to be missing from conda-forge.}
 
 \item{predict_body}{Character. Optional custom R code for prediction
 (advanced). Use template variables \code{{{MODEL}}}, \code{{{INPUT}}}, \code{{{UID}}},
-\code{{{N}}}.}
+\code{{{N}}}. Instead of writing raw template strings, use
+\code{\link[=sfr_predict_body]{sfr_predict_body()}} to convert a normal R function to this format.}
 
 \item{input_cols}{Named list mapping input column names to types.
 Valid types: \code{"integer"}, \code{"double"}, \code{"string"}, \code{"boolean"}.}
@@ -106,14 +107,27 @@ wrapper (using rpy2), and registers it in the Snowflake Model Registry.
 }
 \examples{
 \dontrun{
+# Simple model (default predict)
 conn <- sfr_connect()
 model <- lm(mpg ~ wt, data = mtcars)
 mv <- sfr_log_model(conn, model, model_name = "MTCARS_MPG",
                     input_cols = list(wt = "double"),
                     output_cols = list(prediction = "double"))
+
+# Custom predict logic via sfr_predict_body()
+my_predict <- function(model, input) {
+  nd     <- as.matrix(input[, c("X1", "X2"), drop = FALSE])
+  pred   <- predict(model, newdata = nd)
+  result <- data.frame(prediction = as.numeric(pred))
+}
+mv <- sfr_log_model(conn, model, model_name = "MY_MODEL",
+                    predict_body = sfr_predict_body(my_predict),
+                    input_cols = list(X1 = "double", X2 = "double"),
+                    output_cols = list(prediction = "double"))
 }
 
 }
 \seealso{
-\code{\link[=sfr_predict_local]{sfr_predict_local()}}, \code{\link[=sfr_predict]{sfr_predict()}}, \code{\link[=sfr_show_models]{sfr_show_models()}}
+\code{\link[=sfr_predict_body]{sfr_predict_body()}} for converting R functions to \code{predict_body}
+templates, \code{\link[=sfr_predict_local]{sfr_predict_local()}}, \code{\link[=sfr_predict]{sfr_predict()}}, \code{\link[=sfr_show_models]{sfr_show_models()}}
 }
