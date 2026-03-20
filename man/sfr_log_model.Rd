@@ -20,6 +20,7 @@ sfr_log_model(
   comment = NULL,
   metrics = NULL,
   sample_input = NULL,
+  training_dataset = NULL,
   pin_versions = TRUE,
   ...
 )
@@ -87,6 +88,12 @@ a container) or test locally with \code{\link[=sfr_predict_local]{sfr_predict_lo
 \item{sample_input}{A data.frame. Optional sample input for signature
 validation.}
 
+\item{training_dataset}{A data.frame returned by \code{\link[=sfr_generate_dataset]{sfr_generate_dataset()}}.
+When provided, the Dataset-backed Snowpark DataFrame is used as
+\code{sample_input_data} in the Python registry, completing the
+Feature View -> Dataset -> Model lineage chain visible in Snowsight.
+Overrides \code{sample_input} when both are provided.}
+
 \item{pin_versions}{Logical. If \code{TRUE} (the default), automatically pins
 the R version and all \code{predict_pkgs} (plus critical tidymodels
 sub-dependencies) to their currently installed versions.  This
@@ -129,5 +136,6 @@ mv <- sfr_log_model(conn, model, model_name = "MY_MODEL",
 }
 \seealso{
 \code{\link[=sfr_predict_body]{sfr_predict_body()}} for converting R functions to \code{predict_body}
-templates, \code{\link[=sfr_predict_local]{sfr_predict_local()}}, \code{\link[=sfr_predict]{sfr_predict()}}, \code{\link[=sfr_show_models]{sfr_show_models()}}
+templates, \code{\link[=sfr_generate_dataset]{sfr_generate_dataset()}} for lineage-aware training data,
+\code{\link[=sfr_predict_local]{sfr_predict_local()}}, \code{\link[=sfr_predict]{sfr_predict()}}, \code{\link[=sfr_show_models]{sfr_show_models()}}
 }

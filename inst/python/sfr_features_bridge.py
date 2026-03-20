@@ -571,6 +571,91 @@ def generate_training_set(
     return _to_json_tempfile(result_df.to_pandas())
 
 
+# Module-level cache for Dataset objects so sfr_log_model can retrieve
+# a Snowpark DataFrame for lineage without re-opening the Dataset.
+_DATASET_CACHE: Dict[str, Any] = {}
+
+
+def generate_dataset(
+    session,
+    name: str,
+    spine_sql: str,
+    feature_view_refs: List[Dict[str, str]],
+    version: Optional[str] = None,
+    spine_timestamp_col: Optional[str] = None,
+    spine_label_cols: Optional[List[str]] = None,
+    desc: str = "",
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Dict[str, Any]:
+    """
+    Generate an immutable, versioned Dataset from Feature Views.
+
+    Unlike generate_training_set (which returns a transient DataFrame),
+    this creates a Snowflake ML Dataset object that participates in
+    ML Lineage: Feature View -> Dataset -> Model.
+
+    The Dataset object is cached so that sfr_log_model can later retrieve
+    a Snowpark DataFrame backed by it for sample_input_data.
+
+    Returns:
+        Dict with keys: json_path, dataset_name, dataset_version.
+    """
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+
+    spine_df = session.sql(spine_sql)
+    fvs = [
+        fs.get_feature_view(ref["name"], ref["version"])
+        for ref in feature_view_refs
+    ]
+
+    kwargs = {}
+    if spine_timestamp_col:
+        kwargs["spine_timestamp_col"] = spine_timestamp_col
+    if spine_label_cols:
+        kwargs["spine_label_cols"] = spine_label_cols
+    if desc:
+        kwargs["desc"] = desc
+
+    ds = fs.generate_dataset(
+        name=name,
+        spine_df=spine_df,
+        features=fvs,
+        version=version,
+        **kwargs,
+    )
+
+    if ds.selected_version:
+        actual_version = str(ds.selected_version.name)
+    else:
+        actual_version = version or name
+    cache_key = f"{name}:{actual_version}"
+    _DATASET_CACHE[cache_key] = ds
+
+    # TODO: Add optional Parquet path via ds.read.files() + fsspec
+    # for large datasets. See internal/devops/TODO.md.
+    pdf = ds.read.to_pandas()
+    json_path = _to_json_tempfile(pdf)
+
+    return {
+        "json_path": json_path,
+        "dataset_name": name,
+        "dataset_version": actual_version,
+    }
+
+
+def get_cached_dataset(name: str, version: str):
+    """Retrieve a cached Dataset object for use as sample_input_data."""
+    cache_key = f"{name}:{version}"
+    return _DATASET_CACHE.get(cache_key)
+
+
 def retrieve_features(
     session,
     spine_sql: str,

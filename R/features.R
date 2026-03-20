@@ -856,6 +856,110 @@ sfr_generate_training_data <- function(fs,
 }
 
 
+#' Generate an immutable, versioned Dataset from Feature Views
+#'
+#' Creates a Snowflake ML Dataset that participates in ML Lineage
+#' (Feature View -> Dataset -> Model). The returned data.frame carries
+#' `dataset_name` and `dataset_version` attributes that
+#' [sfr_log_model()] uses to wire the lineage chain.
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Dataset name.
+#' @param spine A data.frame, SQL string, or dbplyr lazy table providing
+#'   entity keys and (optionally) labels.
+#' @param features A list of registered `sfr_feature_view` objects or
+#'   lists with `name` and `version`.
+#' @param version Dataset version string. When `NULL` (the default),
+#'   Snowflake auto-generates a version.
+#' @param spine_timestamp_col Optional timestamp column for point-in-time
+#'   correctness.
+#' @param spine_label_cols Optional character vector of label column names.
+#' @param desc Optional description for the dataset.
+#'
+#' @returns A data.frame of training data with attributes
+#'   `dataset_name` and `dataset_version` attached. Pass this object
+#'   to [sfr_log_model()] via `training_dataset` to complete
+#'   Feature View -> Dataset -> Model lineage.
+#'
+#' @seealso [sfr_generate_training_data()], [sfr_log_model()]
+#'
+#' @examples
+#' \dontrun{
+#' conn <- sfr_connect()
+#' fs <- sfr_feature_store(conn)
+#'
+#' ds <- sfr_generate_dataset(
+#'   fs,
+#'   name = "CHURN_TRAINING",
+#'   spine = "SELECT customer_id, label FROM labels_table",
+#'   features = list(
+#'     list(name = "CUSTOMER_FEATURES", version = "v1")
+#'   ),
+#'   version = "v1",
+#'   spine_label_cols = "label"
+#' )
+#'
+#' # Train a model using ds as a plain data.frame ...
+#' # Then log with lineage:
+#' sfr_log_model(conn, model, "CHURN_MODEL",
+#'               training_dataset = ds)
+#' }
+#'
+#' @export
+sfr_generate_dataset <- function(fs,
+                                 name,
+                                 spine,
+                                 features,
+                                 version = NULL,
+                                 spine_timestamp_col = NULL,
+                                 spine_label_cols = NULL,
+                                 desc = "") {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+
+  spine_sql <- extract_feature_sql(spine)
+
+  fv_refs <- lapply(features, function(fv) {
+    if (inherits(fv, "sfr_feature_view")) {
+      list(name = fv$name, version = fv$version)
+    } else if (is.list(fv) && all(c("name", "version") %in% names(fv))) {
+      list(name = fv$name, version = fv$version)
+    } else {
+      cli::cli_abort(
+        "Each feature must be a registered {.cls sfr_feature_view} or a list with {.field name} and {.field version}."
+      )
+    }
+  })
+
+  label_cols <- if (!is.null(spine_label_cols)) as.list(spine_label_cols) else NULL
+
+  result <- bridge$generate_dataset(
+    session = fs$conn$session,
+    name = name,
+    spine_sql = spine_sql,
+    feature_view_refs = fv_refs,
+    version = version,
+    spine_timestamp_col = spine_timestamp_col,
+    spine_label_cols = label_cols,
+    desc = desc,
+    database = args$database,
+    schema = args$schema,
+    warehouse = args$warehouse,
+    creation_mode = args$creation_mode
+  )
+
+  json_path <- result$json_path
+  on.exit(unlink(json_path), add = TRUE)
+  df <- .bridge_dict_to_df(jsonlite::fromJSON(json_path))
+
+  attr(df, "dataset_name") <- result$dataset_name
+  attr(df, "dataset_version") <- result$dataset_version
+  df
+}
+
+
 #' Retrieve feature values for inference
 #'
 #' @param fs An `sfr_feature_store` object.

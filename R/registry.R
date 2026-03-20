@@ -353,6 +353,11 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #' @param metrics Named list. Metrics to attach to the model version.
 #' @param sample_input A data.frame. Optional sample input for signature
 #'   validation.
+#' @param training_dataset A data.frame returned by [sfr_generate_dataset()].
+#'   When provided, the Dataset-backed Snowpark DataFrame is used as
+#'   `sample_input_data` in the Python registry, completing the
+#'   Feature View -> Dataset -> Model lineage chain visible in Snowsight.
+#'   Overrides `sample_input` when both are provided.
 #' @param pin_versions Logical. If `TRUE` (the default), automatically pins
 #'   the R version and all `predict_pkgs` (plus critical tidymodels
 #'   sub-dependencies) to their currently installed versions.  This
@@ -366,7 +371,8 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #' @returns An `sfr_model_version` object.
 #'
 #' @seealso [sfr_predict_body()] for converting R functions to `predict_body`
-#'   templates, [sfr_predict_local()], [sfr_predict()], [sfr_show_models()]
+#'   templates, [sfr_generate_dataset()] for lineage-aware training data,
+#'   [sfr_predict_local()], [sfr_predict()], [sfr_show_models()]
 #'
 #' @examples
 #' \dontrun{
@@ -405,6 +411,7 @@ sfr_log_model <- function(reg,
                           comment = NULL,
                           metrics = NULL,
                           sample_input = NULL,
+                          training_dataset = NULL,
                           pin_versions = TRUE,
                           ...) {
   ctx <- resolve_registry_context(reg)
@@ -439,6 +446,21 @@ sfr_log_model <- function(reg,
     NULL
   }
 
+  # Extract dataset reference for ML Lineage (Feature View -> Dataset -> Model)
+  py_dataset_ref <- NULL
+  if (!is.null(training_dataset)) {
+    ds_name <- attr(training_dataset, "dataset_name")
+    ds_version <- attr(training_dataset, "dataset_version")
+    if (!is.null(ds_name) && !is.null(ds_version)) {
+      py_dataset_ref <- list(name = ds_name, version = ds_version)
+    } else {
+      cli::cli_warn(c(
+        "!" = "{.arg training_dataset} does not have {.field dataset_name}/{.field dataset_version} attributes.",
+        "i" = "Use {.fn sfr_generate_dataset} to create a lineage-aware data.frame."
+      ))
+    }
+  }
+
   bridge <- get_bridge_module("sfr_registry_bridge")
   result <- bridge$registry_log_model(
     session = ctx$session,
@@ -456,6 +478,7 @@ sfr_log_model <- function(reg,
     comment = comment,
     metrics = py_metrics,
     sample_input = py_sample,
+    training_dataset_ref = py_dataset_ref,
     database_name = ctx$database_name,
     schema_name = ctx$schema_name
   )

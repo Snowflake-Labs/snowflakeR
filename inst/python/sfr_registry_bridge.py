@@ -403,6 +403,7 @@ def registry_log_model(
     schema_name: Optional[str] = None,
     options: Optional[Dict[str, Any]] = None,
     sample_input: Optional[pd.DataFrame] = None,
+    training_dataset_ref: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Log an R model to the Snowflake Model Registry."""
     from snowflake.ml.registry import Registry
@@ -493,6 +494,23 @@ def registry_log_model(
 
     reg = Registry(**reg_kwargs)
 
+    # If a training dataset reference is provided, use its Snowpark DataFrame
+    # as sample_input_data to complete Feature View -> Dataset -> Model lineage.
+    lineage_sample = None
+    if training_dataset_ref:
+        ds_name = training_dataset_ref.get("name")
+        ds_version = training_dataset_ref.get("version")
+        if ds_name and ds_version:
+            from sfr_features_bridge import get_cached_dataset
+            ds = get_cached_dataset(ds_name, ds_version)
+            if ds is not None:
+                lineage_sample = ds.read.to_snowpark_dataframe()
+            else:
+                print(
+                    f"[snowflakeR] Dataset '{ds_name}:{ds_version}' not in "
+                    "cache; falling back to pandas sample_input_data."
+                )
+
     log_kwargs = {
         "model": model_wrapper,
         "model_name": model_name,
@@ -504,7 +522,9 @@ def registry_log_model(
         log_kwargs["version_name"] = version_name
     if signatures:
         log_kwargs["signatures"] = signatures
-    if sample_input is not None:
+    if lineage_sample is not None:
+        log_kwargs["sample_input_data"] = lineage_sample
+    elif sample_input is not None:
         log_kwargs["sample_input_data"] = sample_input
     if comment:
         log_kwargs["comment"] = comment

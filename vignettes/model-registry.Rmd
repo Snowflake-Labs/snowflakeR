@@ -162,6 +162,48 @@ Template variables:
 - `{{N}}` -- number of rows in input
 - The code must produce a `result_{{UID}}` data.frame matching `output_cols`
 
+## ML Lineage: Feature View -> Dataset -> Model
+
+When training data comes from the Feature Store, you can create an
+immutable, versioned **Dataset** and pass it to `sfr_log_model()` to
+complete the full ML Lineage chain visible in Snowsight:
+
+> Source Table -> Feature View -> Dataset -> Model
+
+```r
+# 1. Generate a Dataset (instead of sfr_generate_training_data)
+training <- sfr_generate_dataset(
+  fs,
+  name     = "CHURN_TRAINING",
+  spine    = "SELECT customer_id, label FROM labels",
+  features = list(
+    list(name = "CUSTOMER_FEATURES", version = "v1")
+  ),
+  version  = "v1",
+  spine_label_cols = "label"
+)
+
+# training is a plain data.frame with dataset_name/dataset_version attributes
+str(training)
+
+# 2. Train your model on the data.frame as usual
+model <- glm(label ~ ., data = training, family = "binomial")
+
+# 3. Log the model with lineage
+mv <- sfr_log_model(
+  reg,
+  model            = model,
+  model_name       = "CHURN_MODEL",
+  input_cols       = sfr_input_cols(training, exclude = "label"),
+  output_cols      = list(prediction = "double"),
+  training_dataset = training
+)
+```
+
+The `training_dataset` parameter tells `sfr_log_model()` to use the
+Dataset-backed Snowpark DataFrame as `sample_input_data`, which Snowflake
+traces back through the Dataset to its source Feature Views and tables.
+
 ## Manage models
 
 ```r
