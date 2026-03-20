@@ -635,9 +635,10 @@ def generate_dataset(
         if "already exists" in str(e):
             from snowflake.ml.dataset import load_dataset
             actual_ver = version or name
-            print(f"[snowflakeR] Dataset {name}:{actual_ver} "
+            fqn = f"{db}.{sc}.{name}"
+            print(f"[snowflakeR] Dataset {fqn}:{actual_ver} "
                   "already exists, loading it.")
-            ds = load_dataset(session, name, actual_ver)
+            ds = load_dataset(session, fqn, actual_ver)
         else:
             raise
 
