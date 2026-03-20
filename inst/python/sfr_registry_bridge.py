@@ -508,9 +508,24 @@ def registry_log_model(
             if ds is not None:
                 lineage_sample = ds.read.to_snowpark_dataframe()
                 if input_cols:
-                    lineage_sample = lineage_sample.select(
-                        list(input_cols.keys())
-                    )
+                    ds_cols = {c.strip('"') for c in lineage_sample.columns}
+                    matching = [c for c in input_cols.keys() if c in ds_cols]
+                    if matching:
+                        lineage_sample = lineage_sample.select(matching)
+                    else:
+                        from snowflake.snowpark.types import (
+                            DateType, TimestampType,
+                            VariantType, ArrayType, MapType,
+                        )
+                        safe = [
+                            f.name for f in lineage_sample.schema.fields
+                            if not isinstance(f.datatype, (
+                                DateType, TimestampType,
+                                VariantType, ArrayType, MapType,
+                            ))
+                        ]
+                        if safe:
+                            lineage_sample = lineage_sample.select(safe)
                 print(f"[snowflakeR] Lineage sample_input_data: "
                       f"{type(lineage_sample).__name__} "
                       f"({len(lineage_sample.columns)} cols)")
