@@ -33,28 +33,29 @@ and serve them in containers. Full ML Lineage support.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│            Snowflake Workspace Notebook              │
-│                                                      │
-│   Python cells          R cells (%%R magic)          │
-│       │                       │                      │
-│       │              ┌────────┴────────┐             │
-│       │              │   RSnowflake    │  DBI/dbplyr │
-│       │              │   snowflakeR    │  ML platform│
-│       │              └────────┬────────┘             │
-│       │                       │                      │
-│       │              Python bridge (rpy2)            │
-│       └───────────┬───────────┘                      │
-│                   │                                  │
-│         Snowpark Session (SPCS OAuth)                │
-└───────────────────┼──────────────────────────────────┘
-                    │
-    ┌───────────────┼───────────────┐
-    │               │               │
-Feature Store   Model Registry   Warehouse
- (Entities,     (Versioning,     (SQL compute,
-  Feature Views,  Metrics,        Dynamic Tables,
-  Datasets)       SPCS Deploy)    dbplyr queries)
+┌─────────────────────────────────────────────────────────────────┐
+│               Snowflake Workspace Notebook                      │
+│                                                                 │
+│  Python cells    R cells (%%R magic)    SQL cells               │
+│       │                │                    │                   │
+│       │       ┌────────┴────────┐           │                   │
+│       │       │   RSnowflake    │ DBI/dbplyr│                   │
+│       │       │   snowflakeR    │ ML platform                   │
+│       │       └────────┬────────┘           │                   │
+│       │                │                    │                   │
+│       │       Python bridge (rpy2)          │                   │
+│       └──────────┬─────┘                    │                   │
+│                  │                          │                   │
+│         Snowpark Session (SPCS OAuth)       │                   │
+│                  └──────────┬───────────────┘                   │
+└─────────────────────────────┼───────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+    Feature Store       Model Registry        Warehouse
+     (Entities,         (Versioning,          (SQL compute,
+      Feature Views,      Metrics,             Dynamic Tables,
+      Datasets)           SPCS Deploy)         dbplyr queries)
 ```
 
 ## Key Design Principles
