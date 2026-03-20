@@ -33,17 +33,17 @@ and serve them in containers. Full ML Lineage support.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────┐
 │            Snowflake Workspace Notebook              │
 │                                                      │
 │   Python cells          R cells (%%R magic)          │
 │       │                       │                      │
 │       │              ┌────────┴────────┐             │
 │       │              │   RSnowflake    │  DBI/dbplyr │
-│       │              │   snowflakeR    │  ML platform │
+│       │              │   snowflakeR    │  ML platform│
 │       │              └────────┬────────┘             │
 │       │                       │                      │
-│       │              Python bridge (rpy2)             │
+│       │              Python bridge (rpy2)            │
 │       └───────────┬───────────┘                      │
 │                   │                                  │
 │         Snowpark Session (SPCS OAuth)                │
@@ -59,6 +59,13 @@ Feature Store   Model Registry   Warehouse
 
 ## Key Design Principles
 
+- **Zero-config authentication** -- In Workspace Notebooks, all three packages use
+  the built-in SPCS OAuth token automatically. No credentials, no PATs, no config files.
+  Just `sfr_connect()` and you're in.
+- **Automatic network setup** -- R package installation requires outbound internet access
+  (CRAN, GitHub, conda-forge). The setup process detects or creates the required
+  External Access Integration (EAI) and network rules automatically. If the user lacks
+  `CREATE INTEGRATION` privileges, a SQL script is provided for an admin to run.
 - **No Python required from the R user** -- `snowflakeR` handles the Python bridge internally
 - **Snowflake-native objects** -- Feature Views, Datasets, and Models created in R are
   visible and usable from Python (and vice versa)
