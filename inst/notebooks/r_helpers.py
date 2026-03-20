@@ -217,6 +217,20 @@ class RMagicExecutionError(Exception):
     pass
 
 
+def _clean_na_character_literals(pdf):
+    """Replace rpy2's literal 'NA_character_' strings with None.
+
+    rpy2's pandas2ri converter turns R NA_character_ into the Python
+    string "NA_character_" instead of None/NaN. This causes the literal
+    text to appear in the Workspace Grid Viewer.
+    """
+    import numpy as np
+    for col in pdf.columns:
+        if pdf[col].dtype == object:
+            pdf[col] = pdf[col].replace("NA_character_", np.nan)
+    return pdf
+
+
 def _r_df_to_pandas(r_obj):
     """Convert an R data.frame (or tibble/grouped_df) to a pandas DataFrame.
 
@@ -232,7 +246,8 @@ def _r_df_to_pandas(r_obj):
     try:
         r_df = ro.r('as.data.frame')(r_obj)
         with (ro.default_converter + pandas2ri.converter).context():
-            return ro.conversion.get_conversion().rpy2py(r_df)
+            return _clean_na_character_literals(
+                ro.conversion.get_conversion().rpy2py(r_df))
     except Exception:
         pass
 
@@ -249,7 +264,8 @@ def _r_df_to_pandas(r_obj):
             'stringsAsFactors=FALSE)'
         )(r_obj)
         with (ro.default_converter + pandas2ri.converter).context():
-            return ro.conversion.get_conversion().rpy2py(r_df_chr)
+            return _clean_na_character_literals(
+                ro.conversion.get_conversion().rpy2py(r_df_chr))
     except Exception:
         pass
 
@@ -261,7 +277,8 @@ def _r_df_to_pandas(r_obj):
             'stringsAsFactors=FALSE)'
         )(r_obj)
         with (ro.default_converter + pandas2ri.converter).context():
-            return ro.conversion.get_conversion().rpy2py(r_df_all_chr)
+            return _clean_na_character_literals(
+                ro.conversion.get_conversion().rpy2py(r_df_all_chr))
     except Exception as exc:
         print(f"Warning: R→pandas grid conversion failed ({exc}); "
               "falling back to text output.", file=sys.stderr)
