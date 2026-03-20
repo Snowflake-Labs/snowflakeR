@@ -1,0 +1,16 @@
+languages:
+  r:
+    enabled: true
+    conda_packages:
+      - python=3.12
+      - r-base>=4.1
+      - r-reticulate>=1.25
+      - r-ipoptr
+      - cyipopt
+    cran_packages: []
+    pip_packages: []
+    tarballs: {}
+  scala:
+    enabled: false
+  julia:
+    enabled: false
