@@ -2,10 +2,10 @@
 
 ## The Problem
 
-Data scientists working in R have historically been locked out of Snowflake's ML platform.
-Feature Store, Model Registry, and Snowpark ML are Python-first.
-Teams using R for statistical modeling, time-series forecasting, or marketing analytics
-had to maintain separate infrastructure or rewrite everything in Python.
+Data scientists working in R have historically not had access to Snowflake's ML platform. They have been able to work with Snowflake data via database connections and dplyr support, but there was no integration to the ML features.
+
+Feature Store, Model Registry, and Snowpark ML provided Python-first API's.
+Teams using R for statistical modeling, time-series forecasting, or marketing analytics had to maintain separate infrastructure or rewrite everything in Python.
 
 ## The Solution: Three Open-Source Packages
 

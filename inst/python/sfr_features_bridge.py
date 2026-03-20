@@ -623,13 +623,23 @@ def generate_dataset(
     if desc:
         kwargs["desc"] = desc
 
-    ds = fs.generate_dataset(
-        name=name,
-        spine_df=spine_df,
-        features=fvs,
-        version=version,
-        **kwargs,
-    )
+    try:
+        ds = fs.generate_dataset(
+            name=name,
+            spine_df=spine_df,
+            features=fvs,
+            version=version,
+            **kwargs,
+        )
+    except Exception as e:
+        if "already exists" in str(e):
+            from snowflake.ml.dataset import load_dataset
+            actual_ver = version or name
+            print(f"[snowflakeR] Dataset {name}:{actual_ver} "
+                  "already exists, loading it.")
+            ds = load_dataset(session, name, actual_ver)
+        else:
+            raise
 
     if ds.selected_version:
         actual_version = str(ds.selected_version.name)
