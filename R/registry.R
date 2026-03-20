@@ -475,6 +475,85 @@ print.sfr_model_version <- function(x, ...) {
 
 
 # =============================================================================
+# predict_body helpers
+# =============================================================================
+
+#' Convert an R function to a predict_body template
+#'
+#' Takes a function with formals `(model, input)` and converts its body
+#' into the `{{MODEL}}`/`{{INPUT}}`/`{{UID}}` template string expected by
+#' [sfr_log_model()].
+#'
+#' This lets you write and test your predict logic as a normal R function,
+#' then pass the template to `sfr_log_model(predict_body = ...)` without
+#' manually constructing `paste()` strings with placeholder syntax.
+#'
+#' @param fn A function with exactly two formals. The first is treated as the
+#'   model object; the second as the input data.frame. The function body must
+#'   assign its final result to a variable named `result`.
+#'
+#' @returns Character scalar. The function body with formals replaced by
+#'   `{{MODEL}}`, `{{INPUT}}`, and local variables suffixed with `{{UID}}`.
+#'
+#' @examples
+#' \dontrun{
+#' my_predict <- function(model, input) {
+#'   nd     <- as.matrix(input[, c("X1", "X2"), drop = FALSE])
+#'   pred   <- predict(model, newdata = nd)
+#'   result <- data.frame(prediction = as.numeric(pred))
+#' }
+#' body_str <- sfr_predict_body(my_predict)
+#' mv <- sfr_log_model(reg, model = fit, model_name = "MY_MODEL",
+#'                     predict_body = body_str, ...)
+#' }
+#'
+#' @export
+sfr_predict_body <- function(fn) {
+  stopifnot(is.function(fn))
+
+  fmls <- names(formals(fn))
+  if (length(fmls) < 2) {
+    cli::cli_abort(
+      "{.arg fn} must have at least two formals (model, input), got {length(fmls)}."
+    )
+  }
+  model_arg <- fmls[1]
+  input_arg <- fmls[2]
+
+  lines <- deparse(body(fn), width.cutoff = 500L)
+  # Strip the wrapping braces from the function body
+  if (lines[1] == "{") lines <- lines[-1]
+  if (lines[length(lines)] == "}") lines <- lines[-length(lines)]
+
+  code <- paste(trimws(lines), collapse = "\n")
+
+  # Replace the formal argument names with template placeholders
+  code <- gsub(
+    paste0("\\b", model_arg, "\\b"), "{{MODEL}}", code
+  )
+  code <- gsub(
+    paste0("\\b", input_arg, "\\b"), "{{INPUT}}", code
+  )
+
+  # Suffix local variable names with {{UID}} to avoid collisions.
+  # Convention: any variable assigned with <- that isn't a placeholder.
+  assigned <- regmatches(code, gregexpr("\\b(\\w+)\\s*<-", code))[[1]]
+  assigned <- unique(gsub("\\s*<-$", "", assigned))
+  assigned <- setdiff(assigned, c("{{MODEL}}", "{{INPUT}}"))
+
+  for (var in assigned) {
+    code <- gsub(
+      paste0("\\b", var, "\\b"),
+      paste0(var, "_{{UID}}"),
+      code
+    )
+  }
+
+  code
+}
+
+
+# =============================================================================
 # Local predict (pure R, no bridge)
 # =============================================================================
 
