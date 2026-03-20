@@ -507,6 +507,10 @@ def registry_log_model(
             ds = get_cached_dataset(ds_name, ds_version)
             if ds is not None:
                 lineage_sample = ds.read.to_snowpark_dataframe()
+                if input_cols:
+                    lineage_sample = lineage_sample.select(
+                        list(input_cols.keys())
+                    )
                 print(f"[snowflakeR] Lineage sample_input_data: "
                       f"{type(lineage_sample).__name__} "
                       f"({len(lineage_sample.columns)} cols)")
