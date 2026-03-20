@@ -500,16 +500,23 @@ def registry_log_model(
     if training_dataset_ref:
         ds_name = training_dataset_ref.get("name")
         ds_version = training_dataset_ref.get("version")
+        print(f"[snowflakeR] Dataset ref: name={ds_name}, version={ds_version}")
         if ds_name and ds_version:
-            from sfr_features_bridge import get_cached_dataset
+            from sfr_features_bridge import get_cached_dataset, _DATASET_CACHE
+            print(f"[snowflakeR] Dataset cache keys: {list(_DATASET_CACHE.keys())}")
             ds = get_cached_dataset(ds_name, ds_version)
             if ds is not None:
                 lineage_sample = ds.read.to_snowpark_dataframe()
+                print(f"[snowflakeR] Lineage sample_input_data: "
+                      f"{type(lineage_sample).__name__} "
+                      f"({len(lineage_sample.columns)} cols)")
             else:
                 print(
                     f"[snowflakeR] Dataset '{ds_name}:{ds_version}' not in "
                     "cache; falling back to pandas sample_input_data."
                 )
+    else:
+        print("[snowflakeR] No training_dataset_ref provided")
 
     log_kwargs = {
         "model": model_wrapper,

@@ -637,6 +637,8 @@ def generate_dataset(
         actual_version = version or name
     cache_key = f"{name}:{actual_version}"
     _DATASET_CACHE[cache_key] = ds
+    print(f"[snowflakeR] Dataset cached: {cache_key} "
+          f"(type={type(ds).__name__})")
 
     # TODO: Add optional Parquet path via ds.read.files() + fsspec
     # for large datasets. See internal/devops/TODO.md.
