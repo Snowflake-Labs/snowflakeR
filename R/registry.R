@@ -1208,10 +1208,8 @@ sfr_get_service_status <- function(reg, service_name) {
     "SELECT SYSTEM$GET_SERVICE_STATUS('", svc_fqn, "') AS status_json"
   )
 
-  # sfr_query() lowercases column names by default, so the alias
-  # STATUS_JSON (Snowflake uppercases it) becomes status_json in R.
   result   <- sfr_query(conn, sql)
-  json_str <- as.character(result$status_json[1])
+  json_str <- as.character(result$STATUS_JSON[1])
 
   out <- .parse_service_status_json(json_str)
   out$fqn <- svc_fqn
