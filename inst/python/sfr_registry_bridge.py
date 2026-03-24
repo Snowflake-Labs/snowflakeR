@@ -855,10 +855,14 @@ def registry_create_service(
     force: bool = False,
     database_name: Optional[str] = None,
     schema_name: Optional[str] = None,
+    autocapture: bool = False,
 ) -> Dict[str, Any]:
     """Deploy a model version as an SPCS service.
 
     If *force* is True and the service already exists, it is dropped first.
+    When *autocapture* is True, inference requests and responses are
+    automatically logged to the model's inference table.  Requires the model
+    to have been created after 2026-01-23 (or cloned from an older model).
     """
     from snowflake.ml.registry import Registry
 
@@ -888,6 +892,7 @@ def registry_create_service(
         image_repo=image_repo,
         ingress_enabled=ingress_enabled,
         max_instances=max_instances,
+        autocapture=autocapture,
     )
 
     return {

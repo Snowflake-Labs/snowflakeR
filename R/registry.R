@@ -985,13 +985,19 @@ sfr_set_default_model_version <- function(reg, model_name, version_name) {
 #' @param max_instances Integer. Max service instances. Default: 1.
 #' @param force Logical. If `TRUE` and the service already exists, drop it
 #'   first and redeploy. Default: `FALSE`.
+#' @param autocapture Logical. If `TRUE`, inference requests and responses are
+#'   automatically logged to the model's inference table.  Query captured data
+#'   with `SELECT * FROM TABLE(INFERENCE_TABLE('<model_name>'))`.  The model
+#'   must have been created after 2026-01-23 (or cloned from an older model).
+#'   Default: `FALSE`.
 #'
 #' @returns Invisibly returns a list with deployment info.
 #'
 #' @export
 sfr_deploy_model <- function(reg, model_name, version_name,
                              service_name, compute_pool, image_repo,
-                             max_instances = 1L, force = FALSE) {
+                             max_instances = 1L, force = FALSE,
+                             autocapture = FALSE) {
   ctx <- resolve_registry_context(reg)
   bridge <- get_bridge_module("sfr_registry_bridge")
   result <- bridge$registry_create_service(
@@ -1004,7 +1010,8 @@ sfr_deploy_model <- function(reg, model_name, version_name,
     max_instances = as.integer(max_instances),
     force = isTRUE(force),
     database_name = ctx$database_name,
-    schema_name = ctx$schema_name
+    schema_name = ctx$schema_name,
+    autocapture = isTRUE(autocapture)
   )
 
   # Set the deployed version as default so that sfr_predict() (which
@@ -1020,9 +1027,13 @@ sfr_deploy_model <- function(reg, model_name, version_name,
         database_name = ctx$database_name,
         schema_name = ctx$schema_name
       )
+      ac_msg <- if (isTRUE(autocapture)) {
+        c("i" = "Autocapture enabled -- query logs with INFERENCE_TABLE('{model_name}').")
+      }
       cli::cli_inform(c(
         "v" = "Service {.val {service_name}} deployed for {.val {model_name}}/{.val {version_name}}.",
-        "i" = "Default version set to {.val {version_name}}."
+        "i" = "Default version set to {.val {version_name}}.",
+        ac_msg
       ))
     },
     error = function(e) {
