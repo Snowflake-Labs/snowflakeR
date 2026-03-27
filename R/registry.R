@@ -23,6 +23,8 @@
 #'   connection's current database.
 #' @param schema Character. Schema for the Model Registry. Defaults to the
 #'   connection's current schema.
+#' @param options Named list. Options forwarded to `Registry(session, options=...)`.
+#'   For example, `list(enable_monitoring = TRUE)` enables ML Observability.
 #'
 #' @returns An `sfr_model_registry` object.
 #'
@@ -41,14 +43,16 @@
 #' @export
 sfr_model_registry <- function(conn,
                                database = NULL,
-                               schema = NULL) {
+                               schema = NULL,
+                               options = NULL) {
   validate_connection(conn)
 
   structure(
     list(
       conn = conn,
       database = database %||% conn$database,
-      schema = schema %||% conn$schema
+      schema = schema %||% conn$schema,
+      options = options
     ),
     class = c("sfr_model_registry", "list")
   )
@@ -413,6 +417,11 @@ sfr_log_model <- function(reg,
                           sample_input = NULL,
                           training_dataset = NULL,
                           pin_versions = TRUE,
+                          task = NULL,
+                          user_files = NULL,
+                          code_paths = NULL,
+                          resource_constraint = NULL,
+                          python_version = NULL,
                           ...) {
   ctx <- resolve_registry_context(reg)
 
@@ -480,7 +489,12 @@ sfr_log_model <- function(reg,
     sample_input = py_sample,
     training_dataset_ref = py_dataset_ref,
     database_name = ctx$database_name,
-    schema_name = ctx$schema_name
+    schema_name = ctx$schema_name,
+    task = task,
+    user_files = user_files,
+    code_paths = code_paths,
+    resource_constraint = resource_constraint,
+    python_version = python_version
   )
 
   cli::cli_inform(c(
@@ -667,10 +681,11 @@ sfr_predict_local <- function(model,
         result <- get(paste0("result_", uid), envir = .GlobalEnv)
       },
       finally = {
-        # Clean up global env
         rm_pattern <- paste0("_", uid, "$")
         to_rm <- grep(rm_pattern, ls(envir = .GlobalEnv), value = TRUE)
-        rm(list = c(to_rm, model_name), envir = .GlobalEnv)
+        to_rm <- unique(c(to_rm, model_name))
+        to_rm <- intersect(to_rm, ls(envir = .GlobalEnv))
+        if (length(to_rm) > 0L) rm(list = to_rm, envir = .GlobalEnv)
       }
     )
     return(as.data.frame(result))
@@ -720,6 +735,8 @@ sfr_predict <- function(reg,
                         new_data,
                         version_name = NULL,
                         service_name = NULL,
+                        partition_column = NULL,
+                        strict_input_validation = NULL,
                         ...) {
   ctx <- resolve_registry_context(reg)
 
@@ -740,7 +757,9 @@ sfr_predict <- function(reg,
     input_data_path = input_path,
     service_name = service_name,
     database_name = ctx$database_name,
-    schema_name = ctx$schema_name
+    schema_name = ctx$schema_name,
+    partition_column = partition_column,
+    strict_input_validation = strict_input_validation
   )
 
   on.exit(unlink(json_path), add = TRUE)
@@ -996,9 +1015,23 @@ sfr_set_default_model_version <- function(reg, model_name, version_name) {
 #' @export
 sfr_deploy_model <- function(reg, model_name, version_name,
                              service_name, compute_pool, image_repo,
-                             max_instances = 1L, force = FALSE,
-                             autocapture = FALSE) {
+                             max_instances = 1L, min_instances = NULL,
+                             force = FALSE,
+                             autocapture = FALSE,
+                             image_build_compute_pool = NULL,
+                             cpu_requests = NULL,
+                             memory_requests = NULL,
+                             gpu_requests = NULL,
+                             num_workers = NULL,
+                             max_batch_rows = NULL,
+                             block = TRUE,
+                             build_external_access_integrations = NULL) {
   ctx <- resolve_registry_context(reg)
+
+  if (!is.null(min_instances)) {
+    sfr_requires_ml("1.25.0", "min_instances (auto-scale to zero)")
+  }
+
   bridge <- get_bridge_module("sfr_registry_bridge")
   result <- bridge$registry_create_service(
     session = ctx$session,
@@ -1008,10 +1041,19 @@ sfr_deploy_model <- function(reg, model_name, version_name,
     compute_pool = compute_pool,
     image_repo = image_repo,
     max_instances = as.integer(max_instances),
+    min_instances = if (!is.null(min_instances)) as.integer(min_instances),
     force = isTRUE(force),
     database_name = ctx$database_name,
     schema_name = ctx$schema_name,
-    autocapture = isTRUE(autocapture)
+    autocapture = isTRUE(autocapture),
+    image_build_compute_pool = image_build_compute_pool,
+    cpu_requests = cpu_requests,
+    memory_requests = memory_requests,
+    gpu_requests = gpu_requests,
+    num_workers = if (!is.null(num_workers)) as.integer(num_workers),
+    max_batch_rows = if (!is.null(max_batch_rows)) as.integer(max_batch_rows),
+    block = block,
+    build_external_access_integrations = build_external_access_integrations
   )
 
   # Set the deployed version as default so that sfr_predict() (which
@@ -1434,4 +1476,440 @@ sfr_benchmark_inference <- function(reg,
   }
 
   invisible(stats)
+}
+
+
+# =============================================================================
+# SQL-direct model lifecycle helpers
+# =============================================================================
+
+#' Set a model version alias (SQL-direct)
+#'
+#' Assigns a named alias (e.g., `"production"`, `"staging"`) to a model
+#' version. Aliases provide stable references that can be updated without
+#' changing downstream consumers.
+#'
+#' @param conn An `sfr_connection` object from [sfr_connect()].
+#' @param model_name Character. Fully-qualified or unqualified model name.
+#' @param version_name Character. Version to alias.
+#' @param alias Character. Alias name (e.g., `"production"`).
+#'
+#' @returns Invisibly returns `TRUE`.
+#'
+#' @export
+sfr_set_model_alias <- function(conn, model_name, version_name, alias) {
+  validate_connection(conn)
+  sfr_execute(conn, sprintf(
+    "ALTER MODEL %s VERSION %s SET ALIAS = %s",
+    model_name, version_name, alias
+  ))
+  cli::cli_inform(
+    "Alias {.val {alias}} set on {.val {model_name}} version {.val {version_name}}."
+  )
+  invisible(TRUE)
+}
+
+
+#' Unset a model alias (SQL-direct)
+#'
+#' Removes an alias from a model version. The underlying version remains
+#' but is no longer reachable via the alias name. The version is
+#' referenced by its alias in the SQL command.
+#'
+#' @param conn An `sfr_connection` object from [sfr_connect()].
+#' @param model_name Character. Fully-qualified or unqualified model name.
+#' @param alias Character. Alias name to remove.
+#'
+#' @returns Invisibly returns `TRUE`.
+#'
+#' @export
+sfr_unset_model_alias <- function(conn, model_name, alias) {
+  validate_connection(conn)
+  sfr_execute(conn, sprintf(
+    "ALTER MODEL %s VERSION %s UNSET ALIAS",
+    model_name, alias
+  ))
+  cli::cli_inform("Alias {.val {alias}} removed from {.val {model_name}}.")
+  invisible(TRUE)
+}
+
+
+#' Run model inference via SQL (SQL-direct)
+#'
+#' Invokes `model!function_name(*)` on the results of a SQL query.
+#' Bypasses the Python bridge entirely for inference, which is useful for
+#' large-scale batch scoring where the data is already in Snowflake.
+#'
+#' @param conn An `sfr_connection` object from [sfr_connect()].
+#' @param model_name Character. Fully-qualified or unqualified model name.
+#' @param sql Character. SQL query whose results become the model input.
+#' @param version_name Character. Model version. If `NULL`, uses the default
+#'   version.
+#' @param function_name Character. Model function to call. Default: `"predict"`.
+#' @param parse_json Logical. If `TRUE` (default), parse the JSON VARIANT
+#'   output from `MODEL()!predict()` into a clean data.frame with numeric
+#'   columns. Set to `FALSE` to return the raw JSON strings.
+#'
+#' @returns A data.frame with prediction results.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- sfr_connect()
+#' preds <- sfr_predict_sql(
+#'   conn,
+#'   "ML_DB.MODELS.MY_MODEL",
+#'   "SELECT col1, col2 FROM scoring_table",
+#'   version_name = "v1"
+#' )
+#' }
+#'
+#' @export
+sfr_predict_sql <- function(conn, model_name, sql,
+                            version_name = NULL,
+                            function_name = "predict",
+                            parse_json = TRUE) {
+  validate_connection(conn)
+  model_ref <- if (!is.null(version_name)) {
+    sprintf("MODEL %s VERSION %s", model_name, version_name)
+  } else {
+    sprintf("MODEL %s", model_name)
+  }
+  query <- sprintf(
+    "WITH m AS %s SELECT *, m!%s(*) AS prediction FROM (%s)",
+    model_ref, function_name, sql
+  )
+  result <- sfr_query(conn, query)
+
+  if (!parse_json || nrow(result) == 0L) return(result)
+
+  # MODEL()!predict() returns a VARIANT column ("PREDICTION") as JSON.
+  # Parse it and replace with clean numeric columns, keeping input cols.
+  pred_idx <- which(names(result) == "PREDICTION")
+  if (length(pred_idx) == 1L && is.character(result[[pred_idx]])) {
+    parsed <- lapply(result[[pred_idx]], jsonlite::fromJSON)
+    pred_df <- as.data.frame(do.call(rbind, lapply(parsed, unlist)))
+    for (nm in names(pred_df)) pred_df[[nm]] <- as.numeric(pred_df[[nm]])
+    result <- cbind(result[-pred_idx], pred_df)
+  }
+  result
+}
+
+
+#' Query model versions from information schema (SQL-direct)
+#'
+#' Returns metadata about model versions from the Snowflake information
+#' schema. Useful for auditing, comparing versions, and checking model
+#' attributes without loading the Python SDK.
+#'
+#' @param conn An `sfr_connection` object from [sfr_connect()].
+#' @param model_name Character. Filter to a specific model. If `NULL`,
+#'   returns all models in the database.
+#' @param database Character. Database to query. Defaults to the
+#'   connection's current database.
+#'
+#' @returns A data.frame with model version metadata.
+#'
+#' @export
+sfr_model_info <- function(conn, model_name = NULL, database = NULL) {
+  validate_connection(conn)
+  db <- database %||% conn$database
+  if (is.null(db)) {
+    cli::cli_abort("A {.arg database} is required for {.fn sfr_model_info}.")
+  }
+  where <- if (!is.null(model_name)) {
+    sprintf(" WHERE MODEL_NAME = '%s'", model_name)
+  } else {
+    ""
+  }
+  sql <- sprintf(
+    "SELECT * FROM %s.INFORMATION_SCHEMA.MODEL_VERSIONS%s ORDER BY CREATED_ON DESC",
+    db, where
+  )
+  sfr_query(conn, sql)
+}
+
+
+# =============================================================================
+# Additional Model / ModelVersion Operations
+# =============================================================================
+
+#' Delete a specific model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#'
+#' @returns Invisibly returns `TRUE`.
+#' @export
+sfr_delete_model_version <- function(reg, model_name, version_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_delete_version(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  cli::cli_inform("Version {.val {version_name}} of {.val {model_name}} deleted.")
+  invisible(TRUE)
+}
+
+
+#' Get a single metric from a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param metric_name Character.
+#'
+#' @returns The metric value.
+#' @export
+sfr_get_model_metric <- function(reg, model_name, version_name, metric_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_get_metric(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    metric_name = metric_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+}
+
+
+#' Delete a metric from a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param metric_name Character.
+#'
+#' @returns Invisibly returns `TRUE`.
+#' @export
+sfr_delete_model_metric <- function(reg, model_name, version_name, metric_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_delete_metric(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    metric_name = metric_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  cli::cli_inform("Metric {.val {metric_name}} deleted from {.val {model_name}}/{.val {version_name}}.")
+  invisible(TRUE)
+}
+
+
+#' Get or set model version description
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param desc Character. If provided, sets the description. If `NULL`, returns current.
+#'
+#' @returns The description string.
+#' @export
+sfr_model_description <- function(reg, model_name, version_name, desc = NULL) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_model_description(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    desc = desc,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+}
+
+
+#' List callable functions on a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#'
+#' @returns A data.frame listing functions.
+#' @export
+sfr_show_model_functions <- function(reg, model_name, version_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  result <- bridge$registry_show_functions(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  .bridge_dict_to_df(result)
+}
+
+
+#' Get lineage for a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param direction Character. `"upstream"`, `"downstream"`, or `"both"`.
+#' @param domain_filter Character vector.
+#'
+#' @returns Lineage information.
+#' @export
+sfr_model_lineage <- function(reg, model_name, version_name,
+                              direction = "both",
+                              domain_filter = NULL) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  result <- bridge$registry_model_lineage(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    direction = direction,
+    domain_filter = domain_filter,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  if (is.list(result) && !is.null(result$nrows)) {
+    .bridge_dict_to_df(result)
+  } else {
+    result
+  }
+}
+
+
+#' Export model files to a local directory
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param target_path Character. Local directory to export to.
+#' @param export_mode Character. Export mode (default: `"model"`).
+#'
+#' @returns The target path (invisibly).
+#' @export
+sfr_export_model <- function(reg, model_name, version_name,
+                             target_path, export_mode = "model") {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_export_model(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    target_path = target_path,
+    export_mode = export_mode,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  cli::cli_inform("Model exported to {.path {target_path}}.")
+  invisible(target_path)
+}
+
+
+#' Get the task type of a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#'
+#' @returns Character string of the task type, or `NULL`.
+#' @export
+sfr_get_model_task <- function(reg, model_name, version_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  bridge$registry_get_model_task(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+}
+
+
+#' List services deployed for a model version
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#'
+#' @returns A data.frame listing services.
+#' @export
+sfr_list_services <- function(reg, model_name, version_name) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  result <- bridge$registry_list_services(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  .bridge_dict_to_df(result)
+}
+
+
+#' Run batch inference via SPCS
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#' @param model_name Character.
+#' @param version_name Character.
+#' @param new_data A data.frame with input data.
+#' @param compute_pool Character. Compute pool for the batch job.
+#' @param function_name Character. Function to call (default: `"predict"`).
+#'
+#' @returns A data.frame with predictions.
+#' @export
+sfr_run_batch <- function(reg, model_name, version_name, new_data,
+                          compute_pool = NULL, function_name = "predict") {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  input_path <- tempfile(fileext = ".csv")
+  utils::write.csv(new_data, input_path, row.names = FALSE)
+  on.exit(unlink(input_path), add = TRUE)
+  result <- bridge$registry_run_batch(
+    session = ctx$session,
+    model_name = model_name,
+    version_name = version_name,
+    input_data_path = input_path,
+    compute_pool = compute_pool,
+    function_name = function_name,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  if (is.character(result) && file.exists(result)) {
+    on.exit(unlink(result), add = TRUE)
+    .bridge_dict_to_df(jsonlite::fromJSON(result))
+  } else {
+    result
+  }
+}
+
+
+#' List Model objects in the registry
+#'
+#' @param reg An `sfr_model_registry` or `sfr_connection` object.
+#'
+#' @returns A data.frame with model metadata.
+#' @export
+sfr_models <- function(reg) {
+  ctx <- resolve_registry_context(reg)
+  bridge <- get_bridge_module("sfr_registry_bridge")
+  result <- bridge$registry_models(
+    session = ctx$session,
+    database_name = ctx$database_name,
+    schema_name = ctx$schema_name
+  )
+  rows <- lapply(result, function(m) {
+    data.frame(
+      name = as.character(m$name %||% ""),
+      comment = as.character(m$comment %||% ""),
+      default_version = as.character(m$default_version %||% ""),
+      stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, rows)
 }

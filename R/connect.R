@@ -393,6 +393,36 @@ sfr_connect <- function(name = NULL,
 }
 
 
+#' Access elements of an sfr_connection
+#'
+#' Intercepts access to session context fields (`warehouse`, `database`,
+#' `schema`, `role`) and queries the live Snowpark session so the values
+#' always reflect the current state -- including changes made via the
+#' Snowsight UI picker, SQL cells, or Python cells.
+#'
+#' @param x An `sfr_connection` object.
+#' @param name Element name.
+#' @returns The element value.
+#' @export
+`$.sfr_connection` <- function(x, name) {
+  live_fields <- c("warehouse", "database", "schema", "role")
+  if (name %in% live_fields) {
+    session <- .subset2(x, "session")
+    if (is.null(session)) return(.subset2(x, name))
+    getter <- switch(name,
+      warehouse = "get_current_warehouse",
+      database  = "get_current_database",
+      schema    = "get_current_schema",
+      role      = "get_current_role"
+    )
+    val <- tryCatch(as.character(session[[getter]]()), error = function(e) NULL)
+    if (is.null(val) || val == "" || val == "None") return(NULL)
+    return(gsub('^"|"$', '', val))
+  }
+  .subset2(x, name)
+}
+
+
 #' Print an sfr_connection object
 #'
 #' @param x An `sfr_connection` object.
@@ -413,7 +443,7 @@ print.sfr_connection <- function(x, ...) {
     environment = x$environment,
     created_at = format(x$created_at, "%Y-%m-%d %H:%M:%S")
   )
-  if (!is.null(x$dbi_con)) {
+  if (!is.null(.subset2(x, "dbi_con"))) {
     fields$dbi_connection <- "attached"
   }
   fields <- Filter(Negate(is.null), fields)
@@ -504,17 +534,16 @@ sfr_use <- function(conn, warehouse = NULL, database = NULL, schema = NULL) {
 
 #' Refresh connection object fields from the live Snowpark session
 #'
-#' Queries the session for current warehouse, database, schema, and role.
-#' This ensures the R-side `conn` object matches the actual session state.
+#' Queries the session for current warehouse, database, schema, and role
+#' and updates the cached R-side fields. Uses `[[<-` for raw list access
+#' to avoid triggering the `$.sfr_connection` live-query method.
 #'
 #' @param conn An `sfr_connection` object.
 #' @returns The updated `sfr_connection` object.
 #' @noRd
 refresh_conn_from_session <- function(conn) {
-  session <- conn$session
+  session <- .subset2(conn, "session")
 
-  # Query the session for current context values
-  # These methods return quoted identifiers; strip quotes
   strip_quotes <- function(x) {
     if (is.null(x) || length(x) == 0) return(NULL)
     val <- tryCatch(as.character(x), error = function(e) NULL)
@@ -522,12 +551,32 @@ refresh_conn_from_session <- function(conn) {
     gsub('^"|"$', '', val)
   }
 
-  conn$warehouse <- strip_quotes(tryCatch(session$get_current_warehouse(), error = function(e) NULL))
-  conn$database  <- strip_quotes(tryCatch(session$get_current_database(), error = function(e) NULL))
-  conn$schema    <- strip_quotes(tryCatch(session$get_current_schema(), error = function(e) NULL))
-  conn$role      <- strip_quotes(tryCatch(session$get_current_role(), error = function(e) NULL))
+  conn[["warehouse"]] <- strip_quotes(tryCatch(session$get_current_warehouse(), error = function(e) NULL))
+  conn[["database"]]  <- strip_quotes(tryCatch(session$get_current_database(), error = function(e) NULL))
+  conn[["schema"]]    <- strip_quotes(tryCatch(session$get_current_schema(), error = function(e) NULL))
+  conn[["role"]]      <- strip_quotes(tryCatch(session$get_current_role(), error = function(e) NULL))
 
   conn
+}
+
+
+#' Refresh connection context from the live session
+#'
+#' Queries the Snowpark session for the current warehouse, database, schema,
+#' and role, and updates the cached fields on the connection object.
+#'
+#' This is rarely needed because `$` access on an `sfr_connection` already
+#' queries the live session. Use this when you want to bulk-update the
+#' cached fields (e.g., before serialization).
+#'
+#' @param conn An `sfr_connection` object.
+#' @returns The updated `sfr_connection` object (invisibly). You **must**
+#'   reassign: `conn <- sfr_refresh(conn)`.
+#'
+#' @export
+sfr_refresh <- function(conn) {
+  validate_connection(conn)
+  invisible(refresh_conn_from_session(conn))
 }
 
 
@@ -582,14 +631,11 @@ sfr_dbi_connection <- function(conn) {
     reason = "for DBI database connectivity")
 
   if (identical(conn$environment, "workspace")) {
-    # In Workspace Notebooks, RSnowflake auto-detects the session token
-    # when called with no parameters. Passing explicit account/user
-    # overrides auto-detection and triggers interactive auth prompts.
     dbi_con <- DBI::dbConnect(RSnowflake::Snowflake())
   } else {
     dbi_con <- DBI::dbConnect(
       RSnowflake::Snowflake(),
-      name      = conn$.connect_name,
+      name      = .subset2(conn, ".connect_name"),
       account   = conn$account,
       user      = conn$user,
       database  = conn$database,
@@ -599,6 +645,6 @@ sfr_dbi_connection <- function(conn) {
     )
   }
 
-  conn$dbi_con <- dbi_con
+  conn[["dbi_con"]] <- dbi_con
   dbi_con
 }

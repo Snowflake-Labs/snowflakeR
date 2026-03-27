@@ -4,7 +4,7 @@
 \alias{sfr_model_registry}
 \title{Connect to the Model Registry}
 \usage{
-sfr_model_registry(conn, database = NULL, schema = NULL)
+sfr_model_registry(conn, database = NULL, schema = NULL, options = NULL)
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object from \code{\link[=sfr_connect]{sfr_connect()}}.}
@@ -14,6 +14,9 @@ connection's current database.}
 
 \item{schema}{Character. Schema for the Model Registry. Defaults to the
 connection's current schema.}
+
+\item{options}{Named list. Options forwarded to \code{Registry(session, options=...)}.
+For example, \code{list(enable_monitoring = TRUE)} enables ML Observability.}
 }
 \value{
 An \code{sfr_model_registry} object.

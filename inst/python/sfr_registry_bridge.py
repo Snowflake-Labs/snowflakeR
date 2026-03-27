@@ -16,12 +16,31 @@ call this module via reticulate.
 """
 
 import contextlib
+import importlib.metadata
 import io
 import uuid
 import textwrap
 from typing import Dict, List, Optional, Any
 
 import pandas as pd
+
+try:
+    _ML_VERSION_STR = importlib.metadata.version("snowflake-ml-python")
+    _ML_VERSION = tuple(int(x) for x in _ML_VERSION_STR.split(".")[:3])
+except Exception:
+    _ML_VERSION_STR = "unknown"
+    _ML_VERSION = (0, 0, 0)
+
+
+def _requires(min_version, feature_name):
+    """Raise RuntimeError if the installed snowflake-ml-python is too old."""
+    if _ML_VERSION < min_version:
+        need = ".".join(str(x) for x in min_version)
+        raise RuntimeError(
+            f"{feature_name} requires snowflake-ml-python >= {need}, "
+            f"you have {_ML_VERSION_STR}. "
+            f"Upgrade: pip install 'snowflake-ml-python>={need}'"
+        )
 
 
 def _quiet_call(fn, *args, **kwargs):
@@ -404,6 +423,11 @@ def registry_log_model(
     options: Optional[Dict[str, Any]] = None,
     sample_input: Optional[pd.DataFrame] = None,
     training_dataset_ref: Optional[Dict[str, str]] = None,
+    task: Optional[str] = None,
+    user_files: Optional[List[str]] = None,
+    code_paths: Optional[List[str]] = None,
+    resource_constraint: Optional[Dict[str, str]] = None,
+    python_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Log an R model to the Snowflake Model Registry."""
     from snowflake.ml.registry import Registry
@@ -560,6 +584,24 @@ def registry_log_model(
         log_kwargs["pip_requirements"] = pip_requirements
     if options:
         log_kwargs["options"] = options
+    if user_files:
+        log_kwargs["user_files"] = list(user_files)
+    if code_paths:
+        log_kwargs["code_paths"] = list(code_paths)
+    if resource_constraint:
+        log_kwargs["resource_constraint"] = dict(resource_constraint)
+    if python_version:
+        log_kwargs["python_version"] = python_version
+    if task:
+        from snowflake.ml.model.task import Task
+        task_map = {
+            "TABULAR_REGRESSION": Task.TABULAR_REGRESSION,
+            "TABULAR_BINARY_CLASSIFICATION": Task.TABULAR_BINARY_CLASSIFICATION,
+            "TABULAR_MULTI_CLASSIFICATION": Task.TABULAR_MULTI_CLASSIFICATION,
+            "TABULAR_RANKING": Task.TABULAR_RANKING,
+        }
+        task_upper = task.upper().replace(" ", "_")
+        log_kwargs["task"] = task_map.get(task_upper, Task.UNKNOWN)
 
     mv = _quiet_call(reg.log_model, **log_kwargs)
 
@@ -643,6 +685,8 @@ def registry_predict(
     service_name: Optional[str] = None,
     database_name: Optional[str] = None,
     schema_name: Optional[str] = None,
+    partition_column: Optional[str] = None,
+    strict_input_validation: Optional[bool] = None,
 ) -> str:
     """Run inference using a registered model.
 
@@ -678,9 +722,13 @@ def registry_predict(
 
     sp_df = session.create_dataframe(input_data)
 
-    run_kwargs = {"function_name": function_name}
+    run_kwargs: Dict[str, Any] = {"function_name": function_name}
     if service_name:
         run_kwargs["service_name"] = service_name
+    if partition_column:
+        run_kwargs["partition_column"] = partition_column
+    if strict_input_validation is not None:
+        run_kwargs["strict_input_validation"] = strict_input_validation
 
     def _run_and_collect():
         r = mv.run(sp_df, **run_kwargs)
@@ -852,10 +900,19 @@ def registry_create_service(
     image_repo: str,
     ingress_enabled: bool = True,
     max_instances: int = 1,
+    min_instances: Optional[int] = None,
     force: bool = False,
     database_name: Optional[str] = None,
     schema_name: Optional[str] = None,
     autocapture: bool = False,
+    image_build_compute_pool: Optional[str] = None,
+    cpu_requests: Optional[str] = None,
+    memory_requests: Optional[str] = None,
+    gpu_requests: Optional[str] = None,
+    num_workers: Optional[int] = None,
+    max_batch_rows: Optional[int] = None,
+    block: bool = True,
+    build_external_access_integrations: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Deploy a model version as an SPCS service.
 
@@ -885,15 +942,32 @@ def registry_create_service(
         except Exception:
             pass
 
-    _quiet_call(
-        mv.create_service,
-        service_name=service_name,
-        service_compute_pool=compute_pool,
-        image_repo=image_repo,
-        ingress_enabled=ingress_enabled,
-        max_instances=max_instances,
-        autocapture=autocapture,
-    )
+    svc_kwargs: Dict[str, Any] = {
+        "service_name": service_name,
+        "service_compute_pool": compute_pool,
+        "image_repo": image_repo,
+        "ingress_enabled": ingress_enabled,
+        "max_instances": max_instances,
+        "autocapture": autocapture,
+        "block": block,
+    }
+    if min_instances is not None:
+        svc_kwargs["min_instances"] = min_instances
+    if image_build_compute_pool is not None:
+        svc_kwargs["image_build_compute_pool"] = image_build_compute_pool
+    if cpu_requests is not None:
+        svc_kwargs["cpu_requests"] = cpu_requests
+    if memory_requests is not None:
+        svc_kwargs["memory_requests"] = memory_requests
+    if gpu_requests is not None:
+        svc_kwargs["gpu_requests"] = gpu_requests
+    if num_workers is not None:
+        svc_kwargs["num_workers"] = num_workers
+    if max_batch_rows is not None:
+        svc_kwargs["max_batch_rows"] = max_batch_rows
+    if build_external_access_integrations is not None:
+        svc_kwargs["build_external_access_integrations"] = list(build_external_access_integrations)
+    _quiet_call(mv.create_service, **svc_kwargs)
 
     return {
         "success": True,
@@ -952,3 +1026,245 @@ PREDICT_TEMPLATES = {
 def list_predict_templates() -> Dict[str, str]:
     """Return available prediction code templates."""
     return {k: v for k, v in PREDICT_TEMPLATES.items()}
+
+
+def registry_add_monitor(
+    session,
+    monitor_name,
+    source_config_dict,
+    monitor_config_dict,
+    database_name=None,
+    schema_name=None,
+):
+    _requires((1, 7, 1), "Model Monitoring (ML Observability)")
+    from snowflake.ml.monitoring.entities.model_monitor_config import (
+        ModelMonitorSourceConfig, ModelMonitorConfig,
+    )
+    from snowflake.ml.registry import Registry
+
+    reg_kwargs = {"session": session, "options": {"enable_monitoring": True}}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+
+    reg = Registry(**reg_kwargs)
+
+    sc = dict(source_config_dict)
+    if not sc.get("id_columns"):
+        sc["id_columns"] = []
+    source_config = ModelMonitorSourceConfig(**sc)
+
+    mv = reg.get_model(monitor_config_dict["model_name"]).version(
+        monitor_config_dict["version_name"]
+    )
+    mc_kwargs = {
+        "model_version": mv,
+        "model_function_name": monitor_config_dict.get("function_name", "predict"),
+        "background_compute_warehouse_name": monitor_config_dict["warehouse"],
+    }
+    if "aggregation_window" in monitor_config_dict:
+        mc_kwargs["aggregation_window"] = monitor_config_dict["aggregation_window"]
+    monitor_config = ModelMonitorConfig(**mc_kwargs)
+
+    reg.add_monitor(monitor_name, source_config, monitor_config)
+    return {"name": monitor_name, "status": "created"}
+
+
+def registry_get_monitor(
+    session,
+    name=None,
+    model_name=None,
+    version_name=None,
+    database_name=None,
+    schema_name=None,
+):
+    _requires((1, 7, 1), "Model Monitoring (ML Observability)")
+    from snowflake.ml.registry import Registry
+
+    reg_kwargs = {"session": session, "options": {"enable_monitoring": True}}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+
+    reg = Registry(**reg_kwargs)
+
+    if name is not None:
+        monitor = reg.get_monitor(name=name)
+    elif model_name and version_name:
+        mv = reg.get_model(model_name).version(version_name)
+        monitor = reg.get_monitor(model_version=mv)
+    else:
+        raise ValueError("Provide either 'name' or both 'model_name' and 'version_name'")
+
+    return {"name": str(monitor.name), "status": "retrieved"}
+
+
+def registry_show_monitors(session, database_name=None, schema_name=None):
+    _requires((1, 7, 1), "Model Monitoring (ML Observability)")
+    from snowflake.ml.registry import Registry
+
+    reg_kwargs = {"session": session, "options": {"enable_monitoring": True}}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+
+    reg = Registry(**reg_kwargs)
+    monitors = reg.show_model_monitors()
+    if monitors is None:
+        return {"columns": [], "data": {}, "nrows": 0}
+    if hasattr(monitors, "to_pandas"):
+        monitors = monitors.to_pandas()
+    if isinstance(monitors, pd.DataFrame):
+        return _pandas_to_r_dict(monitors)
+    mon_list = [str(m) for m in monitors]
+    return _pandas_to_r_dict(pd.DataFrame({"monitor": mon_list}))
+
+
+def registry_delete_monitor(session, monitor_name, database_name=None, schema_name=None):
+    _requires((1, 7, 1), "Model Monitoring (ML Observability)")
+    from snowflake.ml.registry import Registry
+
+    reg_kwargs = {"session": session, "options": {"enable_monitoring": True}}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+
+    reg = Registry(**reg_kwargs)
+    reg.delete_monitor(monitor_name)
+    return {"name": monitor_name, "status": "deleted"}
+
+
+# =============================================================================
+# Additional Model / ModelVersion operations
+# =============================================================================
+
+def _get_model_version(session, model_name, version_name=None, database_name=None, schema_name=None):
+    """Helper: get a Registry, Model, and ModelVersion."""
+    from snowflake.ml.registry import Registry
+    reg_kwargs = {"session": session}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+    reg = Registry(**reg_kwargs)
+    m = reg.get_model(model_name)
+    mv = m.version(version_name) if version_name else m.default
+    return reg, m, mv
+
+
+def registry_get_metric(session, model_name, version_name, metric_name,
+                        database_name=None, schema_name=None):
+    """Get a single metric by name from a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    return mv.get_metric(metric_name)
+
+
+def registry_delete_metric(session, model_name, version_name, metric_name,
+                           database_name=None, schema_name=None):
+    """Delete a metric from a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    mv.delete_metric(metric_name)
+    return True
+
+
+def registry_model_description(session, model_name, version_name,
+                               desc=None, database_name=None, schema_name=None):
+    """Get or set the description/comment on a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    if desc is not None:
+        mv.comment = desc
+        return desc
+    return mv.comment or ""
+
+
+def registry_show_functions(session, model_name, version_name,
+                            database_name=None, schema_name=None):
+    """List callable functions on a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    result = mv.show_functions()
+    if hasattr(result, 'to_pandas'):
+        return _pandas_to_r_dict(result.to_pandas())
+    if isinstance(result, list):
+        return _pandas_to_r_dict(pd.DataFrame({"function": [str(f) for f in result]}))
+    return _pandas_to_r_dict(result)
+
+
+def registry_model_lineage(session, model_name, version_name,
+                           direction="both", domain_filter=None,
+                           database_name=None, schema_name=None):
+    """Get lineage for a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    kwargs: Dict[str, Any] = {}
+    if direction:
+        kwargs["direction"] = direction
+    if domain_filter:
+        kwargs["domain_filter"] = list(domain_filter)
+    result = mv.lineage(**kwargs)
+    if hasattr(result, 'to_pandas'):
+        return _pandas_to_r_dict(result.to_pandas())
+    return str(result)
+
+
+def registry_export_model(session, model_name, version_name,
+                          target_path, export_mode="model",
+                          database_name=None, schema_name=None):
+    """Export model files to a local path."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    mv.export(target_path, export_mode=export_mode)
+    return target_path
+
+
+def registry_get_model_task(session, model_name, version_name,
+                            database_name=None, schema_name=None):
+    """Get the task type of a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    task = mv.get_model_task()
+    return str(task) if task else None
+
+
+def registry_list_services(session, model_name, version_name,
+                           database_name=None, schema_name=None):
+    """List services deployed for a model version."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    result = mv.list_services()
+    if hasattr(result, 'to_pandas'):
+        return _pandas_to_r_dict(result.to_pandas())
+    if isinstance(result, pd.DataFrame):
+        return _pandas_to_r_dict(result)
+    return _pandas_to_r_dict(pd.DataFrame({"service": [str(s) for s in result]}))
+
+
+def registry_run_batch(session, model_name, version_name,
+                       input_data=None, input_data_path=None,
+                       compute_pool=None, function_name="predict",
+                       database_name=None, schema_name=None):
+    """Run batch inference via SPCS job."""
+    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    if input_data_path is not None:
+        input_data = pd.read_csv(input_data_path)
+    sp_df = session.create_dataframe(input_data)
+    kwargs: Dict[str, Any] = {"X": sp_df}
+    if compute_pool:
+        kwargs["compute_pool"] = compute_pool
+    if function_name != "predict":
+        kwargs["function_name"] = function_name
+    result = _quiet_call(mv.run_batch, **kwargs)
+    return _to_json_tempfile(result.to_pandas()) if hasattr(result, 'to_pandas') else str(result)
+
+
+def registry_models(session, database_name=None, schema_name=None):
+    """Return list of Model objects (names and metadata)."""
+    from snowflake.ml.registry import Registry
+    reg_kwargs = {"session": session}
+    if database_name:
+        reg_kwargs["database_name"] = database_name
+    if schema_name:
+        reg_kwargs["schema_name"] = schema_name
+    reg = Registry(**reg_kwargs)
+    models = reg.models()
+    return [{"name": m.name, "comment": getattr(m, 'comment', ''),
+             "default_version": str(getattr(m, 'default', ''))} for m in models]

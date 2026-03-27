@@ -10,7 +10,7 @@ test_that("sfr_feature_view creates draft object with correct class", {
   fv <- sfr_feature_view(
     name = "MY_FV",
     entities = entity,
-    features = "SELECT * FROM features_table",
+    feature_df = "SELECT * FROM features_table",
     refresh_freq = "1 hour",
     desc = "Test feature view"
   )
@@ -29,7 +29,7 @@ test_that("sfr_feature_view handles single entity", {
     class = c("sfr_entity", "list")
   )
 
-  fv <- sfr_feature_view("FV", entities = entity, features = "SELECT 1")
+  fv <- sfr_feature_view("FV", entities = entity, feature_df = "SELECT 1")
   expect_length(fv$entities, 1)
   expect_s3_class(fv$entities[[1]], "sfr_entity")
 })
@@ -45,7 +45,7 @@ test_that("sfr_feature_view handles list of entities", {
     class = c("sfr_entity", "list")
   )
 
-  fv <- sfr_feature_view("FV", entities = list(e1, e2), features = "SELECT 1")
+  fv <- sfr_feature_view("FV", entities = list(e1, e2), feature_df = "SELECT 1")
   expect_length(fv$entities, 2)
 })
 
@@ -55,7 +55,7 @@ test_that("print.sfr_feature_view outputs expected format", {
     list(name = "E1", join_keys = "ID", desc = ""),
     class = c("sfr_entity", "list")
   )
-  fv <- sfr_feature_view("MY_FV", entities = entity, features = "SELECT 1")
+  fv <- sfr_feature_view("MY_FV", entities = entity, feature_df = "SELECT 1")
 
   expect_message(print(fv), "sfr_feature_view")
   expect_message(print(fv), "draft")
@@ -144,7 +144,7 @@ test_that("sfr_register_feature_view requires sfr_feature_store", {
     list(name = "E1", join_keys = "ID", desc = ""),
     class = c("sfr_entity", "list")
   )
-  fv <- sfr_feature_view("FV", entities = entity, features = "SELECT 1")
+  fv <- sfr_feature_view("FV", entities = entity, feature_df = "SELECT 1")
 
   expect_error(sfr_register_feature_view(list(), fv, "v1"), "sfr_feature_store")
 })
@@ -183,4 +183,77 @@ test_that("extract_feature_sql handles character input", {
 
 test_that("extract_feature_sql rejects non-SQL non-dbplyr input", {
   expect_error(extract_feature_sql(42), "must be a SQL string")
+})
+
+
+test_that("sfr_feature_view stores feature_df_raw field", {
+  entity <- structure(
+    list(name = "E1", join_keys = "ID", desc = ""),
+    class = c("sfr_entity", "list")
+  )
+  fv <- sfr_feature_view("FV", entities = entity, feature_df = "SELECT 1")
+  expect_equal(fv$feature_df_raw, "SELECT 1")
+})
+
+
+test_that("sfr_feature creates correct S3 object", {
+  f <- sfr_feature("AMOUNT", "FLOAT", "SUM", "1 hour")
+  expect_s3_class(f, "sfr_feature")
+  expect_equal(f$name, "AMOUNT")
+  expect_equal(f$dtype, "FLOAT")
+  expect_equal(f$agg, "SUM")
+  expect_equal(f$window, "1 hour")
+})
+
+
+test_that("sfr_feature validates character inputs", {
+  expect_error(sfr_feature(123, "FLOAT", "SUM", "1h"))
+  expect_error(sfr_feature("A", 123, "SUM", "1h"))
+})
+
+
+test_that("print.sfr_feature outputs expected format", {
+  f <- sfr_feature("AMOUNT", "FLOAT", "SUM", "1 hour")
+  expect_message(print(f), "sfr_feature")
+  expect_message(print(f), "SUM")
+})
+
+
+test_that("sfr_feature_view accepts features and feature_granularity", {
+  entity <- structure(
+    list(name = "E1", join_keys = "ID", desc = ""),
+    class = c("sfr_entity", "list")
+  )
+  f1 <- sfr_feature("AMOUNT", "FLOAT", "SUM", "1 hour")
+  f2 <- sfr_feature("COUNT", "NUMBER", "COUNT", "1 hour")
+
+  local_mocked_bindings(
+    sfr_requires_ml = function(min, feature) invisible(TRUE),
+    .package = "snowflakeR"
+  )
+
+  fv <- sfr_feature_view(
+    "TILED_FV", entities = entity, feature_df = "SELECT * FROM t",
+    features = list(f1, f2), feature_granularity = "1h"
+  )
+  expect_equal(length(fv$features), 2)
+  expect_equal(fv$feature_granularity, "1h")
+})
+
+
+test_that("sfr_feature_view requires features when feature_granularity is set", {
+  entity <- structure(
+    list(name = "E1", join_keys = "ID", desc = ""),
+    class = c("sfr_entity", "list")
+  )
+  local_mocked_bindings(
+    sfr_requires_ml = function(min, feature) invisible(TRUE),
+    .package = "snowflakeR"
+  )
+
+  expect_error(
+    sfr_feature_view("FV", entities = entity, feature_df = "SELECT 1",
+                     feature_granularity = "1h"),
+    "features"
+  )
 })

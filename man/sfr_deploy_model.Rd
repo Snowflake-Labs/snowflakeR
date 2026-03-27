@@ -12,7 +12,9 @@ sfr_deploy_model(
   compute_pool,
   image_repo,
   max_instances = 1L,
-  force = FALSE
+  min_instances = NULL,
+  force = FALSE,
+  autocapture = FALSE
 )
 }
 \arguments{
@@ -32,6 +34,12 @@ sfr_deploy_model(
 
 \item{force}{Logical. If \code{TRUE} and the service already exists, drop it
 first and redeploy. Default: \code{FALSE}.}
+
+\item{autocapture}{Logical. If \code{TRUE}, inference requests and responses are
+automatically logged to the model's inference table.  Query captured data
+with \verb{SELECT * FROM TABLE(INFERENCE_TABLE('<model_name>'))}.  The model
+must have been created after 2026-01-23 (or cloned from an older model).
+Default: \code{FALSE}.}
 }
 \value{
 Invisibly returns a list with deployment info.

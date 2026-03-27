@@ -40,7 +40,8 @@ sfr_feature_store <- function(conn,
                               database = NULL,
                               schema = NULL,
                               warehouse = NULL,
-                              create = FALSE) {
+                              create = FALSE,
+                              default_iceberg_external_volume = NULL) {
   validate_connection(conn)
 
   db <- database %||% conn$database
@@ -65,7 +66,8 @@ sfr_feature_store <- function(conn,
       database = db,
       schema = sc,
       warehouse = wh,
-      creation_mode = creation_mode
+      creation_mode = creation_mode,
+      default_iceberg_external_volume = default_iceberg_external_volume
     ),
     class = c("sfr_feature_store", "list")
   )
@@ -295,14 +297,19 @@ print.sfr_entity <- function(x, ...) {
 #'
 #' @param name Character. Name for the Feature View.
 #' @param entities An `sfr_entity` object or list of `sfr_entity` objects.
-#' @param features A `dbplyr` lazy table, SQL string, or table reference
-#'   defining the feature transformation logic.
+#' @param feature_df A `dbplyr` lazy table, SQL string, or table reference
+#'   defining the feature transformation logic. Named `feature_df` to match
+#'   the Python `FeatureView` constructor parameter.
 #' @param refresh_freq Character. Refresh frequency (e.g., `"1 hour"`,
 #'   `"30 minutes"`). If `NULL`, creates an external (manually maintained)
 #'   Feature View.
 #' @param warehouse Character. Warehouse for refreshing.
 #' @param timestamp_col Character. Timestamp column for point-in-time lookups.
 #' @param desc Character. Description.
+#' @param features List of objects from \code{sfr_feature()} defining aggregation
+#'   features. Required when `feature_granularity` is set.
+#' @param feature_granularity Character. Time granularity for tile-based
+#'   aggregation (e.g., `"1h"`, `"1 day"`).
 #'
 #' @returns An `sfr_feature_view` object (local draft, not yet registered).
 #'
@@ -311,17 +318,43 @@ print.sfr_entity <- function(x, ...) {
 #' @export
 sfr_feature_view <- function(name,
                              entities,
-                             features,
+                             feature_df,
                              refresh_freq = NULL,
                              warehouse = NULL,
                              timestamp_col = NULL,
-                             desc = NULL) {
-  # Extract SQL from dbplyr lazy table if needed
-  sql <- extract_feature_sql(features)
+                             desc = NULL,
+                             features = NULL,
+                             feature_granularity = NULL,
+                             initialize = NULL,
+                             refresh_mode = NULL,
+                             cluster_by = NULL,
+                             online_config = NULL) {
+  sql <- extract_feature_sql(feature_df)
 
-  # Normalise entities to list
   if (inherits(entities, "sfr_entity")) {
     entities <- list(entities)
+  }
+
+  if (!is.null(feature_granularity) && is.null(features)) {
+    cli::cli_abort(
+      "{.arg features} is required when {.arg feature_granularity} is set."
+    )
+  }
+
+  if (!is.null(features)) {
+    ok <- vapply(features, inherits, logical(1), "sfr_feature")
+    if (!all(ok)) {
+      cli::cli_abort(
+        "Each element of {.arg features} must be an {.cls sfr_feature} object."
+      )
+    }
+  }
+
+  if (!is.null(feature_granularity)) {
+    sfr_requires_ml("1.24.0", "Tile-based aggregation")
+  }
+  if (!is.null(online_config)) {
+    stopifnot(inherits(online_config, "sfr_online_config"))
   }
 
   structure(
@@ -329,11 +362,17 @@ sfr_feature_view <- function(name,
       name = name,
       entities = entities,
       sql = sql,
-      features_raw = features,
+      feature_df_raw = feature_df,
       refresh_freq = refresh_freq,
       warehouse = warehouse,
       timestamp_col = timestamp_col,
       desc = desc,
+      features = features,
+      feature_granularity = feature_granularity,
+      initialize = initialize,
+      refresh_mode = refresh_mode,
+      cluster_by = cluster_by,
+      online_config = online_config,
       registered = FALSE
     ),
     class = c("sfr_feature_view", "list")
@@ -378,7 +417,8 @@ print.sfr_feature_view <- function(x, ...) {
 #'
 #' @export
 sfr_register_feature_view <- function(fs, feature_view, version,
-                                      overwrite = FALSE) {
+                                      overwrite = FALSE,
+                                      block = TRUE) {
   stopifnot(inherits(fs, "sfr_feature_store"))
   stopifnot(inherits(feature_view, "sfr_feature_view"))
 
@@ -390,6 +430,17 @@ sfr_register_feature_view <- function(fs, feature_view, version,
     function(e) e$name,
     character(1)
   )
+
+  agg_features <- if (!is.null(feature_view$features)) {
+    lapply(feature_view$features, function(f) {
+      list(name = f$name, dtype = f$dtype, agg = f$agg, window = f$window)
+    })
+  }
+
+  online_cfg <- if (!is.null(feature_view$online_config)) {
+    list(enable = feature_view$online_config$enable,
+         target_lag = feature_view$online_config$target_lag)
+  }
 
   result <- bridge$register_feature_view(
     session = fs$conn$session,
@@ -404,7 +455,14 @@ sfr_register_feature_view <- function(fs, feature_view, version,
     database = args$database,
     schema = args$schema,
     overwrite = overwrite,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    feature_granularity = feature_view$feature_granularity,
+    aggregation_features = agg_features,
+    block = block,
+    initialize = feature_view$initialize,
+    refresh_mode = feature_view$refresh_mode,
+    cluster_by = feature_view$cluster_by,
+    online_config_dict = online_cfg
   )
 
   cli::cli_inform(c(
@@ -435,22 +493,35 @@ sfr_create_feature_view <- function(fs,
                                     name,
                                     version,
                                     entities,
-                                    features,
+                                    feature_df,
                                     refresh_freq = NULL,
                                     warehouse = NULL,
                                     timestamp_col = NULL,
                                     desc = NULL,
-                                    overwrite = FALSE) {
+                                    features = NULL,
+                                    feature_granularity = NULL,
+                                    overwrite = FALSE,
+                                    block = TRUE,
+                                    initialize = NULL,
+                                    refresh_mode = NULL,
+                                    cluster_by = NULL,
+                                    online_config = NULL) {
   draft <- sfr_feature_view(
     name = name,
     entities = entities,
-    features = features,
+    feature_df = feature_df,
     refresh_freq = refresh_freq,
     warehouse = warehouse,
     timestamp_col = timestamp_col,
-    desc = desc
+    desc = desc,
+    features = features,
+    feature_granularity = feature_granularity,
+    initialize = initialize,
+    refresh_mode = refresh_mode,
+    cluster_by = cluster_by,
+    online_config = online_config
   )
-  sfr_register_feature_view(fs, draft, version, overwrite = overwrite)
+  sfr_register_feature_view(fs, draft, version, overwrite = overwrite, block = block)
 }
 
 
@@ -523,7 +594,7 @@ sfr_get_feature_view <- function(fs, name, version) {
       timestamp_col = result$timestamp_col,
       entities = list(),
       sql = NULL,
-      features_raw = NULL,
+      feature_df_raw = NULL,
       refresh_freq = NULL,
       warehouse = NULL,
       registered = TRUE,
@@ -581,29 +652,57 @@ sfr_delete_feature_view <- function(fs, name, version) {
 
 #' Read data from a Feature View
 #'
+#' Read rows from the offline or online store backing a registered
+#' Feature View, optionally filtering by primary-key values and/or
+#' selecting specific feature columns.
+#'
 #' @param fs An `sfr_feature_store` object.
 #' @param name Character. Feature View name.
 #' @param version Character. Version to read.
+#' @param store_type Character. `"OFFLINE"` (default) or `"ONLINE"`.
+#'   Online reads require `snowflake-ml-python >= 1.18.0` and the
+#'   Feature View must have online serving enabled.
+#' @param keys A named list of primary-key columns and values to filter.
+#'   Names must match the entity `join_keys`.
+#'   For a single-key entity: `list(CUSTOMER_ID = c(1L, 3L))`.
+#'   For composite keys: `list(COL1 = c("a","b"), COL2 = c("x","y"))`.
+#'   `NULL` (default) returns all rows.
+#' @param feature_names Character vector of feature column names to return.
+#'   `NULL` (default) returns all features.
 #'
 #' @returns A data.frame with feature data.
 #'
 #' @export
-sfr_read_feature_view <- function(fs, name, version) {
+sfr_read_feature_view <- function(fs, name, version,
+                                  store_type = "OFFLINE",
+                                  keys = NULL,
+                                  feature_names = NULL) {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
   args <- fs_bridge_args(fs)
 
-  result <- bridge$read_feature_view(
-    session = fs$conn$session,
-    name = name,
-    version = version,
-    database = args$database,
-    schema = args$schema,
-    warehouse = args$warehouse,
-    creation_mode = args$creation_mode
+  bridge_args <- list(
+    session       = fs$conn$session,
+    name          = name,
+    version       = version,
+    database      = args$database,
+    schema        = args$schema,
+    warehouse     = args$warehouse,
+    creation_mode = args$creation_mode,
+    store_type    = store_type
   )
 
+  if (!is.null(keys)) {
+    stopifnot(is.list(keys), !is.null(names(keys)))
+    bridge_args$keys_dict <- keys
+  }
+
+  if (!is.null(feature_names)) {
+    bridge_args$feature_names <- as.character(feature_names)
+  }
+
+  result <- do.call(bridge$read_feature_view, bridge_args)
   .bridge_dict_to_df(result)
 }
 
@@ -619,7 +718,8 @@ sfr_read_feature_view <- function(fs, name, version) {
 #' @returns Invisibly returns `TRUE`.
 #'
 #' @export
-sfr_refresh_feature_view <- function(fs, name, version) {
+sfr_refresh_feature_view <- function(fs, name, version,
+                                     store_type = "OFFLINE") {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
@@ -632,7 +732,8 @@ sfr_refresh_feature_view <- function(fs, name, version) {
     database = args$database,
     schema = args$schema,
     warehouse = args$warehouse,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    store_type = store_type
   )
 
   cli::cli_inform("Feature View {.val {name}} version {.val {version}} refreshed.")
@@ -718,7 +819,9 @@ sfr_resume_feature_view <- function(fs, name, version) {
 #' @returns A data.frame with refresh history.
 #'
 #' @export
-sfr_get_refresh_history <- function(fs, name, version, verbose = FALSE) {
+sfr_get_refresh_history <- function(fs, name, version,
+                                    verbose = FALSE,
+                                    store_type = "OFFLINE") {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
@@ -732,7 +835,8 @@ sfr_get_refresh_history <- function(fs, name, version, verbose = FALSE) {
     schema = args$schema,
     warehouse = args$warehouse,
     verbose = verbose,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    store_type = store_type
   )
 
   .bridge_dict_to_df(result)
@@ -815,7 +919,11 @@ sfr_generate_training_data <- function(fs,
                                        features,
                                        spine_timestamp_col = NULL,
                                        spine_label_cols = NULL,
-                                       save_as = NULL) {
+                                       save_as = NULL,
+                                       exclude_columns = NULL,
+                                       include_feature_view_timestamp_col = FALSE,
+                                       auto_prefix = FALSE,
+                                       join_method = NULL) {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
@@ -847,7 +955,11 @@ sfr_generate_training_data <- function(fs,
     database = args$database,
     schema = args$schema,
     warehouse = args$warehouse,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    exclude_columns = exclude_columns,
+    include_feature_view_timestamp_col = include_feature_view_timestamp_col,
+    auto_prefix = auto_prefix,
+    join_method = join_method
   )
 
   on.exit(unlink(json_path), add = TRUE)
@@ -913,7 +1025,12 @@ sfr_generate_dataset <- function(fs,
                                  version = NULL,
                                  spine_timestamp_col = NULL,
                                  spine_label_cols = NULL,
-                                 desc = "") {
+                                 desc = "",
+                                 exclude_columns = NULL,
+                                 include_feature_view_timestamp_col = FALSE,
+                                 auto_prefix = FALSE,
+                                 output_type = NULL,
+                                 join_method = NULL) {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
@@ -947,7 +1064,12 @@ sfr_generate_dataset <- function(fs,
     database = args$database,
     schema = args$schema,
     warehouse = args$warehouse,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    exclude_columns = exclude_columns,
+    include_feature_view_timestamp_col = include_feature_view_timestamp_col,
+    auto_prefix = auto_prefix,
+    output_type = output_type,
+    join_method = join_method
   )
 
   json_path <- result$json_path
@@ -962,16 +1084,30 @@ sfr_generate_dataset <- function(fs,
 
 #' Retrieve feature values for inference
 #'
+#' Calls `fs.retrieve_feature_values()` in the Python SDK.  Without
+#' `spine_timestamp_col` this performs a simple LEFT JOIN on entity keys
+#' and returns the **current** feature values.  When `spine_timestamp_col`
+#' is provided the join is point-in-time correct (same logic as
+#' [sfr_generate_training_data()]).
+#'
 #' @param fs An `sfr_feature_store` object.
 #' @param spine A data.frame, SQL string, or dbplyr lazy table with entity
 #'   key values.
 #' @param features A list of registered `sfr_feature_view` objects or
 #'   lists with `name` and `version`.
+#' @param spine_timestamp_col Optional timestamp column in the spine for
+#'   point-in-time feature value lookup.  When `NULL` (the default) the
+#'   latest feature values are returned.
 #'
 #' @returns A data.frame with feature values.
 #'
 #' @export
-sfr_retrieve_features <- function(fs, spine, features) {
+sfr_retrieve_features <- function(fs, spine, features,
+                                  spine_timestamp_col = NULL,
+                                  exclude_columns = NULL,
+                                  include_feature_view_timestamp_col = FALSE,
+                                  auto_prefix = FALSE,
+                                  join_method = NULL) {
   stopifnot(inherits(fs, "sfr_feature_store"))
 
   bridge <- get_bridge_module("sfr_features_bridge")
@@ -995,10 +1131,15 @@ sfr_retrieve_features <- function(fs, spine, features) {
     session = fs$conn$session,
     spine_sql = spine_sql,
     feature_view_refs = fv_refs,
+    spine_timestamp_col = spine_timestamp_col,
     database = args$database,
     schema = args$schema,
     warehouse = args$warehouse,
-    creation_mode = args$creation_mode
+    creation_mode = args$creation_mode,
+    exclude_columns = exclude_columns,
+    include_feature_view_timestamp_col = include_feature_view_timestamp_col,
+    auto_prefix = auto_prefix,
+    join_method = join_method
   )
 
   on.exit(unlink(json_path), add = TRUE)
@@ -1008,28 +1149,321 @@ sfr_retrieve_features <- function(fs, spine, features) {
 
 
 # =============================================================================
+# Aggregation features (tile-based Feature Views)
+# =============================================================================
+
+#' Create an aggregation Feature definition
+#'
+#' Defines a single aggregation feature for tile-based Feature Views. Pass a
+#' list of `sfr_feature` objects to [sfr_feature_view()] or
+#' [sfr_create_feature_view()] via the `features` parameter when using
+#' `feature_granularity`.
+#'
+#' @param name Character. Column name in the source data to aggregate.
+#' @param dtype Character. Snowflake data type (e.g., `"FLOAT"`, `"NUMBER"`).
+#' @param agg Character. Aggregation function (`"SUM"`, `"AVG"`, `"MIN"`,
+#'   `"MAX"`, `"COUNT"`, `"STDDEV"`, `"VARIANCE"`).
+#' @param window Character. Time window for the aggregation
+#'   (e.g., `"1 hour"`, `"1 day"`, `"7 days"`).
+#'
+#' @returns An `sfr_feature` object.
+#'
+#' @examples
+#' \dontrun{
+#' feat <- sfr_feature("AMOUNT", "FLOAT", "SUM", "1 hour")
+#' }
+#'
+#' @export
+sfr_feature <- function(name, dtype, agg, window) {
+  stopifnot(is.character(name), length(name) == 1L)
+  stopifnot(is.character(dtype), length(dtype) == 1L)
+  stopifnot(is.character(agg), length(agg) == 1L)
+  stopifnot(is.character(window), length(window) == 1L)
+
+  structure(
+    list(name = name, dtype = dtype, agg = agg, window = window),
+    class = c("sfr_feature", "list")
+  )
+}
+
+
+#' @export
+print.sfr_feature <- function(x, ...) {
+  cli::cli_text(
+    "<{.cls sfr_feature}> {.val {x$agg}}({.val {x$name}}) OVER {.val {x$window}}"
+  )
+  invisible(x)
+}
+
+
+# =============================================================================
+# Feature View methods
+# =============================================================================
+
+#' Attach per-feature descriptions
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#' @param descs A named character vector or list mapping feature names to descriptions.
+#'
+#' @returns Invisibly returns `TRUE`.
+#' @export
+sfr_attach_feature_desc <- function(fs, name, version, descs) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  bridge$attach_feature_desc(
+    session = fs$conn$session, name = name, version = version,
+    descs = as.list(descs),
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+  invisible(TRUE)
+}
+
+
+#' Select a subset of features from a Feature View
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#' @param feature_names Character vector of feature names to keep.
+#'
+#' @returns An `sfr_feature_view` object with only the selected features.
+#' @export
+sfr_slice_feature_view <- function(fs, name, version, feature_names) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  result <- bridge$slice_feature_view(
+    session = fs$conn$session, name = name, version = version,
+    feature_names = as.character(feature_names),
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+  fv_name <- result$name %||% name
+  fv_version <- result$version %||% version
+  fv_features <- result$feature_names %||% result$names_requested %||% feature_names
+  structure(
+    list(name = fv_name, version = fv_version,
+         feature_names = fv_features, registered = TRUE,
+         py_fv = result$`_py_fv`, entities = list(), sql = NULL,
+         feature_df_raw = NULL),
+    class = c("sfr_feature_view", "list")
+  )
+}
+
+
+#' Get lineage for a Feature View
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#' @param direction Character. `"upstream"`, `"downstream"`, or `"both"`.
+#' @param domain_filter Character vector. Optional domain filter.
+#'
+#' @returns A data.frame or character representation of lineage.
+#' @export
+sfr_fv_lineage <- function(fs, name, version,
+                           direction = "both",
+                           domain_filter = NULL) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  result <- bridge$feature_view_lineage(
+    session = fs$conn$session, name = name, version = version,
+    direction = direction, domain_filter = domain_filter,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+  if (is.list(result) && !is.null(result$nrows)) {
+    .bridge_dict_to_df(result)
+  } else {
+    result
+  }
+}
+
+
+#' List columns for a Feature View
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#'
+#' @returns A data.frame with column metadata.
+#' @export
+sfr_list_fv_columns <- function(fs, name, version) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  result <- bridge$list_fv_columns(
+    session = fs$conn$session, name = name, version = version,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+  .bridge_dict_to_df(result)
+}
+
+
+#' Convert a Feature View to a data.frame
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#'
+#' @returns A data.frame with the Feature View data.
+#' @export
+sfr_fv_to_df <- function(fs, name, version) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  result <- bridge$fv_to_df(
+    session = fs$conn$session, name = name, version = version,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+  .bridge_dict_to_df(result)
+}
+
+
+#' Get the underlying SQL query for a Feature View
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#'
+#' @returns A character string with the SQL query.
+#' @export
+sfr_fv_query <- function(fs, name, version) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  bridge$fv_query(
+    session = fs$conn$session, name = name, version = version,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+}
+
+
+#' Get the fully qualified name of a Feature View
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param name Character. Feature View name.
+#' @param version Character. Version.
+#'
+#' @returns A character string with the fully qualified name.
+#' @export
+sfr_fv_fqn <- function(fs, name, version) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  bridge$fv_fully_qualified_name(
+    session = fs$conn$session, name = name, version = version,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+}
+
+
+#' Load Feature Views associated with a Dataset
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param dataset_name Character. Dataset name.
+#' @param dataset_version Character. Dataset version.
+#'
+#' @returns A list of lists with `name` and `version` elements.
+#' @export
+sfr_load_fvs_from_dataset <- function(fs, dataset_name, dataset_version) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  bridge$load_feature_views_from_dataset(
+    session = fs$conn$session,
+    dataset_name = dataset_name, dataset_version = dataset_version,
+    database = args$database, schema = args$schema,
+    warehouse = args$warehouse, creation_mode = args$creation_mode
+  )
+}
+
+
+#' Update the default warehouse for the Feature Store
+#'
+#' @param fs An `sfr_feature_store` object.
+#' @param warehouse_name Character. New default warehouse name.
+#'
+#' @returns Invisibly returns `TRUE`.
+#' @export
+sfr_update_default_warehouse <- function(fs, warehouse_name) {
+  stopifnot(inherits(fs, "sfr_feature_store"))
+  bridge <- get_bridge_module("sfr_features_bridge")
+  args <- fs_bridge_args(fs)
+  bridge$update_default_warehouse(
+    session = fs$conn$session,
+    warehouse_name = warehouse_name,
+    database = args$database, schema = args$schema,
+    creation_mode = args$creation_mode
+  )
+  fs$warehouse <- warehouse_name
+  invisible(TRUE)
+}
+
+
+#' Create an Iceberg StorageConfig
+#'
+#' Configuration for Iceberg-backed Feature Views. Requires
+#' `snowflake-ml-python >= 1.26.0`.
+#'
+#' @param format Character. Storage format. Currently only `"ICEBERG"`.
+#' @param external_volume Character. External volume name.
+#' @param base_location Character. Base location path within the volume.
+#'
+#' @returns An `sfr_storage_config` object.
+#' @export
+sfr_storage_config <- function(format = "ICEBERG",
+                               external_volume = NULL,
+                               base_location = NULL) {
+  sfr_requires_ml("1.26.0", "Iceberg-backed Feature Views")
+  structure(
+    list(format = format, external_volume = external_volume,
+         base_location = base_location),
+    class = c("sfr_storage_config", "list")
+  )
+}
+
+
+#' @export
+print.sfr_storage_config <- function(x, ...) {
+  cli::cli_text(
+    "<{.cls sfr_storage_config}> format={.val {x$format}} volume={.val {x$external_volume}}"
+  )
+  invisible(x)
+}
+
+
+# =============================================================================
 # Internal: SQL extraction from features argument
 # =============================================================================
 
-#' Extract SQL from a features argument
+#' Extract SQL from a feature_df argument
 #'
 #' Handles dbplyr lazy tables, character SQL strings, and table references.
 #'
-#' @param features A dbplyr lazy table, character string, or table reference.
+#' @param feature_df A dbplyr lazy table, character string, or table reference.
 #' @returns A character string containing SQL.
 #' @noRd
-extract_feature_sql <- function(features) {
-  if (is.character(features)) {
-    return(features)
+extract_feature_sql <- function(feature_df) {
+  if (is.character(feature_df)) {
+    return(feature_df)
   }
 
-  # Try dbplyr SQL extraction
   if (requireNamespace("dbplyr", quietly = TRUE)) {
     sql <- tryCatch(
-      as.character(dbplyr::sql_render(features)),
+      as.character(dbplyr::sql_render(feature_df)),
       error = function(e) {
         tryCatch(
-          as.character(dbplyr::remote_query(features)),
+          as.character(dbplyr::remote_query(feature_df)),
           error = function(e2) NULL
         )
       }
@@ -1038,7 +1472,7 @@ extract_feature_sql <- function(features) {
   }
 
   cli::cli_abort(c(
-    "{.arg features} must be a SQL string, dbplyr lazy table, or table reference.",
-    "i" = "Install {.pkg dbplyr} to use dplyr pipelines as features."
+    "{.arg feature_df} must be a SQL string, dbplyr lazy table, or table reference.",
+    "i" = "Install {.pkg dbplyr} to use dplyr pipelines as feature_df."
   ))
 }

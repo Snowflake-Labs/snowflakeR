@@ -17,7 +17,26 @@ Key design decisions:
     dbplyr or written manually), then wrapped in session.sql().
 """
 
+import importlib.metadata
 from typing import Dict, List, Optional, Any
+
+try:
+    _ML_VERSION_STR = importlib.metadata.version("snowflake-ml-python")
+    _ML_VERSION = tuple(int(x) for x in _ML_VERSION_STR.split(".")[:3])
+except Exception:
+    _ML_VERSION_STR = "unknown"
+    _ML_VERSION = (0, 0, 0)
+
+
+def _requires(min_version, feature_name):
+    """Raise RuntimeError if the installed snowflake-ml-python is too old."""
+    if _ML_VERSION < min_version:
+        need = ".".join(str(x) for x in min_version)
+        raise RuntimeError(
+            f"{feature_name} requires snowflake-ml-python >= {need}, "
+            f"you have {_ML_VERSION_STR}. "
+            f"Upgrade: pip install 'snowflake-ml-python>={need}'"
+        )
 
 
 # =============================================================================
@@ -146,38 +165,46 @@ def _make_feature_view(
     warehouse: Optional[str] = None,
     timestamp_col: Optional[str] = None,
     desc: Optional[str] = None,
+    feature_granularity: Optional[str] = None,
+    features: Optional[list] = None,
+    initialize: Optional[str] = None,
+    refresh_mode: Optional[str] = None,
+    cluster_by: Optional[List[str]] = None,
+    online_config_dict: Optional[Dict[str, Any]] = None,
 ):
-    """
-    Create a local (draft) FeatureView object.
-
-    Args:
-        session: Active Snowpark Session.
-        name: FeatureView name.
-        entities: List of Entity objects.
-        sql: SQL query defining the feature transformation.
-        refresh_freq: Refresh frequency string (e.g., "1 hour") or None.
-        warehouse: Override warehouse for this FeatureView.
-        timestamp_col: Timestamp column name for time-series features.
-        desc: Description.
-
-    Returns:
-        A draft FeatureView object.
-    """
+    """Create a local (draft) FeatureView object."""
     from snowflake.ml.feature_store import FeatureView
 
     feature_df = session.sql(sql)
 
-    fv = FeatureView(
-        name=name,
-        entities=entities,
-        feature_df=feature_df,
-        refresh_freq=refresh_freq,
-        timestamp_col=timestamp_col,
-        desc=desc or "",
-        warehouse=warehouse,
-    )
+    fv_kwargs: Dict[str, Any] = {
+        "name": name,
+        "entities": entities,
+        "feature_df": feature_df,
+        "refresh_freq": refresh_freq,
+        "timestamp_col": timestamp_col,
+        "desc": desc or "",
+        "warehouse": warehouse,
+    }
+    if feature_granularity is not None:
+        fv_kwargs["feature_granularity"] = feature_granularity
+    if features is not None:
+        fv_kwargs["features"] = features
+    if initialize is not None:
+        fv_kwargs["initialize"] = initialize
+    if refresh_mode is not None:
+        fv_kwargs["refresh_mode"] = refresh_mode
+    if cluster_by is not None:
+        fv_kwargs["cluster_by"] = list(cluster_by)
+    if online_config_dict is not None:
+        _requires((1, 18, 0), "Online feature serving (online_config on FV)")
+        from snowflake.ml.feature_store.feature_view import OnlineConfig
+        fv_kwargs["online_config"] = OnlineConfig(
+            enable=online_config_dict.get("enable", True),
+            target_lag=online_config_dict.get("target_lag"),
+        )
 
-    return fv
+    return FeatureView(**fv_kwargs)
 
 
 # =============================================================================
@@ -300,6 +327,13 @@ def register_feature_view(
     schema: Optional[str] = None,
     overwrite: bool = False,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    feature_granularity: Optional[str] = None,
+    aggregation_features: Optional[List[Dict[str, str]]] = None,
+    block: bool = True,
+    initialize: Optional[str] = None,
+    refresh_mode: Optional[str] = None,
+    cluster_by: Optional[List[str]] = None,
+    online_config_dict: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Register a Feature View in the Snowflake Feature Store.
@@ -325,6 +359,8 @@ def register_feature_view(
         schema: Feature Store schema.
         overwrite: If True, overwrite existing version.
         creation_mode: FeatureStore creation mode.
+        feature_granularity: Tile granularity for tile-based aggregation FVs.
+        aggregation_features: List of dicts with name, dtype, agg, window.
 
     Returns:
         Dict with registered FeatureView info.
@@ -333,12 +369,22 @@ def register_feature_view(
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
+    if feature_granularity is not None:
+        _requires((1, 24, 0), "Tile-based aggregation (feature_granularity)")
+
+    features_list = None
+    if aggregation_features:
+        from snowflake.ml.feature_store import Feature
+        features_list = [
+            Feature(name=f["name"], dtype=f["dtype"], agg=f["agg"], window=f["window"])
+            for f in aggregation_features
+        ]
+
     fs = _get_feature_store(session, db, sc, wh, creation_mode)
 
     # Retrieve registered entities
     entities = [fs.get_entity(en) for en in entity_names]
 
-    # Create draft FeatureView
     fv = _make_feature_view(
         session=session,
         name=name,
@@ -348,13 +394,19 @@ def register_feature_view(
         warehouse=wh,
         timestamp_col=timestamp_col,
         desc=desc,
+        feature_granularity=feature_granularity,
+        features=features_list,
+        initialize=initialize,
+        refresh_mode=refresh_mode,
+        cluster_by=cluster_by,
+        online_config_dict=online_config_dict,
     )
 
-    # Register (materialise)
     registered_fv = fs.register_feature_view(
         feature_view=fv,
         version=version,
         overwrite=overwrite,
+        block=block,
     )
 
     return {
@@ -442,6 +494,7 @@ def refresh_feature_view(
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    store_type: str = "OFFLINE",
 ) -> None:
     """Manually refresh a FeatureView."""
     db = database or session.get_current_database().replace('"', '')
@@ -449,7 +502,12 @@ def refresh_feature_view(
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
     fs = _get_feature_store(session, db, sc, wh, creation_mode)
-    fs.refresh_feature_view(name, version)
+    kwargs: Dict[str, Any] = {}
+    if store_type.upper() != "OFFLINE":
+        _requires((1, 18, 0), "Online feature store refresh")
+        from snowflake.ml.feature_store.feature_view import StoreType
+        kwargs["store_type"] = StoreType.ONLINE
+    fs.refresh_feature_view(name, version, **kwargs)
 
 
 def read_feature_view(
@@ -460,14 +518,47 @@ def read_feature_view(
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    keys_dict: Optional[Dict[str, Any]] = None,
+    feature_names: Optional[list] = None,
+    store_type: str = "OFFLINE",
 ) -> Any:
-    """Read data from a registered FeatureView. Returns pandas DataFrame."""
+    """Read data from a registered FeatureView. Returns pandas DataFrame.
+
+    keys_dict is column-oriented {COL: [v1, v2]} from R; we transpose to
+    row-oriented [[v1_col1, v1_col2], ...] as the Python SDK expects.
+    """
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
     fs = _get_feature_store(session, db, sc, wh, creation_mode)
-    return _pandas_to_r_dict(fs.read_feature_view(name, version).to_pandas())
+
+    kwargs: Dict[str, Any] = {}
+
+    if keys_dict is not None:
+        cols = list(keys_dict.values())
+        first = cols[0]
+        n = len(first) if hasattr(first, '__len__') and not isinstance(first, str) else 1
+        if n == 1:
+            keys_list = [[str(c[0]) if hasattr(c, '__len__') and not isinstance(c, str) else str(c) for c in cols]]
+        else:
+            keys_list = [[str(col[i]) for col in cols] for i in range(n)]
+        kwargs["keys"] = keys_list
+
+    if feature_names is not None:
+        if isinstance(feature_names, str):
+            feature_names = [feature_names]
+        kwargs["feature_names"] = list(feature_names)
+
+    if store_type.upper() != "OFFLINE":
+        _requires((1, 18, 0), "Online feature store reads")
+        from snowflake.ml.feature_store.feature_view import StoreType
+        kwargs["store_type"] = StoreType.ONLINE
+    else:
+        from snowflake.ml.feature_store.feature_view import StoreType
+        kwargs["store_type"] = StoreType.OFFLINE
+
+    return _pandas_to_r_dict(fs.read_feature_view(name, version, **kwargs).to_pandas())
 
 
 def suspend_feature_view(
@@ -521,46 +612,35 @@ def generate_training_set(
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    exclude_columns: Optional[List[str]] = None,
+    include_feature_view_timestamp_col: bool = False,
+    auto_prefix: bool = False,
+    join_method: Optional[str] = None,
 ) -> Any:
-    """
-    Generate a training set by joining spine data with Feature Views.
-
-    Args:
-        session: Active Snowpark Session.
-        spine_sql: SQL query or table name for the spine (label) data.
-        feature_view_refs: List of dicts with "name" and "version" keys.
-        spine_timestamp_col: Timestamp column in spine for PIT joins.
-        spine_label_cols: Label column names in spine.
-        save_as: Optional table name to materialise results.
-        database: Feature Store database.
-        schema: Feature Store schema.
-        warehouse: Default warehouse.
-
-    Returns:
-        pandas DataFrame with the training data.
-    """
+    """Generate a training set by joining spine data with Feature Views."""
     db = database or session.get_current_database().replace('"', '')
     sc = schema or session.get_current_schema().replace('"', '')
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
     fs = _get_feature_store(session, db, sc, wh, creation_mode)
-
-    # Build spine DataFrame
     spine_df = session.sql(spine_sql)
+    fvs = [fs.get_feature_view(ref["name"], ref["version"]) for ref in feature_view_refs]
 
-    # Retrieve registered FeatureViews
-    fvs = []
-    for ref in feature_view_refs:
-        fv = fs.get_feature_view(ref["name"], ref["version"])
-        fvs.append(fv)
-
-    kwargs = {}
+    kwargs: Dict[str, Any] = {}
     if spine_timestamp_col:
         kwargs["spine_timestamp_col"] = spine_timestamp_col
     if spine_label_cols:
         kwargs["spine_label_cols"] = spine_label_cols
     if save_as:
         kwargs["save_as"] = save_as
+    if exclude_columns:
+        kwargs["exclude_columns"] = list(exclude_columns)
+    if include_feature_view_timestamp_col:
+        kwargs["include_feature_view_timestamp_col"] = True
+    if auto_prefix:
+        kwargs["auto_prefix"] = True
+    if join_method:
+        kwargs["join_method"] = join_method
 
     result_df = fs.generate_training_set(
         spine_df=spine_df,
@@ -589,6 +669,11 @@ def generate_dataset(
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    exclude_columns: Optional[List[str]] = None,
+    include_feature_view_timestamp_col: bool = False,
+    auto_prefix: bool = False,
+    output_type: Optional[str] = None,
+    join_method: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate an immutable, versioned Dataset from Feature Views.
@@ -615,13 +700,23 @@ def generate_dataset(
         for ref in feature_view_refs
     ]
 
-    kwargs = {}
+    kwargs: Dict[str, Any] = {}
     if spine_timestamp_col:
         kwargs["spine_timestamp_col"] = spine_timestamp_col
     if spine_label_cols:
         kwargs["spine_label_cols"] = spine_label_cols
     if desc:
         kwargs["desc"] = desc
+    if exclude_columns:
+        kwargs["exclude_columns"] = list(exclude_columns)
+    if include_feature_view_timestamp_col:
+        kwargs["include_feature_view_timestamp_col"] = True
+    if auto_prefix:
+        kwargs["auto_prefix"] = True
+    if output_type:
+        kwargs["output_type"] = output_type
+    if join_method:
+        kwargs["join_method"] = join_method
 
     try:
         ds = fs.generate_dataset(
@@ -675,18 +770,28 @@ def retrieve_features(
     session,
     spine_sql: str,
     feature_view_refs: List[Dict[str, str]],
+    spine_timestamp_col: Optional[str] = None,
     database: Optional[str] = None,
     schema: Optional[str] = None,
     warehouse: Optional[str] = None,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    exclude_columns: Optional[List[str]] = None,
+    include_feature_view_timestamp_col: bool = False,
+    auto_prefix: bool = False,
+    join_method: Optional[str] = None,
 ) -> Any:
     """
-    Retrieve feature values for inference (no labels, no PIT).
+    Retrieve feature values for inference.
+
+    Without spine_timestamp_col this performs a simple LEFT JOIN on entity
+    keys and returns the current feature values.  When spine_timestamp_col
+    is provided, point-in-time correct values are returned instead.
 
     Args:
         session: Active Snowpark Session.
         spine_sql: SQL for entity key values.
         feature_view_refs: List of dicts with "name" and "version" keys.
+        spine_timestamp_col: Optional timestamp column for PIT lookup.
         database: Feature Store database.
         schema: Feature Store schema.
         warehouse: Default warehouse.
@@ -703,9 +808,22 @@ def retrieve_features(
     spine_df = session.sql(spine_sql)
     fvs = [fs.get_feature_view(ref["name"], ref["version"]) for ref in feature_view_refs]
 
-    result_df = fs.generate_training_set(
+    kwargs: Dict[str, Any] = {}
+    if spine_timestamp_col:
+        kwargs["spine_timestamp_col"] = spine_timestamp_col
+    if exclude_columns:
+        kwargs["exclude_columns"] = list(exclude_columns)
+    if include_feature_view_timestamp_col:
+        kwargs["include_feature_view_timestamp_col"] = True
+    if auto_prefix:
+        kwargs["auto_prefix"] = True
+    if join_method:
+        kwargs["join_method"] = join_method
+
+    result_df = fs.retrieve_feature_values(
         spine_df=spine_df,
         features=fvs,
+        **kwargs,
     )
 
     return _to_json_tempfile(result_df.to_pandas())
@@ -743,6 +861,7 @@ def get_refresh_history(
     warehouse: Optional[str] = None,
     verbose: bool = False,
     creation_mode: str = "FAIL_IF_NOT_EXIST",
+    store_type: str = "OFFLINE",
 ) -> Any:
     """Get refresh history for a Feature View. Returns pandas DataFrame."""
     db = database or session.get_current_database().replace('"', '')
@@ -750,7 +869,12 @@ def get_refresh_history(
     wh = warehouse or session.get_current_warehouse().replace('"', '')
 
     fs = _get_feature_store(session, db, sc, wh, creation_mode)
-    return _pandas_to_r_dict(fs.get_refresh_history(name, version, verbose=verbose).to_pandas())
+    kwargs: Dict[str, Any] = {"verbose": verbose}
+    if store_type.upper() != "OFFLINE":
+        _requires((1, 18, 0), "Online feature store refresh history")
+        from snowflake.ml.feature_store.feature_view import StoreType
+        kwargs["store_type"] = StoreType.ONLINE
+    return _pandas_to_r_dict(fs.get_refresh_history(name, version, **kwargs).to_pandas())
 
 
 def setup_feature_store_schema(
@@ -772,3 +896,231 @@ def setup_feature_store_schema(
         schema=schema,
         warehouse=warehouse,
     )
+
+
+def update_feature_view(
+    session,
+    name: str,
+    version: str,
+    update_args: Optional[Dict[str, Any]] = None,
+    online_config_dict: Optional[Dict[str, Any]] = None,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Dict[str, Any]:
+    """Update properties of an existing Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+
+    if online_config_dict is not None:
+        _requires((1, 18, 0), "Online feature serving")
+        from snowflake.ml.feature_store.feature_view import OnlineConfig
+        oc = OnlineConfig(
+            enable=online_config_dict.get("enable", True),
+            target_lag=online_config_dict.get("target_lag"),
+        )
+        fv = fs.update_feature_view(fv, online_config=oc)
+
+    if update_args:
+        if "refresh_freq" in update_args:
+            fv = fs.update_feature_view(fv, refresh_freq=update_args["refresh_freq"])
+        if "warehouse" in update_args:
+            fv = fs.update_feature_view(fv, warehouse=update_args["warehouse"])
+        if "desc" in update_args:
+            fv = fs.update_feature_view(fv, desc=update_args["desc"])
+
+    return {"name": name, "version": version, "status": "updated"}
+
+
+# =============================================================================
+# FeatureView methods
+# =============================================================================
+
+def attach_feature_desc(
+    session,
+    name: str,
+    version: str,
+    descs: Dict[str, str],
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> bool:
+    """Attach per-feature descriptions to a registered Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    fv.attach_feature_desc(dict(descs))
+    return True
+
+
+def slice_feature_view(
+    session,
+    name: str,
+    version: str,
+    feature_names: list,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Dict[str, Any]:
+    """Return a sliced FeatureView with only the named features."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    if isinstance(feature_names, str):
+        feature_names = [feature_names]
+    sliced = fv.slice(list(feature_names))
+    sliced_name = getattr(sliced, 'name', name)
+    sliced_version = getattr(sliced, 'version', version)
+    sliced_features = list(getattr(sliced, 'feature_names', feature_names))
+    return {
+        "name": sliced_name,
+        "version": sliced_version,
+        "feature_names": sliced_features,
+        "names_requested": feature_names,
+        "_py_fv": sliced,
+    }
+
+
+def feature_view_lineage(
+    session,
+    name: str,
+    version: str,
+    direction: str = "both",
+    domain_filter: Optional[List[str]] = None,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Any:
+    """Get upstream/downstream lineage for a Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    kwargs: Dict[str, Any] = {}
+    if direction:
+        kwargs["direction"] = direction
+    if domain_filter:
+        kwargs["domain_filter"] = list(domain_filter)
+    result = fv.lineage(**kwargs)
+    return _pandas_to_r_dict(result.to_pandas()) if hasattr(result, 'to_pandas') else str(result)
+
+
+def list_fv_columns(
+    session,
+    name: str,
+    version: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Any:
+    """List column metadata for a registered Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    result = fv.list_columns()
+    return _pandas_to_r_dict(result.to_pandas()) if hasattr(result, 'to_pandas') else _pandas_to_r_dict(result)
+
+
+def fv_to_df(
+    session,
+    name: str,
+    version: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Any:
+    """Convert a Feature View to a pandas DataFrame via read_feature_view."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    return _pandas_to_r_dict(fs.read_feature_view(name, version).to_pandas())
+
+
+def fv_query(
+    session,
+    name: str,
+    version: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> str:
+    """Get the underlying SQL query for a Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    return str(fv.query)
+
+
+def fv_fully_qualified_name(
+    session,
+    name: str,
+    version: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> str:
+    """Get the fully qualified name of a Feature View."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    fv = fs.get_feature_view(name, version)
+    return str(fv.fully_qualified_name())
+
+
+def load_feature_views_from_dataset(
+    session,
+    dataset_name: str,
+    dataset_version: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    warehouse: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> Any:
+    """Load Feature Views associated with a Dataset."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    wh = warehouse or session.get_current_warehouse().replace('"', '')
+    fs = _get_feature_store(session, db, sc, wh, creation_mode)
+    from snowflake.ml.dataset import load_dataset
+    fqn = f"{db}.{sc}.{dataset_name}"
+    ds = load_dataset(session, fqn, dataset_version)
+    fvs = fs.load_feature_views_from_dataset(ds)
+    return [{"name": fv.name, "version": fv.version} for fv in fvs]
+
+
+def update_default_warehouse(
+    session,
+    warehouse_name: str,
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+    creation_mode: str = "FAIL_IF_NOT_EXIST",
+) -> bool:
+    """Update the default warehouse for the Feature Store."""
+    db = database or session.get_current_database().replace('"', '')
+    sc = schema or session.get_current_schema().replace('"', '')
+    fs = _get_feature_store(session, db, sc, warehouse_name, creation_mode)
+    fs.update_default_warehouse(warehouse_name)
+    return True

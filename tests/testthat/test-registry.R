@@ -354,3 +354,127 @@ test_that("sfr_wait_for_service validates service_name type", {
   expect_error(sfr_wait_for_service(mock_conn, 123))
   expect_error(sfr_wait_for_service(mock_conn, c("a", "b")))
 })
+
+
+# -- SQL-direct functions: validation -----------------------------------------
+
+test_that("sfr_set_model_alias validates connection", {
+  expect_error(sfr_set_model_alias("bad", "M", "v1", "prod"), "sfr_connection")
+})
+
+
+test_that("sfr_unset_model_alias validates connection", {
+  expect_error(sfr_unset_model_alias("bad", "M", "prod"), "sfr_connection")
+})
+
+
+test_that("sfr_predict_sql validates connection", {
+  expect_error(sfr_predict_sql("bad", "M", "SELECT 1"), "sfr_connection")
+})
+
+
+test_that("sfr_predict_sql builds correct SQL with version", {
+  mock_conn <- structure(
+    list(
+      session = NULL, account = "test", database = "DB",
+      schema = "SC", warehouse = "WH", auth_method = "test",
+      environment = "test", created_at = Sys.time()
+    ),
+    class = c("sfr_connection", "list")
+  )
+
+  captured_sql <- NULL
+  local_mocked_bindings(
+    sfr_query = function(conn, sql, ...) {
+      captured_sql <<- sql
+      data.frame(prediction = 1)
+    }
+  )
+
+  sfr_predict_sql(mock_conn, "MY_MODEL", "SELECT col1 FROM t",
+                  version_name = "v1")
+  expect_match(captured_sql, "MODEL MY_MODEL VERSION v1")
+  expect_match(captured_sql, "predict")
+})
+
+
+test_that("sfr_predict_sql builds correct SQL without version", {
+  mock_conn <- structure(
+    list(
+      session = NULL, account = "test", database = "DB",
+      schema = "SC", warehouse = "WH", auth_method = "test",
+      environment = "test", created_at = Sys.time()
+    ),
+    class = c("sfr_connection", "list")
+  )
+
+  captured_sql <- NULL
+  local_mocked_bindings(
+    sfr_query = function(conn, sql, ...) {
+      captured_sql <<- sql
+      data.frame(prediction = 1)
+    }
+  )
+
+  sfr_predict_sql(mock_conn, "MY_MODEL", "SELECT col1 FROM t")
+  expect_match(captured_sql, "MODEL MY_MODEL")
+  expect_no_match(captured_sql, "VERSION")
+})
+
+
+test_that("sfr_model_info validates connection", {
+  expect_error(sfr_model_info("bad"), "sfr_connection")
+})
+
+
+test_that("sfr_model_info requires database", {
+  mock_conn <- structure(
+    list(
+      session = NULL, account = "test", database = NULL,
+      schema = "SC", warehouse = "WH", auth_method = "test",
+      environment = "test", created_at = Sys.time()
+    ),
+    class = c("sfr_connection", "list")
+  )
+
+  expect_error(sfr_model_info(mock_conn), "database")
+})
+
+
+test_that("sfr_model_info builds correct SQL with model filter", {
+  mock_conn <- structure(
+    list(
+      session = NULL, account = "test", database = "DB",
+      schema = "SC", warehouse = "WH", auth_method = "test",
+      environment = "test", created_at = Sys.time()
+    ),
+    class = c("sfr_connection", "list")
+  )
+
+  captured_sql <- NULL
+  local_mocked_bindings(
+    sfr_query = function(conn, sql, ...) {
+      captured_sql <<- sql
+      data.frame()
+    }
+  )
+
+  sfr_model_info(mock_conn, model_name = "MY_MODEL")
+  expect_match(captured_sql, "INFORMATION_SCHEMA.MODEL_VERSIONS")
+  expect_match(captured_sql, "MY_MODEL")
+})
+
+
+test_that("sfr_model_registry stores options", {
+  mock_conn <- structure(
+    list(
+      session = NULL, account = "test", database = "DB",
+      schema = "SC", warehouse = "WH", auth_method = "test",
+      environment = "test", created_at = Sys.time()
+    ),
+    class = c("sfr_connection", "list")
+  )
+
+  mr <- sfr_model_registry(mock_conn, options = list(enable_monitoring = TRUE))
+  expect_equal(mr$options, list(enable_monitoring = TRUE))
+})

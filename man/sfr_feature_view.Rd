@@ -7,11 +7,13 @@
 sfr_feature_view(
   name,
   entities,
-  features,
+  feature_df,
   refresh_freq = NULL,
   warehouse = NULL,
   timestamp_col = NULL,
-  desc = NULL
+  desc = NULL,
+  features = NULL,
+  feature_granularity = NULL
 )
 }
 \arguments{
@@ -19,8 +21,9 @@ sfr_feature_view(
 
 \item{entities}{An \code{sfr_entity} object or list of \code{sfr_entity} objects.}
 
-\item{features}{A \code{dbplyr} lazy table, SQL string, or table reference
-defining the feature transformation logic.}
+\item{feature_df}{A \code{dbplyr} lazy table, SQL string, or table reference
+defining the feature transformation logic. Named \code{feature_df} to match
+the Python \code{FeatureView} constructor parameter.}
 
 \item{refresh_freq}{Character. Refresh frequency (e.g., \code{"1 hour"},
 \code{"30 minutes"}). If \code{NULL}, creates an external (manually maintained)
@@ -31,6 +34,12 @@ Feature View.}
 \item{timestamp_col}{Character. Timestamp column for point-in-time lookups.}
 
 \item{desc}{Character. Description.}
+
+\item{features}{List of objects from \code{sfr_feature()} defining aggregation
+features. Required when \code{feature_granularity} is set.}
+
+\item{feature_granularity}{Character. Time granularity for tile-based
+aggregation (e.g., \code{"1h"}, \code{"1 day"}).}
 }
 \value{
 An \code{sfr_feature_view} object (local draft, not yet registered).

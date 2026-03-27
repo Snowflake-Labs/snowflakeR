@@ -93,7 +93,7 @@ the draft before materialising:
 fv_draft <- sfr_feature_view(
   name         = "CUSTOMER_FEATURES",
   entities     = customer,
-  features     = "
+  feature_df   = "
     SELECT
       customer_id,
       AVG(order_total) AS avg_order_total,
@@ -124,7 +124,7 @@ fv <- sfr_create_feature_view(
   name         = "CUSTOMER_FEATURES",
   version      = "v1",
   entities     = customer,
-  features     = "
+  feature_df   = "
     SELECT customer_id, AVG(order_total) AS avg_order_total,
            COUNT(*) AS order_count
     FROM orders GROUP BY customer_id
@@ -134,10 +134,10 @@ fv <- sfr_create_feature_view(
 )
 ```
 
-### Using dbplyr for features
+### Using dbplyr for feature_df
 
-You can define features using dplyr pipelines instead of raw SQL. The
-`features` argument accepts dbplyr lazy tables. This requires the
+You can define feature transformations using dplyr pipelines instead of raw
+SQL. The `feature_df` argument accepts dbplyr lazy tables. This requires the
 [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) package for
 DBI/dbplyr connectivity:
 
@@ -163,8 +163,8 @@ fv <- sfr_create_feature_view(
   name     = "CUSTOMER_FEATURES_DBPLYR",
   version  = "v1",
   entities = customer,
-  features = customer_features_query,  # dbplyr lazy table -> SQL
-  desc     = "Customer features built with dplyr"
+  feature_df = customer_features_query,  # dbplyr lazy table -> SQL
+  desc       = "Customer features built with dplyr"
 )
 ```
 
@@ -179,7 +179,7 @@ fv_external <- sfr_create_feature_view(
   name     = "CUSTOMER_DEMOGRAPHICS",
   version  = "v1",
   entities = customer,
-  features = "SELECT * FROM customer_demographics_table"
+  feature_df = "SELECT * FROM customer_demographics_table"
   # No refresh_freq -> external Feature View
 )
 ```
@@ -194,7 +194,7 @@ fv_ts <- sfr_create_feature_view(
   name          = "CUSTOMER_ACTIVITY",
   version       = "v1",
   entities      = customer,
-  features      = "SELECT customer_id, event_ts, page_views, clicks FROM activity",
+  feature_df    = "SELECT customer_id, event_ts, page_views, clicks FROM activity",
   timestamp_col = "event_ts",
   refresh_freq  = "30 minutes"
 )
@@ -328,7 +328,7 @@ reg  <- sfr_model_registry(conn, database = "ML_DB", schema = "MODELS")
 entity <- sfr_create_entity(fs, "CUSTOMER", "CUSTOMER_ID")
 fv <- sfr_create_feature_view(
   fs, "CUST_FV", "v1", entities = entity,
-  features = "SELECT customer_id, avg_spend, tenure FROM customer_summary",
+  feature_df = "SELECT customer_id, avg_spend, tenure FROM customer_summary",
   refresh_freq = "1 hour"
 )
 

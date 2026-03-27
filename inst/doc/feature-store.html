@@ -418,7 +418,7 @@ inspect the draft before materialising:</p>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>fv_draft <span class="ot">&lt;-</span> <span class="fu">sfr_feature_view</span>(</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">name         =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>,</span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">entities     =</span> customer,</span>
-<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">features     =</span> <span class="st">&quot;</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">feature_df   =</span> <span class="st">&quot;</span></span>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="st">    SELECT</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="st">      customer_id,</span></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="st">      AVG(order_total) AS avg_order_total,</span></span>
@@ -447,7 +447,7 @@ inspect the draft before materialising:</p>
 <span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">name         =</span> <span class="st">&quot;CUSTOMER_FEATURES&quot;</span>,</span>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">version      =</span> <span class="st">&quot;v1&quot;</span>,</span>
 <span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">entities     =</span> customer,</span>
-<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">features     =</span> <span class="st">&quot;</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">feature_df   =</span> <span class="st">&quot;</span></span>
 <span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="st">    SELECT customer_id, AVG(order_total) AS avg_order_total,</span></span>
 <span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="st">           COUNT(*) AS order_count</span></span>
 <span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="st">    FROM orders GROUP BY customer_id</span></span>
@@ -456,11 +456,11 @@ inspect the draft before materialising:</p>
 <span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>  <span class="at">desc         =</span> <span class="st">&quot;Customer order aggregates&quot;</span></span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>)</span></code></pre></div>
 </div>
-<div id="using-dbplyr-for-features" class="section level3">
-<h3>Using dbplyr for features</h3>
-<p>You can define features using dplyr pipelines instead of raw SQL. The
-<code>features</code> argument accepts dbplyr lazy tables. This requires
-the <a href="https://github.com/Snowflake-Labs/RSnowflake">RSnowflake</a>
+<div id="using-dbplyr-for-feature_df" class="section level3">
+<h3>Using dbplyr for feature_df</h3>
+<p>You can define feature transformations using dplyr pipelines instead
+of raw SQL. The <code>feature_df</code> argument accepts dbplyr lazy
+tables. This requires the <a href="https://github.com/Snowflake-Labs/RSnowflake">RSnowflake</a>
 package for DBI/dbplyr connectivity:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
 <span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">library</span>(dbplyr)</span>
@@ -483,8 +483,8 @@ package for DBI/dbplyr connectivity:</p>
 <span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>  <span class="at">name     =</span> <span class="st">&quot;CUSTOMER_FEATURES_DBPLYR&quot;</span>,</span>
 <span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>  <span class="at">version  =</span> <span class="st">&quot;v1&quot;</span>,</span>
 <span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a>  <span class="at">entities =</span> customer,</span>
-<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>  <span class="at">features =</span> customer_features_query,  <span class="co"># dbplyr lazy table -&gt; SQL</span></span>
-<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>  <span class="at">desc     =</span> <span class="st">&quot;Customer features built with dplyr&quot;</span></span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>  <span class="at">feature_df =</span> customer_features_query,  <span class="co"># dbplyr lazy table -&gt; SQL</span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>  <span class="at">desc       =</span> <span class="st">&quot;Customer features built with dplyr&quot;</span></span>
 <span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a>)</span></code></pre></div>
 </div>
 <div id="external-manually-managed-feature-views" class="section level3">
@@ -497,7 +497,7 @@ dbt):</p>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">name     =</span> <span class="st">&quot;CUSTOMER_DEMOGRAPHICS&quot;</span>,</span>
 <span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">version  =</span> <span class="st">&quot;v1&quot;</span>,</span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">entities =</span> customer,</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="at">features =</span> <span class="st">&quot;SELECT * FROM customer_demographics_table&quot;</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="at">feature_df =</span> <span class="st">&quot;SELECT * FROM customer_demographics_table&quot;</span></span>
 <span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="co"># No refresh_freq -&gt; external Feature View</span></span>
 <span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>)</span></code></pre></div>
 </div>
@@ -510,7 +510,7 @@ dbt):</p>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">name          =</span> <span class="st">&quot;CUSTOMER_ACTIVITY&quot;</span>,</span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">version       =</span> <span class="st">&quot;v1&quot;</span>,</span>
 <span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">entities      =</span> customer,</span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">features      =</span> <span class="st">&quot;SELECT customer_id, event_ts, page_views, clicks FROM activity&quot;</span>,</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">feature_df    =</span> <span class="st">&quot;SELECT customer_id, event_ts, page_views, clicks FROM activity&quot;</span>,</span>
 <span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  <span class="at">timestamp_col =</span> <span class="st">&quot;event_ts&quot;</span>,</span>
 <span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  <span class="at">refresh_freq  =</span> <span class="st">&quot;30 minutes&quot;</span></span>
 <span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>)</span></code></pre></div>
@@ -626,7 +626,7 @@ point-in-time logic:</p>
 <span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a>entity <span class="ot">&lt;-</span> <span class="fu">sfr_create_entity</span>(fs, <span class="st">&quot;CUSTOMER&quot;</span>, <span class="st">&quot;CUSTOMER_ID&quot;</span>)</span>
 <span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a>fv <span class="ot">&lt;-</span> <span class="fu">sfr_create_feature_view</span>(</span>
 <span id="cb16-12"><a href="#cb16-12" tabindex="-1"></a>  fs, <span class="st">&quot;CUST_FV&quot;</span>, <span class="st">&quot;v1&quot;</span>, <span class="at">entities =</span> entity,</span>
-<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a>  <span class="at">features =</span> <span class="st">&quot;SELECT customer_id, avg_spend, tenure FROM customer_summary&quot;</span>,</span>
+<span id="cb16-13"><a href="#cb16-13" tabindex="-1"></a>  <span class="at">feature_df =</span> <span class="st">&quot;SELECT customer_id, avg_spend, tenure FROM customer_summary&quot;</span>,</span>
 <span id="cb16-14"><a href="#cb16-14" tabindex="-1"></a>  <span class="at">refresh_freq =</span> <span class="st">&quot;1 hour&quot;</span></span>
 <span id="cb16-15"><a href="#cb16-15" tabindex="-1"></a>)</span>
 <span id="cb16-16"><a href="#cb16-16" tabindex="-1"></a></span>
