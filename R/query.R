@@ -38,10 +38,7 @@ sfr_query <- function(conn, sql,
   validate_connection(conn)
   stopifnot(is.character(sql), length(sql) == 1L)
 
-  # In Workspace mode, always use the Python bridge so queries go through
-  # the shared Snowpark session and are captured by the query tracker.
-  # The DBI path is a separate session where RESULT_SCAN interop won't work.
-  if (!is.null(conn$dbi_con) && !identical(conn$environment, "workspace")) {
+  if (!is.null(conn$dbi_con)) {
     df <- DBI::dbGetQuery(conn$dbi_con, sql)
     if (!.keep_case) names(df) <- tolower(names(df))
     return(df)
