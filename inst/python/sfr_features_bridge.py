@@ -375,8 +375,13 @@ def register_feature_view(
     features_list = None
     if aggregation_features:
         from snowflake.ml.feature_store import Feature
+        from snowflake.ml.feature_store.feature import AggregationType
         features_list = [
-            Feature(function=f["agg"], column=f["name"], window=f["window"])
+            Feature(
+                function=AggregationType[f["agg"].upper()],
+                column=f["name"],
+                window=f["window"],
+            )
             for f in aggregation_features
         ]
 
