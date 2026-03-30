@@ -360,7 +360,7 @@ def register_feature_view(
         overwrite: If True, overwrite existing version.
         creation_mode: FeatureStore creation mode.
         feature_granularity: Tile granularity for tile-based aggregation FVs.
-        aggregation_features: List of dicts with name, dtype, agg, window.
+        aggregation_features: List of dicts with name, agg, window (dtype ignored).
 
     Returns:
         Dict with registered FeatureView info.
@@ -376,7 +376,7 @@ def register_feature_view(
     if aggregation_features:
         from snowflake.ml.feature_store import Feature
         features_list = [
-            Feature(name=f["name"], dtype=f["dtype"], agg=f["agg"], window=f["window"])
+            Feature(function=f["agg"], column=f["name"], window=f["window"])
             for f in aggregation_features
         ]
 
