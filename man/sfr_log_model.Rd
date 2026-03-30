@@ -22,6 +22,11 @@ sfr_log_model(
   sample_input = NULL,
   training_dataset = NULL,
   pin_versions = TRUE,
+  task = NULL,
+  user_files = NULL,
+  code_paths = NULL,
+  resource_constraint = NULL,
+  python_version = NULL,
   ...
 )
 }

@@ -10,7 +10,11 @@ sfr_generate_training_data(
   features,
   spine_timestamp_col = NULL,
   spine_label_cols = NULL,
-  save_as = NULL
+  save_as = NULL,
+  exclude_columns = NULL,
+  include_feature_view_timestamp_col = FALSE,
+  auto_prefix = FALSE,
+  join_method = NULL
 )
 }
 \arguments{

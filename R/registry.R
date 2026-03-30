@@ -25,6 +25,23 @@
 #'   connection's current schema.
 #' @param options Named list. Options forwarded to `Registry(session, options=...)`.
 #'   For example, `list(enable_monitoring = TRUE)` enables ML Observability.
+#' @param conda_channel Character. Default conda channel for all models logged
+#'   through this registry (e.g. `"conda-forge"`).  When set, every
+#'   [sfr_log_model()] call inherits this channel unless explicitly
+#'   overridden.  Defaults to the `SFR_CONDA_CHANNEL` environment variable
+#'   if set, otherwise `NULL` (Snowflake Anaconda Channel).
+#' @param conda_channel_strict Logical. If `TRUE`, the `conda_channel` set on
+#'   this registry cannot be overridden or bypassed by individual
+#'   [sfr_log_model()] calls.  Any attempt to pass a different
+#'   `conda_channel` or to include deps with a mismatched `channel::`
+#'   prefix will raise an error.  Defaults to the
+#'   `SFR_CONDA_CHANNEL_STRICT` environment variable (`"true"` / `"1"`)
+#'   if set, otherwise `FALSE`.
+#'
+#'   **Use case:** Platform / compliance teams set `conda_channel_strict = TRUE`
+#'   to guarantee that all models registered through this registry resolve
+#'   packages exclusively from the approved channel (e.g. conda-forge),
+#'   preventing accidental use of Anaconda Inc. commercial channels.
 #'
 #' @returns An `sfr_model_registry` object.
 #'
@@ -38,21 +55,56 @@
 #'
 #' # Option B: Use connection directly (session's current db/schema)
 #' sfr_log_model(conn, model, "MY_MODEL", ...)
+#'
+#' # Option C: Enforce conda-forge for all models (compliance mode)
+#' reg <- sfr_model_registry(conn,
+#'   conda_channel = "conda-forge",
+#'   conda_channel_strict = TRUE
+#' )
+#' # All sfr_log_model() calls through `reg` now force conda-forge.
+#' # Users cannot override the channel.
 #' }
 #'
 #' @export
 sfr_model_registry <- function(conn,
                                database = NULL,
                                schema = NULL,
-                               options = NULL) {
+                               options = NULL,
+                               conda_channel = NULL,
+                               conda_channel_strict = FALSE) {
   validate_connection(conn)
+
+  # Environment variable fallbacks for organisation-wide defaults
+  if (is.null(conda_channel)) {
+    env_ch <- Sys.getenv("SFR_CONDA_CHANNEL", "")
+    if (nzchar(env_ch)) conda_channel <- env_ch
+  }
+  if (isFALSE(conda_channel_strict)) {
+    env_strict <- tolower(Sys.getenv("SFR_CONDA_CHANNEL_STRICT", ""))
+    if (env_strict %in% c("true", "1", "yes")) conda_channel_strict <- TRUE
+  }
+
+  if (isTRUE(conda_channel_strict) && is.null(conda_channel)) {
+    cli::cli_abort(c(
+      "x" = "{.arg conda_channel_strict} is {.val TRUE} but no {.arg conda_channel} was specified.",
+      "i" = "Set {.arg conda_channel} (e.g. {.val conda-forge}) or the {.envvar SFR_CONDA_CHANNEL} env var."
+    ))
+  }
+
+  if (!is.null(conda_channel)) {
+    cli::cli_inform(c(
+      "i" = "Registry conda channel policy: {.val {conda_channel}}{if (isTRUE(conda_channel_strict)) ' (strict -- cannot be overridden)' else ''}."
+    ))
+  }
 
   structure(
     list(
       conn = conn,
       database = database %||% conn$database,
       schema = schema %||% conn$schema,
-      options = options
+      options = options,
+      conda_channel = conda_channel,
+      conda_channel_strict = isTRUE(conda_channel_strict)
     ),
     class = c("sfr_model_registry", "list")
   )
@@ -64,6 +116,10 @@ print.sfr_model_registry <- function(x, ...) {
   cli::cli_text(
     "<{.cls sfr_model_registry}> {.val {x$database %||% '<session default>'}}.{.val {x$schema %||% '<session default>'}}"
   )
+  if (!is.null(x$conda_channel)) {
+    mode <- if (isTRUE(x$conda_channel_strict)) "strict" else "default"
+    cli::cli_text("  conda channel: {.val {x$conda_channel}} ({mode})")
+  }
   invisible(x)
 }
 
@@ -344,6 +400,18 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #'   which crashes the inference server (`recarray has no attribute
 #'   fillna`).  If you override `conda_deps`, ensure you include
 #'   `numpy<2.0`.
+#' @param conda_channel Character. Optional conda channel to force for all
+#'   dependencies (e.g. `"conda-forge"`).  When set, every entry in
+#'   `conda_deps` that does not already contain a `::` channel prefix is
+#'   automatically prefixed with `<conda_channel>::`.  This ensures the
+#'   SPCS inference container resolves packages exclusively from the
+#'   specified channel instead of the default Snowflake Anaconda Channel.
+#'
+#'   **Legal / compliance note:** The default Snowflake Anaconda Channel is
+#'   licensed by Snowflake for use within Snowflake.  Set
+#'   `conda_channel = "conda-forge"` if your organisation requires that
+#'   only community-licensed (conda-forge) packages are used, avoiding any
+#'   dependency on Anaconda Inc. commercial channels.
 #' @param pip_requirements Character vector. Additional pip packages.
 #' @param target_platforms Character. One of `"SNOWPARK_CONTAINER_SERVICES"`,
 #'   `"WAREHOUSE"`, or both. Default: `"SNOWPARK_CONTAINER_SERVICES"`.
@@ -410,6 +478,7 @@ sfr_log_model <- function(reg,
                           input_cols = NULL,
                           output_cols = NULL,
                           conda_deps = NULL,
+                          conda_channel = NULL,
                           pip_requirements = NULL,
                           target_platforms = "SNOWPARK_CONTAINER_SERVICES",
                           comment = NULL,
@@ -424,6 +493,49 @@ sfr_log_model <- function(reg,
                           python_version = NULL,
                           ...) {
   ctx <- resolve_registry_context(reg)
+
+  # --- Conda channel policy resolution ---
+  # Priority: registry strict > explicit arg > registry default > env var
+  reg_channel <- if (inherits(reg, "sfr_model_registry")) reg$conda_channel
+  reg_strict  <- isTRUE(
+    if (inherits(reg, "sfr_model_registry")) reg$conda_channel_strict else FALSE
+  )
+
+  if (reg_strict) {
+    if (!is.null(conda_channel) && !identical(conda_channel, reg_channel)) {
+      cli::cli_abort(c(
+        "x" = "Registry conda channel policy is {.strong strict}: {.val {reg_channel}}.",
+        "i" = "You cannot override it with {.code conda_channel = \"{conda_channel}\"}.",
+        "i" = "Remove the {.arg conda_channel} argument or use a registry without {.code conda_channel_strict}."
+      ))
+    }
+    conda_channel <- reg_channel
+  } else if (is.null(conda_channel)) {
+    conda_channel <- reg_channel
+  }
+
+  # Final fallback: environment variable (for plain sfr_connection usage)
+  if (is.null(conda_channel)) {
+    env_ch <- Sys.getenv("SFR_CONDA_CHANNEL", "")
+    if (nzchar(env_ch)) conda_channel <- env_ch
+  }
+
+  # Strict mode: validate that user-supplied conda_deps don't sneak in
+  # deps from a different channel.
+  if (reg_strict && !is.null(conda_deps)) {
+    foreign <- vapply(conda_deps, function(dep) {
+      if (!grepl("::", dep, fixed = TRUE)) return(FALSE)
+      !startsWith(dep, paste0(reg_channel, "::"))
+    }, logical(1))
+    if (any(foreign)) {
+      bad <- conda_deps[foreign]
+      cli::cli_abort(c(
+        "x" = "Registry channel policy is strict ({.val {reg_channel}}) but {.arg conda_deps} contains foreign channels:",
+        "!" = "{.val {bad}}",
+        "i" = "Remove the channel prefix or use {.code {reg_channel}::} instead."
+      ))
+    }
+  }
 
   # Save model to temp .rds file
   model_path <- tempfile(fileext = ".rds")
@@ -440,6 +552,13 @@ sfr_log_model <- function(reg,
   # from conda-forge only -- CRAN packages are not available at inference
   # time.  Check that every predict_pkg has a conda-forge counterpart.
   .check_conda_forge_availability(predict_pkgs, conda_deps)
+
+  if (!is.null(conda_channel)) {
+    cli::cli_inform(c(
+      "i" = "Conda channel: {.val {conda_channel}}{if (reg_strict) ' (strict)' else ''}.",
+      "i" = "Deps without a {.code channel::} prefix will be rewritten as {.code {conda_channel}::pkg}."
+    ))
+  }
 
   # Convert R types to Python-friendly types
   py_predict_pkgs <- as.list(predict_pkgs)
@@ -494,7 +613,8 @@ sfr_log_model <- function(reg,
     user_files = user_files,
     code_paths = code_paths,
     resource_constraint = resource_constraint,
-    python_version = python_version
+    python_version = python_version,
+    conda_channel = conda_channel
   )
 
   cli::cli_inform(c(

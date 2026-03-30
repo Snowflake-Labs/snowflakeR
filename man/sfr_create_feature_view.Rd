@@ -16,7 +16,12 @@ sfr_create_feature_view(
   desc = NULL,
   features = NULL,
   feature_granularity = NULL,
-  overwrite = FALSE
+  overwrite = FALSE,
+  block = TRUE,
+  initialize = NULL,
+  refresh_mode = NULL,
+  cluster_by = NULL,
+  online_config = NULL
 )
 }
 \arguments{

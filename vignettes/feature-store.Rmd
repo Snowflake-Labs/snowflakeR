@@ -303,6 +303,226 @@ features_for_scoring <- sfr_retrieve_features(
 )
 ```
 
+## Tile-based aggregation
+
+For rolling-window features, define aggregation features with
+`sfr_feature()` and set a `feature_granularity`:
+ 
+```r
+feats <- list(
+  sfr_feature("AMOUNT", "FLOAT", "SUM", "1 hour"),
+  sfr_feature("AMOUNT", "FLOAT", "AVG", "1 day")
+)
+
+fv_agg <- sfr_create_feature_view(
+  fs,
+  name        = "TXN_AGGREGATES",
+  version     = "v1",
+  entities    = customer,
+  feature_df  = "SELECT customer_id, event_ts, amount FROM transactions",
+  features    = feats,
+  feature_granularity = "1 DAY",
+  timestamp_col = "event_ts",
+  refresh_freq  = "1 hour"
+)
+```
+
+## Online serving
+
+Enable low-latency online feature lookups by attaching an
+`sfr_online_config()` to a Feature View:
+
+```r
+oc <- sfr_online_config(enable = TRUE, target_lag = "2 minutes")
+
+fv_online <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ONLINE",
+  version       = "v1",
+  entities      = customer,
+  feature_df    = "SELECT customer_id, credit_score FROM credit_data",
+  refresh_freq  = "5 minutes",
+  online_config = oc
+)
+
+# Read from the online store
+online_data <- sfr_read_feature_view(
+  fs, "CUSTOMER_ONLINE", "v1",
+  store_type = "ONLINE"
+)
+
+# Refresh and check history for online store
+sfr_refresh_feature_view(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
+history <- sfr_get_refresh_history(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
+```
+
+You can also enable online serving on an existing Feature View:
+
+```r
+sfr_update_feature_view(
+  fs, "CUSTOMER_FEATURES", "v1",
+  online_config = sfr_online_config(enable = TRUE, target_lag = "5 minutes")
+)
+```
+
+## Advanced Feature View options
+
+The `sfr_feature_view()` and `sfr_create_feature_view()` constructors
+accept several additional parameters:
+
+```r
+fv <- sfr_create_feature_view(
+  fs,
+  name         = "CLUSTERED_FV",
+  version      = "v1",
+  entities     = customer,
+  feature_df   = "SELECT customer_id, amount FROM orders",
+  refresh_freq = "1 hour",
+  initialize   = "ON_CREATE",    # populate immediately on creation
+  refresh_mode = "INCREMENTAL",  # incremental refresh (vs full)
+  cluster_by   = c("CUSTOMER_ID"),  # cluster the backing table
+  block        = TRUE            # wait for registration to complete
+)
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `initialize` | `"ON_CREATE"` populates immediately; `NULL` defers first refresh |
+| `refresh_mode` | `"INCREMENTAL"` or `"FULL"` |
+| `cluster_by` | Character vector of columns to cluster the dynamic table |
+| `block` | If `TRUE` (default), `sfr_register_feature_view()` waits for registration |
+
+## Feature View introspection
+
+Inspect a registered Feature View's metadata without reading its data:
+
+```r
+# List columns and their types
+cols <- sfr_list_fv_columns(fs, "CUSTOMER_FEATURES", "v1")
+cols
+#>     NAME CATEGORY  DTYPE DESC
+#> 1 CUST_ID  ENTITY STRING
+#> 2  AMOUNT FEATURE  FLOAT  Transaction amount
+
+# Get the underlying SQL query
+sfr_fv_query(fs, "CUSTOMER_FEATURES", "v1")
+#> "SELECT customer_id, amount FROM orders"
+
+# Get the fully qualified name (useful for SQL references)
+sfr_fv_fqn(fs, "CUSTOMER_FEATURES", "v1")
+#> "ML_DB.FEATURES.CUSTOMER_FEATURES$v1"
+
+# Read data as a data.frame
+df <- sfr_fv_to_df(fs, "CUSTOMER_FEATURES", "v1")
+```
+
+## Feature subsetting and descriptions
+
+Attach human-readable descriptions to individual features, and create
+sliced views that expose only selected columns:
+
+```r
+# Attach per-feature descriptions
+sfr_attach_feature_desc(
+  fs, "CUSTOMER_FEATURES", "v1",
+  descs = c(
+    avg_order_total = "Average order amount in USD",
+    order_count     = "Total number of orders"
+  )
+)
+
+# Slice to a subset of features
+sliced_fv <- sfr_slice_feature_view(
+  fs, "CUSTOMER_FEATURES", "v1",
+  feature_names = c("avg_order_total")
+)
+```
+
+Sliced views can be passed to `sfr_generate_training_data()` and
+`sfr_retrieve_features()` just like full Feature Views.
+
+## Advanced training data parameters
+
+The training data generation and retrieval functions accept additional
+parameters for controlling joins and output:
+
+```r
+# Exclude columns from the result
+training <- sfr_generate_training_data(
+  fs,
+  spine    = "SELECT customer_id, churned FROM labels",
+  features = list(fv1, fv2),
+  exclude_columns = c("last_order_date"),  # drop from output
+  auto_prefix = TRUE,  # prefix columns with FV name to avoid collisions
+  include_feature_view_timestamp_col = TRUE,  # include FV timestamps
+  join_method = "AS_OF"  # explicit join method
+)
+
+# Same parameters work on sfr_generate_dataset and sfr_retrieve_features
+ds <- sfr_generate_dataset(
+  fs, "TRAINING_V2", spine = "...", features = list(fv1),
+  exclude_columns = c("internal_col"),
+  output_type = "TABLE"  # materialise as a table (vs default)
+)
+```
+
+| Parameter | Available on | Description |
+|-----------|-------------|-------------|
+| `exclude_columns` | training, dataset, retrieve | Columns to drop from output |
+| `auto_prefix` | training, dataset, retrieve | Prefix columns with FV name |
+| `include_feature_view_timestamp_col` | training, dataset, retrieve | Include FV timestamp columns |
+| `join_method` | training, dataset, retrieve | Join strategy (`"AS_OF"`, etc.) |
+| `output_type` | dataset only | Output format (`"TABLE"`, etc.) |
+
+## Lineage and Dataset utilities
+
+Trace upstream and downstream lineage from a Feature View, and recover
+which Feature Views produced a given Dataset:
+
+```r
+# Feature View lineage
+lineage <- sfr_fv_lineage(fs, "CUSTOMER_FEATURES", "v1",
+                          direction = "both")
+
+# Load Feature Views associated with a Dataset
+fvs <- sfr_load_fvs_from_dataset(fs, "CHURN_TRAINING", "v1")
+fvs
+#> [[1]]
+#> $name: "CUSTOMER_FEATURES"
+#> $version: "v1"
+```
+
+## Iceberg-backed Feature Views
+
+For Feature Views backed by Apache Iceberg tables, create a storage
+configuration and pass the external volume to the Feature Store:
+
+```r
+# Create a Feature Store with an Iceberg external volume
+fs_iceberg <- sfr_feature_store(
+  conn,
+  database = "ML_DB",
+  schema   = "FEATURES",
+  create   = TRUE,
+  default_iceberg_external_volume = "my_iceberg_volume"
+)
+
+# Or create a StorageConfig object (requires snowflake-ml-python >= 1.26.0)
+sc <- sfr_storage_config(
+  format          = "ICEBERG",
+  external_volume = "my_iceberg_volume",
+  base_location   = "/features"
+)
+```
+
+## Warehouse management
+
+Change the default warehouse used by the Feature Store:
+
+```r
+sfr_update_default_warehouse(fs, "ML_WH_LARGE")
+```
+
 ## Clean up
 
 ```r

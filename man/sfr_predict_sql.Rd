@@ -9,7 +9,8 @@ sfr_predict_sql(
   model_name,
   sql,
   version_name = NULL,
-  function_name = "predict"
+  function_name = "predict",
+  parse_json = TRUE
 )
 }
 \arguments{
@@ -23,6 +24,10 @@ sfr_predict_sql(
 version.}
 
 \item{function_name}{Character. Model function to call. Default: \code{"predict"}.}
+
+\item{parse_json}{Logical. If \code{TRUE} (default), parse the JSON VARIANT
+output from \verb{MODEL()!predict()} into a clean data.frame with numeric
+columns. Set to \code{FALSE} to return the raw JSON strings.}
 }
 \value{
 A data.frame with prediction results.

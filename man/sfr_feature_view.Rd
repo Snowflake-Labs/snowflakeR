@@ -13,7 +13,11 @@ sfr_feature_view(
   timestamp_col = NULL,
   desc = NULL,
   features = NULL,
-  feature_granularity = NULL
+  feature_granularity = NULL,
+  initialize = NULL,
+  refresh_mode = NULL,
+  cluster_by = NULL,
+  online_config = NULL
 )
 }
 \arguments{

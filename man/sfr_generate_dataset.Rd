@@ -12,7 +12,12 @@ sfr_generate_dataset(
   version = NULL,
   spine_timestamp_col = NULL,
   spine_label_cols = NULL,
-  desc = ""
+  desc = "",
+  exclude_columns = NULL,
+  include_feature_view_timestamp_col = FALSE,
+  auto_prefix = FALSE,
+  output_type = NULL,
+  join_method = NULL
 )
 }
 \arguments{

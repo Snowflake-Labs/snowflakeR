@@ -17,6 +17,7 @@ sfr_unset_model_alias(conn, model_name, alias)
 Invisibly returns \code{TRUE}.
 }
 \description{
-Removes an alias from a model. The version remains but is no longer
-reachable via the alias name.
+Removes an alias from a model version. The underlying version remains
+but is no longer reachable via the alias name. The version is
+referenced by its alias in the SQL command.
 }

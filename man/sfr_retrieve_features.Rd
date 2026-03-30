@@ -4,7 +4,16 @@
 \alias{sfr_retrieve_features}
 \title{Retrieve feature values for inference}
 \usage{
-sfr_retrieve_features(fs, spine, features)
+sfr_retrieve_features(
+  fs,
+  spine,
+  features,
+  spine_timestamp_col = NULL,
+  exclude_columns = NULL,
+  include_feature_view_timestamp_col = FALSE,
+  auto_prefix = FALSE,
+  join_method = NULL
+)
 }
 \arguments{
 \item{fs}{An \code{sfr_feature_store} object.}
@@ -14,10 +23,18 @@ key values.}
 
 \item{features}{A list of registered \code{sfr_feature_view} objects or
 lists with \code{name} and \code{version}.}
+
+\item{spine_timestamp_col}{Optional timestamp column in the spine for
+point-in-time feature value lookup.  When \code{NULL} (the default) the
+latest feature values are returned.}
 }
 \value{
 A data.frame with feature values.
 }
 \description{
-Retrieve feature values for inference
+Calls \code{fs.retrieve_feature_values()} in the Python SDK.  Without
+\code{spine_timestamp_col} this performs a simple LEFT JOIN on entity keys
+and returns the \strong{current} feature values.  When \code{spine_timestamp_col}
+is provided the join is point-in-time correct (same logic as
+\code{\link[=sfr_generate_training_data]{sfr_generate_training_data()}}).
 }

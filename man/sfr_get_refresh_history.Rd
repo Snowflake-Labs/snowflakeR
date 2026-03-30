@@ -4,7 +4,13 @@
 \alias{sfr_get_refresh_history}
 \title{Get refresh history for a Feature View}
 \usage{
-sfr_get_refresh_history(fs, name, version, verbose = FALSE)
+sfr_get_refresh_history(
+  fs,
+  name,
+  version,
+  verbose = FALSE,
+  store_type = "OFFLINE"
+)
 }
 \arguments{
 \item{fs}{An \code{sfr_feature_store} object.}

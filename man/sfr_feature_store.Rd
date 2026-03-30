@@ -9,7 +9,8 @@ sfr_feature_store(
   database = NULL,
   schema = NULL,
   warehouse = NULL,
-  create = FALSE
+  create = FALSE,
+  default_iceberg_external_volume = NULL
 )
 }
 \arguments{

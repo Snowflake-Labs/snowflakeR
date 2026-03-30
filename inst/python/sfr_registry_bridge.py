@@ -399,6 +399,25 @@ def _build_signature(
     )
 
 
+def _prefix_conda_channel(
+    deps: List[str], channel: str
+) -> List[str]:
+    """Prefix each conda dep with ``channel::`` if it doesn't already specify one.
+
+    This forces every package to resolve from the given channel (e.g.
+    ``conda-forge``) instead of the Snowflake Anaconda Channel default.
+    Deps that already contain ``::`` are left untouched.
+    """
+    prefixed = []
+    for dep in deps:
+        pkg_spec = dep.strip()
+        if "::" in pkg_spec:
+            prefixed.append(pkg_spec)
+        else:
+            prefixed.append(f"{channel}::{pkg_spec}")
+    return prefixed
+
+
 # =============================================================================
 # Registry Operations (called from R via reticulate)
 # =============================================================================
@@ -428,6 +447,7 @@ def registry_log_model(
     code_paths: Optional[List[str]] = None,
     resource_constraint: Optional[Dict[str, str]] = None,
     python_version: Optional[str] = None,
+    conda_channel: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Log an R model to the Snowflake Model Registry."""
     from snowflake.ml.registry import Registry
@@ -474,6 +494,11 @@ def registry_log_model(
             "inference server bug (recarray/fillna). Consider adding "
             "'numpy<2.0' to conda_dependencies.",
             stacklevel=2,
+        )
+
+    if conda_channel:
+        conda_dependencies = _prefix_conda_channel(
+            conda_dependencies, conda_channel
         )
 
     WrapperClass = _build_wrapper_class(

@@ -4,7 +4,13 @@
 \alias{sfr_register_feature_view}
 \title{Register a draft Feature View in Snowflake}
 \usage{
-sfr_register_feature_view(fs, feature_view, version, overwrite = FALSE)
+sfr_register_feature_view(
+  fs,
+  feature_view,
+  version,
+  overwrite = FALSE,
+  block = TRUE
+)
 }
 \arguments{
 \item{fs}{An \code{sfr_feature_store} object.}

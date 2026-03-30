@@ -12,8 +12,10 @@ R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datas
 |---|---|
 | **Connect** | One-line connection via `connections.toml`, keypair, or Workspace auto-detect |
 | **Query** | Run SQL via `sfr_query()` / `sfr_execute()`, read/write tables |
-| **Model Registry** | Log R models (lm, glm, randomForest, xgboost, ...), deploy to SPCS, run inference |
-| **Feature Store** | Create entities & feature views, generate training data, retrieve features at inference |
+| **Model Registry** | Log R models, deploy to SPCS, warehouse & SQL-direct inference, aliases, export, batch inference, granular metrics |
+| **Feature Store** | Entities, feature views (incl. online serving, Iceberg, aggregation), slicing, introspection, training data & datasets |
+| **Model Monitoring** | Continuous drift, performance, and statistical monitoring of deployed models with segment support |
+| **Experiment Tracking** | Track runs, log parameters/metrics/artifacts, integrate with `tune` grid search |
 | **Datasets** | Versioned, immutable snapshots of query results for reproducible ML |
 | **Admin** | Manage compute pools, image repos, and external access integrations |
 | **REST Inference** | Pure-R prediction against SPCS service endpoints via `sfr_predict_rest()` |
@@ -140,6 +142,8 @@ open `workspace_quickstart.ipynb`. For **local** environments, open
 | `local_quickstart.ipynb` | Quickstart for local R environments |
 | `workspace_model_registry.ipynb` | Model Registry: log, deploy, serve R models (Workspace) |
 | `local_model_registry.ipynb` | Model Registry for local environments |
+| `workspace_model_consumption.ipynb` | Consume Python models from R: warehouse inference via `sfr_predict_sql()` |
+| `workspace_model_monitoring.ipynb` | Model Monitoring: drift, performance, statistics, segments |
 | `workspace_feature_store.ipynb` | Feature Store: entities, views, training data (Workspace) |
 | `local_feature_store.ipynb` | Feature Store for local environments |
 | `sfnb_setup.py` | All-in-one bootstrap: EAI, R runtime, packages, context (Workspace) |

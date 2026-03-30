@@ -10,6 +10,8 @@ sfr_predict(
   new_data,
   version_name = NULL,
   service_name = NULL,
+  partition_column = NULL,
+  strict_input_validation = NULL,
   ...
 )
 }

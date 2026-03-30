@@ -14,7 +14,15 @@ sfr_deploy_model(
   max_instances = 1L,
   min_instances = NULL,
   force = FALSE,
-  autocapture = FALSE
+  autocapture = FALSE,
+  image_build_compute_pool = NULL,
+  cpu_requests = NULL,
+  memory_requests = NULL,
+  gpu_requests = NULL,
+  num_workers = NULL,
+  max_batch_rows = NULL,
+  block = TRUE,
+  build_external_access_integrations = NULL
 )
 }
 \arguments{

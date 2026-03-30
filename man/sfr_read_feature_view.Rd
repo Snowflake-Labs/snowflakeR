@@ -4,7 +4,14 @@
 \alias{sfr_read_feature_view}
 \title{Read data from a Feature View}
 \usage{
-sfr_read_feature_view(fs, name, version)
+sfr_read_feature_view(
+  fs,
+  name,
+  version,
+  store_type = "OFFLINE",
+  keys = NULL,
+  feature_names = NULL
+)
 }
 \arguments{
 \item{fs}{An \code{sfr_feature_store} object.}
@@ -12,10 +19,25 @@ sfr_read_feature_view(fs, name, version)
 \item{name}{Character. Feature View name.}
 
 \item{version}{Character. Version to read.}
+
+\item{store_type}{Character. \code{"OFFLINE"} (default) or \code{"ONLINE"}.
+Online reads require \verb{snowflake-ml-python >= 1.18.0} and the
+Feature View must have online serving enabled.}
+
+\item{keys}{A named list of primary-key columns and values to filter.
+Names must match the entity \code{join_keys}.
+For a single-key entity: \code{list(CUSTOMER_ID = c(1L, 3L))}.
+For composite keys: \code{list(COL1 = c("a","b"), COL2 = c("x","y"))}.
+\code{NULL} (default) returns all rows.}
+
+\item{feature_names}{Character vector of feature column names to return.
+\code{NULL} (default) returns all features.}
 }
 \value{
 A data.frame with feature data.
 }
 \description{
-Read data from a Feature View
+Read rows from the offline or online store backing a registered
+Feature View, optionally filtering by primary-key values and/or
+selecting specific feature columns.
 }

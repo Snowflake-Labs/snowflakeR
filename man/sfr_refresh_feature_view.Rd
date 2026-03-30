@@ -4,7 +4,7 @@
 \alias{sfr_refresh_feature_view}
 \title{Refresh a Feature View}
 \usage{
-sfr_refresh_feature_view(fs, name, version)
+sfr_refresh_feature_view(fs, name, version, store_type = "OFFLINE")
 }
 \arguments{
 \item{fs}{An \code{sfr_feature_store} object.}

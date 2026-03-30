@@ -261,6 +261,83 @@ mv2 <- sfr_log_model(
 sfr_set_default_model_version(reg, "MTCARS_MPG", "V2")
 ```
 
+## Aliases
+
+Aliases provide human-readable labels for model versions, independent of
+version numbers:
+
+```r
+sfr_set_model_alias(reg, "MTCARS_MPG", "V2", "production")
+sfr_set_model_alias(reg, "MTCARS_MPG", "V1", "staging")
+
+# Remove an alias
+sfr_unset_model_alias(reg, "MTCARS_MPG", "production")
+```
+
+Aliases appear in `sfr_show_model_versions()` output and can be used
+with `sfr_predict_sql()` for warehouse-native inference.
+
+## Model introspection
+
+Inspect a model version's metadata without running inference:
+
+```r
+# List callable functions (e.g., predict)
+sfr_show_model_functions(reg, "MTCARS_MPG", "V1")
+
+# Get or set the version description
+sfr_model_description(reg, "MTCARS_MPG", "V1")
+sfr_model_description(reg, "MTCARS_MPG", "V1", desc = "Updated LM model")
+
+# Get the task type (if set during logging)
+sfr_get_model_task(reg, "MTCARS_MPG", "V1")
+```
+
+## Granular metric management
+
+In addition to `sfr_set_model_metric()` and `sfr_show_model_metrics()`,
+you can read and delete individual metrics:
+
+```r
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "rmse", 2.45)
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "r_squared", 0.87)
+
+# Get a single metric by name
+sfr_get_model_metric(reg, "MTCARS_MPG", "V1", "rmse")
+#> [1] 2.45
+
+# Delete a metric
+sfr_delete_model_metric(reg, "MTCARS_MPG", "V1", "rmse")
+```
+
+## Version and model management
+
+```r
+# Delete a specific version (must not be the default)
+sfr_set_default_model_version(reg, "MTCARS_MPG", "V2")
+sfr_delete_model_version(reg, "MTCARS_MPG", "V1")
+
+# List Model objects with metadata
+sfr_models(reg)
+#>             name           comment default_version
+#> 1  MTCARS_MPG   Linear regression              V2
+#> 2  CHURN_MODEL  GLM churn model                V1
+```
+
+## Model lineage and export
+
+Trace upstream data sources and downstream consumers, or export model
+files to a local directory:
+
+```r
+# Lineage (requires model logged with sample_input_data/training_dataset)
+sfr_model_lineage(reg, "MTCARS_MPG", "V2", direction = "upstream")
+
+# Export model artifacts to a local path
+sfr_export_model(reg, "MTCARS_MPG", "V2",
+                 target_path = "/tmp/mtcars_export")
+```
+
 ## Remote inference (SPCS)
 
 Once deployed, run inference directly in Snowflake:
@@ -270,6 +347,34 @@ Once deployed, run inference directly in Snowflake:
 new_data <- sfr_query(conn, "SELECT wt, hp, cyl FROM car_data LIMIT 100")
 preds <- sfr_predict(reg, "MTCARS_MPG", new_data)
 ```
+
+### Advanced predict parameters
+
+```r
+preds <- sfr_predict(
+  reg, "MTCARS_MPG", new_data,
+  partition_column = "REGION",           # partition for parallel inference
+  strict_input_validation = TRUE         # enforce schema validation
+)
+```
+
+## SQL-direct inference (warehouse)
+
+For models logged with `target_platforms = "WAREHOUSE"`, run inference
+purely in SQL without SPCS:
+
+```r
+sfr_predict_sql(
+  conn,
+  model_name   = "PYTHON_MODEL",
+  version_name = "V1",
+  source_table = "SCORING_DATA",
+  target_table = "PREDICTIONS"
+)
+```
+
+This generates and executes
+`CREATE TABLE ... AS SELECT *, MODEL()!PREDICT(...) FROM source_table`.
 
 ## Deploy as an SPCS service
 
@@ -291,8 +396,76 @@ preds <- sfr_predict(
   service_name = "mpg_service"
 )
 
+# List active services for a version
+sfr_list_services(reg, "MTCARS_MPG", "V2")
+
 # Clean up
 sfr_undeploy_model(reg, "MTCARS_MPG", "V2", "mpg_service")
+```
+
+### Advanced deployment parameters
+
+`sfr_deploy_model()` supports fine-grained resource control:
+
+```r
+sfr_deploy_model(
+  reg,
+  model_name   = "MTCARS_MPG",
+  version_name = "V2",
+  service_name = "mpg_service_gpu",
+  compute_pool = "GPU_POOL",
+  image_repo   = "my_db.my_schema.my_repo",
+  cpu_requests     = "2",
+  memory_requests  = "4Gi",
+  gpu_requests     = "1",
+  num_workers      = 2,
+  max_batch_rows   = 1000,
+  max_instances    = 3,
+  min_instances    = 1,
+  block            = TRUE,
+  autocapture      = TRUE,
+  image_build_compute_pool = "BUILD_POOL",
+  build_external_access_integrations = c("MY_EAI")
+)
+```
+
+## Batch inference (SPCS)
+
+For large-scale scoring jobs that don't need a persistent service:
+
+```r
+results <- sfr_run_batch(
+  reg,
+  model_name    = "MTCARS_MPG",
+  version_name  = "V2",
+  new_data      = scoring_data,
+  compute_pool  = "ML_POOL",
+  function_name = "predict"
+)
+```
+
+## Advanced log_model parameters
+
+`sfr_log_model()` supports additional parameters for advanced use cases:
+
+| Parameter | Description |
+|-----------|-------------|
+| `task` | ML task type: `"TABULAR_REGRESSION"`, `"TABULAR_BINARY_CLASSIFICATION"`, etc. |
+| `python_version` | Pin the Python version in the container (e.g., `"3.11"`) |
+| `user_files` | Additional files to include in the model package |
+| `code_paths` | Python source files to include for custom inference code |
+| `resource_constraint` | Resource requirements as a named list (e.g., `list(memory = "4Gi")`) |
+
+```r
+mv <- sfr_log_model(
+  reg,
+  model        = model,
+  model_name   = "CHURN_MODEL",
+  task         = "TABULAR_BINARY_CLASSIFICATION",
+  python_version = "3.11",
+  input_cols   = list(score = "double", tenure = "integer"),
+  output_cols  = list(prediction = "double")
+)
 ```
 
 ## Clean up
