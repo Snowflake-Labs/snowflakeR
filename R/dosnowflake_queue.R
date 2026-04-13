@@ -71,7 +71,8 @@
       stage_path     = job$stage_path,
       n_workers      = as.integer(opts$n_workers),
       queue_fqn      = opts$queue_fqn,
-      instance_family = opts$instance_family
+      instance_family = opts$instance_family,
+      warehouse      = opts$warehouse
     )
 
     # 4b. Optionally wait for all workers to be READY before they start claiming
@@ -225,7 +226,8 @@
     chunks_per_job    = user_opts$chunks_per_job %||% "auto",
     pre_warm          = isTRUE(user_opts$pre_warm),
     service_name      = user_opts$service_name %||% NULL,
-    instance_family   = user_opts$instance_family %||% "CPU_X64_S"
+    instance_family   = user_opts$instance_family %||% "CPU_X64_S",
+    warehouse         = user_opts$warehouse %||% ""
   )
 }
 

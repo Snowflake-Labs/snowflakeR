@@ -481,11 +481,14 @@ def create_ephemeral_workers(
     n_workers: int = 4,
     queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
     instance_family: str = "CPU_X64_S",
+    warehouse: str = "",
 ) -> str:
     """Launch ephemeral EXECUTE JOB SERVICE workers that pull from queue.
 
     Resource requests are automatically sized based on instance_family.
     Each worker claims chunks until the queue is empty, then exits.
+    The container runs ``worker_queue.R`` (generic doSnowflake queue
+    worker) instead of the image's default entrypoint.
 
     Returns:
         Job service name.
@@ -493,16 +496,33 @@ def create_ephemeral_workers(
     res = _get_resource_spec(instance_family)
     stage_root = stage_path.split("/job_")[0] if "/job_" in stage_path else stage_path
 
+    if not warehouse:
+        try:
+            wh_rows = session.sql("SELECT CURRENT_WAREHOUSE() AS WH").collect()
+            warehouse = wh_rows[0]["WH"] if wh_rows and wh_rows[0]["WH"] else ""
+        except Exception:
+            warehouse = ""
+
+    wh_env = f'\n      SNOWFLAKE_WAREHOUSE: "{warehouse}"' if warehouse else ""
+
     spec = f"""
 spec:
   containers:
   - name: r-worker
     image: {image_uri}
+    command:
+    - bash
+    - -c
+    - "if [ -f /stage/worker_queue.R ]; then Rscript /stage/worker_queue.R; else Rscript /app/worker_queue.R; fi"
     env:
       WORKER_MODE: "ephemeral"
       JOB_ID: "{job_id}"
       QUEUE_FQN: "{queue_fqn}"
       STAGE_PATH: "{stage_path}"
+      STAGE_MOUNT: "/stage"{wh_env}
+    volumeMounts:
+    - name: stage-vol
+      mountPath: /stage
     resources:
       requests:
         cpu: {res['cpu_request']}
@@ -517,12 +537,15 @@ spec:
     gid: 1000
     """.strip()
 
-    session.sql(f"""
+    ejs_sql = f"""
         EXECUTE JOB SERVICE
         IN COMPUTE POOL {compute_pool}
         FROM SPECIFICATION $${spec}$$
         REPLICAS = {n_workers}
-    """).collect()
+    """
+    import sys
+    print(f"[doSnowflake] Launching {n_workers} workers in {compute_pool}", file=sys.stderr)
+    session.sql(ejs_sql).collect()
 
     return f"ephemeral_{job_id[:8]}"
 

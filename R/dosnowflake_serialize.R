@@ -118,6 +118,20 @@
   .dosnowflake_stage_put(conn, expr_file,
                          paste0(stage_base, "/"))
 
+  # 5. Upload latest worker_queue.R to stage root so volume-mounted
+  #    containers always run the current version (no image rebuild needed)
+  worker_script <- system.file("workers", "worker_queue.R",
+                               package = "snowflakeR")
+  if (nzchar(worker_script) && file.exists(worker_script)) {
+    stage_root <- sub("/job_[^/]+$", "/", stage_base)
+    tryCatch(
+      .dosnowflake_stage_put(conn, worker_script, stage_root),
+      error = function(e) {
+        cli::cli_warn("Could not upload worker script to stage: {conditionMessage(e)}")
+      }
+    )
+  }
+
   list(
     n_chunks   = n_chunks,
     stage_path = stage_base,
