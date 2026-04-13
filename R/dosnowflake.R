@@ -64,18 +64,39 @@ stopDoSnowflake <- function() {
 #' @param mode Character.
 #'   * `"local"` -- socket cluster in the current container (default).
 #'   * `"tasks"` -- Snowflake Task graph + SPCS jobs.
+#'   * `"queue"` -- Hybrid Table queue with SPCS workers (ephemeral or persistent).
 #'   * `"spcs"` -- stage-based SPCS job dispatch (not yet implemented).
-#'   * `"queue"` -- persistent worker pool with queue (not yet implemented).
 #' @param workers Integer or `"auto"`. Number of parallel workers.
 #'   `"auto"` (default) detects available CPU cores and reserves one for
 #'   the main thread.
-#' @param ... Backend-specific options. For `mode = "tasks"`:
+#' @param ... Backend-specific options.
+#'
+#'   For `mode = "tasks"`:
 #'   * `compute_pool` (required) -- name of the SPCS compute pool.
 #'   * `image_uri` (required) -- worker Docker image URI in image repo.
 #'   * `stage` -- stage name (default `"DOSNOWFLAKE_STAGE"`).
 #'   * `timeout_min` -- max minutes to wait for completion (default 30).
 #'   * `poll_sec` -- seconds between status polls (default 5).
 #'   * `chunks_per_job` -- number of SPCS jobs to create (default `"auto"`).
+#'
+#'   For `mode = "queue"`:
+#'   * `compute_pool` (required for ephemeral) -- name of the SPCS compute pool.
+#'   * `image_uri` (required for ephemeral) -- worker Docker image URI.
+#'   * `worker_type` -- `"ephemeral"` (default) or `"persistent"`.
+#'   * `n_workers` -- number of worker instances (default 4).
+#'   * `queue_fqn` -- Hybrid Table name (default `"CONFIG.DOSNOWFLAKE_QUEUE"`).
+#'   * `stage` -- stage name (default `"DOSNOWFLAKE_STAGE"`).
+#'   * `timeout_min` -- max minutes to wait (default 30).
+#'   * `poll_sec` -- seconds between status polls (default 5).
+#'   * `stale_timeout_sec` -- seconds before re-queuing stale items (default 600).
+#'   * `chunks_per_job` -- number of chunks to create (default `"auto"`).
+#'   * `pre_warm` -- logical. Wait for all workers to be READY before
+#'     enqueuing work (default `FALSE`). Useful for benchmarking or when
+#'     consistent timing is important. For smaller jobs, leaving this FALSE
+#'     lets early workers start immediately.
+#'   * `instance_family` -- character. SPCS instance family for resource
+#'     sizing (default `"CPU_X64_S"`). Resources are auto-sized:
+#'     XS=1c/4G, S=3c/12G, M=6c/24G, L=12c/48G, XL=24c/96G.
 #'
 #' @returns Invisibly returns `TRUE`.
 #'
@@ -110,11 +131,11 @@ registerDoSnowflake <- function(conn,
 
   mode <- match.arg(mode)
 
-  if (mode %in% c("spcs", "queue")) {
+  if (mode == "spcs") {
     cli::cli_abort(c(
-      "Mode {.val {mode}} is not yet implemented.",
-      "i" = "Currently {.val local} and {.val tasks} modes are available.",
-      "i" = "Modes {.val spcs} and {.val queue} are planned for future releases."
+      "Mode {.val spcs} is not yet implemented.",
+      "i" = "Currently {.val local}, {.val tasks}, and {.val queue} modes are available.",
+      "i" = "Mode {.val spcs} is planned for a future release."
     ))
   }
 
@@ -127,12 +148,14 @@ registerDoSnowflake <- function(conn,
 
   backend_fn <- switch(mode,
     local = .doSnowflakeLocal,
-    tasks = .doSnowflakeTasks
+    tasks = .doSnowflakeTasks,
+    queue = .doSnowflakeQueue
   )
 
   info_fn <- switch(mode,
     local = .doSnowflakeInfo,
-    tasks = .doSnowflakeTasksInfo
+    tasks = .doSnowflakeTasksInfo,
+    queue = .doSnowflakeQueueInfo
   )
 
   foreach::setDoPar(
