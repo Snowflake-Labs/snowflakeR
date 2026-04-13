@@ -33,6 +33,18 @@ for point-in-time joins.}
 \item{spine_label_cols}{Character vector. Label columns in the spine.}
 
 \item{save_as}{Character. Optional table name to materialise results.}
+
+\item{exclude_columns}{Character vector or \code{NULL}. Feature or spine column
+names to drop from the joined result. Default: \code{NULL} (keep all).}
+
+\item{include_feature_view_timestamp_col}{Logical. If \code{TRUE}, includes each
+Feature View's timestamp column in the output. Default: \code{FALSE}.}
+
+\item{auto_prefix}{Logical. If \code{TRUE}, prefixes feature columns with the
+Feature View name to avoid name clashes. Default: \code{FALSE}.}
+
+\item{join_method}{Character or \code{NULL}. Join strategy passed to the SDK
+(e.g., \code{"AS_OF"}). When \code{NULL}, the SDK chooses a default.}
 }
 \value{
 A data.frame with training data.

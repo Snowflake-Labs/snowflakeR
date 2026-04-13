@@ -21,6 +21,9 @@ sfr_get_refresh_history(
 
 \item{verbose}{Logical. If \code{TRUE}, returns more detailed history.
 Default: \code{FALSE}.}
+
+\item{store_type}{Character. Which store to report history for: \code{"OFFLINE"}
+(default) or \code{"ONLINE"}.}
 }
 \value{
 A data.frame with refresh history.

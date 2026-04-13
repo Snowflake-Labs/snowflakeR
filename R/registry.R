@@ -437,6 +437,16 @@ sfr_input_cols <- function(data, exclude = character(0)) {
 #'   environment, preventing deserialization failures such as
 #'   `hardhat::forge()` blueprint mismatches.  Set to `FALSE` to use
 #'   floating version constraints.
+#' @param task Character or NULL. Model task type (e.g. `"TABULAR_REGRESSION"`,
+#'   `"TABULAR_BINARY_CLASSIFICATION"`).
+#' @param user_files Character vector or NULL. Paths to additional files to
+#'   include in the model artifact.
+#' @param code_paths Character vector or NULL. Paths to R scripts to include
+#'   for custom inference logic.
+#' @param resource_constraint List or NULL. SPCS resource constraints for
+#'   inference containers (e.g. `list(cpu = "2", memory = "4Gi")`).
+#' @param python_version Character or NULL. Python version for the model
+#'   environment. Defaults to the version used during training.
 #' @param ... Additional arguments passed to the underlying Python
 #'   `Registry.log_model()`.
 #'
@@ -845,6 +855,10 @@ sfr_predict_local <- function(model,
 #' @param new_data A data.frame with input data.
 #' @param version_name Character. Version to use (default: model's default).
 #' @param service_name Character. SPCS service name for container inference.
+#' @param partition_column Character or NULL. Column name to partition
+#'   inference by (for large-scale batch prediction).
+#' @param strict_input_validation Logical or NULL. If `TRUE`, validates
+#'   that input columns match the model's expected schema exactly.
 #' @param ... Additional arguments.
 #'
 #' @returns A data.frame with predictions.
@@ -1129,6 +1143,26 @@ sfr_set_default_model_version <- function(reg, model_name, version_name) {
 #'   with `SELECT * FROM TABLE(INFERENCE_TABLE('<model_name>'))`.  The model
 #'   must have been created after 2026-01-23 (or cloned from an older model).
 #'   Default: `FALSE`.
+#' @param min_instances Integer or `NULL`. Minimum running service instances
+#'   (supports scale-to-zero when `0`). Requires `snowflake-ml-python` 1.25.0
+#'   or newer. Default: `NULL` (SDK default).
+#' @param image_build_compute_pool Character or `NULL`. Compute pool used when
+#'   the service image is built in Snowflake. When `NULL`, build uses the
+#'   deployment pool or SDK default.
+#' @param cpu_requests,memory_requests,gpu_requests Character or `NULL`.
+#'   Per-container resource requests as strings (CPU/memory/GPU quantities
+#'   in the form accepted by the Snowflake ML service deployer, e.g.
+#'   \code{"500m"} or \code{"2"} for CPU and \code{"8Gi"} for memory), forwarded
+#'   to service creation.
+#' @param num_workers Integer or `NULL`. Number of inference worker processes
+#'   inside the service container. When `NULL`, the SDK default applies.
+#' @param max_batch_rows Integer or `NULL`. Maximum batch size for batched
+#'   inference endpoints. When `NULL`, the SDK default applies.
+#' @param block Logical. If `TRUE` (default), waits until the service reaches a
+#'   ready state before returning.
+#' @param build_external_access_integrations Character vector or `NULL`.
+#'   Names of external access integrations to attach during image build for
+#'   outbound network access. When `NULL`, none are added beyond SDK defaults.
 #'
 #' @returns Invisibly returns a list with deployment info.
 #'
@@ -1269,9 +1303,9 @@ sfr_undeploy_model <- function(reg, model_name, version_name, service_name) {
 #   [{"status":"READY","message":"Running","containerName":"model-inference",...}]
 #
 # We derive an overall status from the individual container statuses:
-#   - Any container FAILED  → overall FAILED
-#   - All containers READY  → overall READY
-#   - Otherwise             → status of the first container (usually PENDING)
+#   - Any container FAILED  -> overall FAILED
+#   - All containers READY  -> overall READY
+#   - Otherwise             -> status of the first container (usually PENDING)
 #
 # @param json_str Character. Raw JSON string.
 # @returns A list with `status` (character), `message` (character or NA),
@@ -1447,7 +1481,7 @@ sfr_wait_for_service <- function(reg,
     if (verbose) {
       status_label <- st$status
       if (!is.null(st$message) && !is.na(st$message)) {
-        status_label <- paste0(st$status, " — ", st$message)
+        status_label <- paste0(st$status, " -- ", st$message)
       }
       cli::cli_inform("  [{elapsed_min} min] Status: {.val {status_label}}")
     }

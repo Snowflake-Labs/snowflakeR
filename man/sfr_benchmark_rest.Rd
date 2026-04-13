@@ -23,6 +23,9 @@ sfr_benchmark_rest(
 
 \item{token}{Character or NULL. Snowflake PAT.}
 
+\item{conn}{An \code{sfr_connection} object, or NULL. Used for auto-generating
+a PAT when \code{token} is NULL.}
+
 \item{method}{Character. Model method name. Default: \code{"predict"}.}
 
 \item{verbose}{Logical. Print per-iteration results? Default: \code{TRUE}.}

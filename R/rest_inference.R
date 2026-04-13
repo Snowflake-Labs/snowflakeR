@@ -133,6 +133,8 @@
 #'
 #' @param conn An `sfr_connection` object.
 #' @param service_name Character. Name of the SPCS service.
+#' @param database Character or NULL. Override the database for service lookup.
+#' @param schema Character or NULL. Override the schema for service lookup.
 #'
 #' @returns An `sfr_endpoint` object containing the URL and metadata.
 #'
@@ -447,6 +449,8 @@ sfr_predict_rest <- function(endpoint,
 #' @param new_data A data.frame with input data.
 #' @param n Integer. Number of iterations. Default: 10.
 #' @param token Character or NULL. Snowflake PAT.
+#' @param conn An `sfr_connection` object, or NULL. Used for auto-generating
+#'   a PAT when `token` is NULL.
 #' @param method Character. Model method name. Default: `"predict"`.
 #' @param verbose Logical. Print per-iteration results? Default: `TRUE`.
 #'

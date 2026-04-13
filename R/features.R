@@ -26,6 +26,9 @@
 #'   Defaults to the connection's current warehouse.
 #' @param create Logical. If `TRUE`, creates the Feature Store schema and tags
 #'   if they don't exist. Default: `FALSE`.
+#' @param default_iceberg_external_volume Character or `NULL`. Default external
+#'   volume name for Iceberg-backed Feature Store tables. Stored on the returned
+#'   object; when `NULL`, account or SDK defaults apply.
 #'
 #' @returns An `sfr_feature_store` object.
 #'
@@ -310,6 +313,16 @@ print.sfr_entity <- function(x, ...) {
 #'   features. Required when `feature_granularity` is set.
 #' @param feature_granularity Character. Time granularity for tile-based
 #'   aggregation (e.g., `"1h"`, `"1 day"`).
+#' @param initialize Character or `NULL`. Initial materialisation behaviour for
+#'   a managed Feature View (e.g., `"ON_CREATE"` to populate on registration).
+#'   When `NULL`, the Snowflake ML SDK default applies.
+#' @param refresh_mode Character or `NULL`. Refresh strategy for managed views,
+#'   such as `"INCREMENTAL"` or `"FULL"`. When `NULL`, the SDK default applies.
+#' @param cluster_by Character vector or `NULL`. Columns to cluster the backing
+#'   dynamic table by. When `NULL`, no explicit `CLUSTER BY` is set.
+#' @param online_config An [sfr_online_config()] object or `NULL`. Online
+#'   serving configuration; when `NULL`, online serving is not configured via
+#'   this argument.
 #'
 #' @returns An `sfr_feature_view` object (local draft, not yet registered).
 #'
@@ -410,6 +423,8 @@ print.sfr_feature_view <- function(x, ...) {
 #' @param version Character. Version name (e.g., `"v1"`).
 #' @param overwrite Logical. If `TRUE`, overwrites an existing version.
 #'   Default: `FALSE`.
+#' @param block Logical. If `TRUE` (default), blocks until the feature view
+#'   materialisation is complete.
 #'
 #' @returns The `sfr_feature_view` object, updated with registration info.
 #'
@@ -485,6 +500,8 @@ sfr_register_feature_view <- function(fs, feature_view, version,
 #' @param fs An `sfr_feature_store` object.
 #' @param version Character. Version name.
 #' @param overwrite Logical. If `TRUE`, overwrites an existing version.
+#' @param block Logical. If `TRUE` (default), waits until Feature View
+#'   materialisation completes before returning.
 #'
 #' @returns A registered `sfr_feature_view` object.
 #'
@@ -714,6 +731,8 @@ sfr_read_feature_view <- function(fs, name, version,
 #' @param fs An `sfr_feature_store` object.
 #' @param name Character. Feature View name.
 #' @param version Character. Version to refresh.
+#' @param store_type Character. Store to refresh: `"OFFLINE"` (default) or
+#'   `"ONLINE"`.
 #'
 #' @returns Invisibly returns `TRUE`.
 #'
@@ -815,6 +834,8 @@ sfr_resume_feature_view <- function(fs, name, version) {
 #' @param version Character. Version to inspect.
 #' @param verbose Logical. If `TRUE`, returns more detailed history.
 #'   Default: `FALSE`.
+#' @param store_type Character. Which store to report history for: `"OFFLINE"`
+#'   (default) or `"ONLINE"`.
 #'
 #' @returns A data.frame with refresh history.
 #'
@@ -894,6 +915,14 @@ sfr_setup_feature_store <- function(conn, database, schema, warehouse) {
 #'   for point-in-time joins.
 #' @param spine_label_cols Character vector. Label columns in the spine.
 #' @param save_as Character. Optional table name to materialise results.
+#' @param exclude_columns Character vector or `NULL`. Feature or spine column
+#'   names to drop from the joined result. Default: `NULL` (keep all).
+#' @param include_feature_view_timestamp_col Logical. If `TRUE`, includes each
+#'   Feature View's timestamp column in the output. Default: `FALSE`.
+#' @param auto_prefix Logical. If `TRUE`, prefixes feature columns with the
+#'   Feature View name to avoid name clashes. Default: `FALSE`.
+#' @param join_method Character or `NULL`. Join strategy passed to the SDK
+#'   (e.g., `"AS_OF"`). When `NULL`, the SDK chooses a default.
 #'
 #' @returns A data.frame with training data.
 #'
@@ -987,6 +1016,17 @@ sfr_generate_training_data <- function(fs,
 #'   correctness.
 #' @param spine_label_cols Optional character vector of label column names.
 #' @param desc Optional description for the dataset.
+#' @param exclude_columns Character vector or `NULL`. Columns to omit from the
+#'   generated dataset. Default: `NULL`.
+#' @param include_feature_view_timestamp_col Logical. If `TRUE`, includes
+#'   Feature View timestamp columns. Default: `FALSE`.
+#' @param auto_prefix Logical. If `TRUE`, prefixes feature columns with the
+#'   Feature View name. Default: `FALSE`.
+#' @param output_type Character or `NULL`. Dataset storage or output format
+#'   hint forwarded to `FeatureStore.generate_dataset()`. When `NULL`, the SDK
+#'   default applies.
+#' @param join_method Character or `NULL`. Join strategy for spine and
+#'   features (e.g., `"AS_OF"`). When `NULL`, the SDK default applies.
 #'
 #' @returns A data.frame of training data with attributes
 #'   `dataset_name` and `dataset_version` attached. Pass this object
@@ -1098,6 +1138,14 @@ sfr_generate_dataset <- function(fs,
 #' @param spine_timestamp_col Optional timestamp column in the spine for
 #'   point-in-time feature value lookup.  When `NULL` (the default) the
 #'   latest feature values are returned.
+#' @param exclude_columns Character vector or NULL. Column names to exclude
+#'   from the result.
+#' @param include_feature_view_timestamp_col Logical. If `TRUE`, includes the
+#'   timestamp column from each feature view. Default: `FALSE`.
+#' @param auto_prefix Logical. If `TRUE`, prefixes feature columns with the
+#'   feature view name to avoid collisions. Default: `FALSE`.
+#' @param join_method Character or NULL. Join strategy (e.g. `"AS_OF"`,
+#'   `"INNER"`). When `NULL`, the SDK picks a sensible default.
 #'
 #' @returns A data.frame with feature values.
 #'

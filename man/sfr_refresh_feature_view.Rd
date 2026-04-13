@@ -12,6 +12,9 @@ sfr_refresh_feature_view(fs, name, version, store_type = "OFFLINE")
 \item{name}{Character. Feature View name.}
 
 \item{version}{Character. Version to refresh.}
+
+\item{store_type}{Character. Store to refresh: \code{"OFFLINE"} (default) or
+\code{"ONLINE"}.}
 }
 \value{
 Invisibly returns \code{TRUE}.

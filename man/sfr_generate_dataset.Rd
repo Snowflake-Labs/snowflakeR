@@ -40,6 +40,22 @@ correctness.}
 \item{spine_label_cols}{Optional character vector of label column names.}
 
 \item{desc}{Optional description for the dataset.}
+
+\item{exclude_columns}{Character vector or \code{NULL}. Columns to omit from the
+generated dataset. Default: \code{NULL}.}
+
+\item{include_feature_view_timestamp_col}{Logical. If \code{TRUE}, includes
+Feature View timestamp columns. Default: \code{FALSE}.}
+
+\item{auto_prefix}{Logical. If \code{TRUE}, prefixes feature columns with the
+Feature View name. Default: \code{FALSE}.}
+
+\item{output_type}{Character or \code{NULL}. Dataset storage or output format
+hint forwarded to \code{FeatureStore.generate_dataset()}. When \code{NULL}, the SDK
+default applies.}
+
+\item{join_method}{Character or \code{NULL}. Join strategy for spine and
+features (e.g., \code{"AS_OF"}). When \code{NULL}, the SDK default applies.}
 }
 \value{
 A data.frame of training data with attributes

@@ -27,6 +27,18 @@ lists with \code{name} and \code{version}.}
 \item{spine_timestamp_col}{Optional timestamp column in the spine for
 point-in-time feature value lookup.  When \code{NULL} (the default) the
 latest feature values are returned.}
+
+\item{exclude_columns}{Character vector or NULL. Column names to exclude
+from the result.}
+
+\item{include_feature_view_timestamp_col}{Logical. If \code{TRUE}, includes the
+timestamp column from each feature view. Default: \code{FALSE}.}
+
+\item{auto_prefix}{Logical. If \code{TRUE}, prefixes feature columns with the
+feature view name to avoid collisions. Default: \code{FALSE}.}
+
+\item{join_method}{Character or NULL. Join strategy (e.g. \code{"AS_OF"},
+\code{"INNER"}). When \code{NULL}, the SDK picks a sensible default.}
 }
 \value{
 A data.frame with feature values.

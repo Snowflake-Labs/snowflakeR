@@ -10,6 +10,10 @@ sfr_service_endpoint(conn, service_name, database = NULL, schema = NULL)
 \item{conn}{An \code{sfr_connection} object.}
 
 \item{service_name}{Character. Name of the SPCS service.}
+
+\item{database}{Character or NULL. Override the database for service lookup.}
+
+\item{schema}{Character or NULL. Override the schema for service lookup.}
 }
 \value{
 An \code{sfr_endpoint} object containing the URL and metadata.

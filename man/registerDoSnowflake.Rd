@@ -18,15 +18,17 @@ registerDoSnowflake(
 \itemize{
 \item \code{"local"} -- socket cluster in the current container (default).
 \item \code{"tasks"} -- Snowflake Task graph + SPCS jobs.
+\item \code{"queue"} -- Hybrid Table queue with SPCS workers (ephemeral or persistent).
 \item \code{"spcs"} -- stage-based SPCS job dispatch (not yet implemented).
-\item \code{"queue"} -- persistent worker pool with queue (not yet implemented).
 }}
 
 \item{workers}{Integer or \code{"auto"}. Number of parallel workers.
 \code{"auto"} (default) detects available CPU cores and reserves one for
 the main thread.}
 
-\item{...}{Backend-specific options. For \code{mode = "tasks"}:
+\item{...}{Backend-specific options.
+
+For \code{mode = "tasks"}:
 \itemize{
 \item \code{compute_pool} (required) -- name of the SPCS compute pool.
 \item \code{image_uri} (required) -- worker Docker image URI in image repo.
@@ -34,6 +36,27 @@ the main thread.}
 \item \code{timeout_min} -- max minutes to wait for completion (default 30).
 \item \code{poll_sec} -- seconds between status polls (default 5).
 \item \code{chunks_per_job} -- number of SPCS jobs to create (default \code{"auto"}).
+}
+
+For \code{mode = "queue"}:
+\itemize{
+\item \code{compute_pool} (required for ephemeral) -- name of the SPCS compute pool.
+\item \code{image_uri} (required for ephemeral) -- worker Docker image URI.
+\item \code{worker_type} -- \code{"ephemeral"} (default) or \code{"persistent"}.
+\item \code{n_workers} -- number of worker instances (default 4).
+\item \code{queue_fqn} -- Hybrid Table name (default \code{"CONFIG.DOSNOWFLAKE_QUEUE"}).
+\item \code{stage} -- stage name (default \code{"DOSNOWFLAKE_STAGE"}).
+\item \code{timeout_min} -- max minutes to wait (default 30).
+\item \code{poll_sec} -- seconds between status polls (default 5).
+\item \code{stale_timeout_sec} -- seconds before re-queuing stale items (default 600).
+\item \code{chunks_per_job} -- number of chunks to create (default \code{"auto"}).
+\item \code{pre_warm} -- logical. Wait for all workers to be READY before
+enqueuing work (default \code{FALSE}). Useful for benchmarking or when
+consistent timing is important. For smaller jobs, leaving this FALSE
+lets early workers start immediately.
+\item \code{instance_family} -- character. SPCS instance family for resource
+sizing (default \code{"CPU_X64_S"}). Resources are auto-sized:
+XS=1c/4G, S=3c/12G, M=6c/24G, L=12c/48G, XL=24c/96G.
 }}
 }
 \value{

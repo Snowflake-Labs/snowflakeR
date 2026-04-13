@@ -15,6 +15,7 @@ sfr_log_model(
   input_cols = NULL,
   output_cols = NULL,
   conda_deps = NULL,
+  conda_channel = NULL,
   pip_requirements = NULL,
   target_platforms = "SNOWPARK_CONTAINER_SERVICES",
   comment = NULL,
@@ -75,6 +76,19 @@ and \code{rpy2} causes the conda solver to pick Python 3.12 + numpy 2.x,
 which crashes the inference server (\verb{recarray has no attribute fillna}).  If you override \code{conda_deps}, ensure you include
 \code{numpy<2.0}.}
 
+\item{conda_channel}{Character. Optional conda channel to force for all
+dependencies (e.g. \code{"conda-forge"}).  When set, every entry in
+\code{conda_deps} that does not already contain a \code{::} channel prefix is
+automatically prefixed with \verb{<conda_channel>::}.  This ensures the
+SPCS inference container resolves packages exclusively from the
+specified channel instead of the default Snowflake Anaconda Channel.
+
+\strong{Legal / compliance note:} The default Snowflake Anaconda Channel is
+licensed by Snowflake for use within Snowflake.  Set
+\code{conda_channel = "conda-forge"} if your organisation requires that
+only community-licensed (conda-forge) packages are used, avoiding any
+dependency on Anaconda Inc. commercial channels.}
+
 \item{pip_requirements}{Character vector. Additional pip packages.}
 
 \item{target_platforms}{Character. One of \code{"SNOWPARK_CONTAINER_SERVICES"},
@@ -106,6 +120,21 @@ ensures the SPCS container environment exactly matches the training
 environment, preventing deserialization failures such as
 \code{hardhat::forge()} blueprint mismatches.  Set to \code{FALSE} to use
 floating version constraints.}
+
+\item{task}{Character or NULL. Model task type (e.g. \code{"TABULAR_REGRESSION"},
+\code{"TABULAR_BINARY_CLASSIFICATION"}).}
+
+\item{user_files}{Character vector or NULL. Paths to additional files to
+include in the model artifact.}
+
+\item{code_paths}{Character vector or NULL. Paths to R scripts to include
+for custom inference logic.}
+
+\item{resource_constraint}{List or NULL. SPCS resource constraints for
+inference containers (e.g. \code{list(cpu = "2", memory = "4Gi")}).}
+
+\item{python_version}{Character or NULL. Python version for the model
+environment. Defaults to the version used during training.}
 
 \item{...}{Additional arguments passed to the underlying Python
 \code{Registry.log_model()}.}

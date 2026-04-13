@@ -21,6 +21,9 @@ sfr_register_feature_view(
 
 \item{overwrite}{Logical. If \code{TRUE}, overwrites an existing version.
 Default: \code{FALSE}.}
+
+\item{block}{Logical. If \code{TRUE} (default), blocks until the feature view
+materialisation is complete.}
 }
 \value{
 The \code{sfr_feature_view} object, updated with registration info.

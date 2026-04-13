@@ -2,14 +2,20 @@
 # =============================================================================
 
 test_that("sfr_connect requires account", {
-  # Without snowflakeauth and without active session, should fail
-  # if no account provided
-  expect_error(
-    sfr_connect(
-      account = NULL,
-      .use_snowflakeauth = FALSE
-    ),
-    "account"
+  # Point SNOWFLAKE_HOME at an empty dir so connections.toml is not found
+  withr::with_envvar(
+    c(SNOWFLAKE_ACCOUNT = NA,
+      SNOWFLAKE_DEFAULT_CONNECTION_NAME = NA,
+      SNOWFLAKE_HOME = tempdir()),
+    {
+      expect_error(
+        sfr_connect(
+          account = NULL,
+          .use_snowflakeauth = FALSE
+        ),
+        "account"
+      )
+    }
   )
 })
 

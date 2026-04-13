@@ -26,6 +26,12 @@ sfr_predict(
 
 \item{service_name}{Character. SPCS service name for container inference.}
 
+\item{partition_column}{Character or NULL. Column name to partition
+inference by (for large-scale batch prediction).}
+
+\item{strict_input_validation}{Logical or NULL. If \code{TRUE}, validates
+that input columns match the model's expected schema exactly.}
+
 \item{...}{Additional arguments.}
 }
 \value{

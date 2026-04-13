@@ -44,6 +44,20 @@ features. Required when \code{feature_granularity} is set.}
 
 \item{feature_granularity}{Character. Time granularity for tile-based
 aggregation (e.g., \code{"1h"}, \code{"1 day"}).}
+
+\item{initialize}{Character or \code{NULL}. Initial materialisation behaviour for
+a managed Feature View (e.g., \code{"ON_CREATE"} to populate on registration).
+When \code{NULL}, the Snowflake ML SDK default applies.}
+
+\item{refresh_mode}{Character or \code{NULL}. Refresh strategy for managed views,
+such as \code{"INCREMENTAL"} or \code{"FULL"}. When \code{NULL}, the SDK default applies.}
+
+\item{cluster_by}{Character vector or \code{NULL}. Columns to cluster the backing
+dynamic table by. When \code{NULL}, no explicit \verb{CLUSTER BY} is set.}
+
+\item{online_config}{An \code{\link[=sfr_online_config]{sfr_online_config()}} object or \code{NULL}. Online
+serving configuration; when \code{NULL}, online serving is not configured via
+this argument.}
 }
 \value{
 An \code{sfr_feature_view} object (local draft, not yet registered).

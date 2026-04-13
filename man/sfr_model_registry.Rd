@@ -4,7 +4,14 @@
 \alias{sfr_model_registry}
 \title{Connect to the Model Registry}
 \usage{
-sfr_model_registry(conn, database = NULL, schema = NULL, options = NULL)
+sfr_model_registry(
+  conn,
+  database = NULL,
+  schema = NULL,
+  options = NULL,
+  conda_channel = NULL,
+  conda_channel_strict = FALSE
+)
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object from \code{\link[=sfr_connect]{sfr_connect()}}.}
@@ -17,6 +24,25 @@ connection's current schema.}
 
 \item{options}{Named list. Options forwarded to \code{Registry(session, options=...)}.
 For example, \code{list(enable_monitoring = TRUE)} enables ML Observability.}
+
+\item{conda_channel}{Character. Default conda channel for all models logged
+through this registry (e.g. \code{"conda-forge"}).  When set, every
+\code{\link[=sfr_log_model]{sfr_log_model()}} call inherits this channel unless explicitly
+overridden.  Defaults to the \code{SFR_CONDA_CHANNEL} environment variable
+if set, otherwise \code{NULL} (Snowflake Anaconda Channel).}
+
+\item{conda_channel_strict}{Logical. If \code{TRUE}, the \code{conda_channel} set on
+this registry cannot be overridden or bypassed by individual
+\code{\link[=sfr_log_model]{sfr_log_model()}} calls.  Any attempt to pass a different
+\code{conda_channel} or to include deps with a mismatched \verb{channel::}
+prefix will raise an error.  Defaults to the
+\code{SFR_CONDA_CHANNEL_STRICT} environment variable (\code{"true"} / \code{"1"})
+if set, otherwise \code{FALSE}.
+
+\strong{Use case:} Platform / compliance teams set \code{conda_channel_strict = TRUE}
+to guarantee that all models registered through this registry resolve
+packages exclusively from the approved channel (e.g. conda-forge),
+preventing accidental use of Anaconda Inc. commercial channels.}
 }
 \value{
 An \code{sfr_model_registry} object.
@@ -37,6 +63,14 @@ sfr_log_model(reg, model, "MY_MODEL", ...)
 
 # Option B: Use connection directly (session's current db/schema)
 sfr_log_model(conn, model, "MY_MODEL", ...)
+
+# Option C: Enforce conda-forge for all models (compliance mode)
+reg <- sfr_model_registry(conn,
+  conda_channel = "conda-forge",
+  conda_channel_strict = TRUE
+)
+# All sfr_log_model() calls through `reg` now force conda-forge.
+# Users cannot override the channel.
 }
 
 }

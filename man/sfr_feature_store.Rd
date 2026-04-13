@@ -27,6 +27,10 @@ Defaults to the connection's current warehouse.}
 
 \item{create}{Logical. If \code{TRUE}, creates the Feature Store schema and tags
 if they don't exist. Default: \code{FALSE}.}
+
+\item{default_iceberg_external_volume}{Character or \code{NULL}. Default external
+volume name for Iceberg-backed Feature Store tables. Stored on the returned
+object; when \code{NULL}, account or SDK defaults apply.}
 }
 \value{
 An \code{sfr_feature_store} object.

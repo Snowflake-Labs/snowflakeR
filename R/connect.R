@@ -116,11 +116,11 @@ sfr_reinstall <- function(path = Sys.getenv("SNOWFLAKER_PATH"),
   options(repos = c(CRAN = "https://cloud.r-project.org"))
 
   if (nzchar(rsnowflake_path)) {
-    install.packages(rsnowflake_path, repos = NULL, type = "source", quiet = TRUE)
+    utils::install.packages(rsnowflake_path, repos = NULL, type = "source", quiet = TRUE)
     library(RSnowflake)
   }
 
-  install.packages(path, repos = NULL, type = "source", quiet = TRUE)
+  utils::install.packages(path, repos = NULL, type = "source", quiet = TRUE)
   library(snowflakeR)
 
   sfr_reload_bridges()

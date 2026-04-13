@@ -40,6 +40,10 @@ sfr_deploy_model(
 
 \item{max_instances}{Integer. Max service instances. Default: 1.}
 
+\item{min_instances}{Integer or \code{NULL}. Minimum running service instances
+(supports scale-to-zero when \code{0}). Requires \code{snowflake-ml-python} 1.25.0
+or newer. Default: \code{NULL} (SDK default).}
+
 \item{force}{Logical. If \code{TRUE} and the service already exists, drop it
 first and redeploy. Default: \code{FALSE}.}
 
@@ -48,6 +52,29 @@ automatically logged to the model's inference table.  Query captured data
 with \verb{SELECT * FROM TABLE(INFERENCE_TABLE('<model_name>'))}.  The model
 must have been created after 2026-01-23 (or cloned from an older model).
 Default: \code{FALSE}.}
+
+\item{image_build_compute_pool}{Character or \code{NULL}. Compute pool used when
+the service image is built in Snowflake. When \code{NULL}, build uses the
+deployment pool or SDK default.}
+
+\item{cpu_requests, memory_requests, gpu_requests}{Character or \code{NULL}.
+Per-container resource requests as strings (CPU/memory/GPU quantities
+in the form accepted by the Snowflake ML service deployer, e.g.
+\code{"500m"} or \code{"2"} for CPU and \code{"8Gi"} for memory), forwarded
+to service creation.}
+
+\item{num_workers}{Integer or \code{NULL}. Number of inference worker processes
+inside the service container. When \code{NULL}, the SDK default applies.}
+
+\item{max_batch_rows}{Integer or \code{NULL}. Maximum batch size for batched
+inference endpoints. When \code{NULL}, the SDK default applies.}
+
+\item{block}{Logical. If \code{TRUE} (default), waits until the service reaches a
+ready state before returning.}
+
+\item{build_external_access_integrations}{Character vector or \code{NULL}.
+Names of external access integrations to attach during image build for
+outbound network access. When \code{NULL}, none are added beyond SDK defaults.}
 }
 \value{
 Invisibly returns a list with deployment info.
