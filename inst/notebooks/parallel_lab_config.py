@@ -135,9 +135,6 @@ def apply_parallel_lab_environment(cfg: dict[str, Any] | None = None) -> dict[st
     os.environ[f"{_ENV_PREFIX}CREATE_SYNTHETIC_SERIES"] = (
         "1" if cfg.get("create_synthetic_series_table", True) else "0"
     )
-    # Workspace: always reset so re-running the setup cell does not inherit an old "1"
-    # from a scratch session. Re-run PY__run_demo_gate or a scratch cell to opt in again.
-    os.environ[f"{_ENV_PREFIX}RUN_DEMO"] = "0"
     return cfg
 
 

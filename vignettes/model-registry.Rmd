@@ -524,3 +524,18 @@ Any R model that can be serialised with `saveRDS()` works, including:
 
 The only requirement is that the model has a `predict()` method (or you
 provide custom prediction code via `predict_body`).
+
+## Many-model deployments
+
+For **collections of related models** (for example one forecaster per SKU or
+segment), use `sfr_log_many_model()` to register multiple versions in one
+call and `sfr_deploy_many_model()` to deploy them to SPCS. Requirements and
+arguments mirror single-model logging but accept a list of models and metadata.
+See `?sfr_log_many_model` and `?sfr_deploy_many_model` for full details.
+
+```r
+# Conceptual sketch -- replace with your model list and column specs
+# reg <- sfr_model_registry(conn)
+# sfr_log_many_model(reg, models = list(m1 = fit1, m2 = fit2), ...)
+# sfr_deploy_many_model(reg, ...)
+```

@@ -118,6 +118,9 @@ MLflow-style experiment tracking on Snowflake:
 
 - `DESCRIPTION` **Version** set to **0.2.0** (was 0.1.0), matching this
   changelog and the published feature set.
+- New vignettes: `parallel-dosnowflake`, `experiments`, `model-monitoring`;
+  many-model section in `model-registry`; expanded README module and notebook
+  tables; `registerDoSnowflake()` details aligned with implemented modes.
 - Regenerated NAMESPACE and man/ pages for all new exports.
 - Extended Feature Store and Model Registry vignettes with new sections
   covering online serving, aggregation, introspection, slicing, Iceberg,

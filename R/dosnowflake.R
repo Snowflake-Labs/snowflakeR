@@ -1,9 +1,9 @@
 # doSnowflake: foreach Parallel Backend for Snowflake
 # =============================================================================
 # Implements the foreach %dopar% contract so that R users can run parallel
-# loops on Snowflake compute.  Phase 0 provides local (in-container)
-# parallelism via socket clusters; remote modes (tasks, spcs, queue)
-# are planned for subsequent phases.
+# loops on Snowflake: local socket clusters, Snowflake Task + SPCS job
+# dispatch ("tasks"), and Hybrid Table queue + SPCS workers ("queue").
+# Stage-based "spcs" mode is reserved for a future release.
 
 
 # =============================================================================
@@ -56,10 +56,6 @@ stopDoSnowflake <- function() {
 #' Registers a `foreach` parallel backend that dispatches iterations to
 #' Snowflake compute.
 #'
-#' In **local** mode (the default and currently the only implemented mode),
-#' iterations execute on a `parallel::makeCluster()` socket cluster within
-#' the current R process's container.
-#'
 #' @param conn An `sfr_connection` object from [sfr_connect()].
 #' @param mode Character.
 #'   * `"local"` -- socket cluster in the current container (default).
@@ -97,6 +93,29 @@ stopDoSnowflake <- function() {
 #'   * `instance_family` -- character. SPCS instance family for resource
 #'     sizing (default `"CPU_X64_S"`). Resources are auto-sized:
 #'     XS=1c/4G, S=3c/12G, M=6c/24G, L=12c/48G, XL=24c/96G.
+#'
+#' @details
+#' **Local** (default): iterations run on a cached `parallel::makeCluster()`
+#' socket cluster in the current R session (Workspace container or local).
+#' No SPCS objects are required. Call [stopDoSnowflake()] to shut down the
+#' cluster explicitly.
+#'
+#' **Tasks**: iterations are chunked and executed via Snowflake Tasks and SPCS
+#' jobs. Requires a compute pool, worker image, and stage; see
+#' [sfr_dosnowflake_setup()] and the `mode = "tasks"` arguments above.
+#'
+#' **Queue**: iterations are written to a Hybrid Table queue and processed by
+#' SPCS workers (ephemeral or persistent). Requires queue DDL, images, and
+#' pool configuration; see [sfr_dosnowflake_setup()] and the shipped notebooks
+#' under `inst/notebooks/` (`workspace_parallel_spcs_*.ipynb`,
+#' `snowflaker_parallel_spcs_config.yaml`).
+#'
+#' **Spcs**: reserved for future stage-only job dispatch; not implemented (an
+#' error is raised if selected).
+#'
+#' Related infrastructure: [sfr_dosnowflake_build_image()] for worker images;
+#' [crew_controller_spcs()] and [sfr_execute_r_script()] for other SPCS
+#' parallel patterns beyond `foreach`.
 #'
 #' @returns Invisibly returns `TRUE`.
 #'

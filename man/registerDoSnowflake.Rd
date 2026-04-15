@@ -67,9 +67,27 @@ Registers a \code{foreach} parallel backend that dispatches iterations to
 Snowflake compute.
 }
 \details{
-In \strong{local} mode (the default and currently the only implemented mode),
-iterations execute on a \code{parallel::makeCluster()} socket cluster within
-the current R process's container.
+\strong{Local} (default): iterations run on a cached \code{parallel::makeCluster()}
+socket cluster in the current R session (Workspace container or local).
+No SPCS objects are required. Call \code{\link[=stopDoSnowflake]{stopDoSnowflake()}} to shut down the
+cluster explicitly.
+
+\strong{Tasks}: iterations are chunked and executed via Snowflake Tasks and SPCS
+jobs. Requires a compute pool, worker image, and stage; see
+\code{\link[=sfr_dosnowflake_setup]{sfr_dosnowflake_setup()}} and the \code{mode = "tasks"} arguments above.
+
+\strong{Queue}: iterations are written to a Hybrid Table queue and processed by
+SPCS workers (ephemeral or persistent). Requires queue DDL, images, and
+pool configuration; see \code{\link[=sfr_dosnowflake_setup]{sfr_dosnowflake_setup()}} and the shipped notebooks
+under \verb{inst/notebooks/} (\code{workspace_parallel_spcs_*.ipynb},
+\code{snowflaker_parallel_spcs_config.yaml}).
+
+\strong{Spcs}: reserved for future stage-only job dispatch; not implemented (an
+error is raised if selected).
+
+Related infrastructure: \code{\link[=sfr_dosnowflake_build_image]{sfr_dosnowflake_build_image()}} for worker images;
+\code{\link[=crew_controller_spcs]{crew_controller_spcs()}} and \code{\link[=sfr_execute_r_script]{sfr_execute_r_script()}} for other SPCS
+parallel patterns beyond \code{foreach}.
 }
 \examples{
 \dontrun{

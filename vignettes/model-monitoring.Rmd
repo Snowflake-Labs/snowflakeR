@@ -1,0 +1,101 @@
+---
+title: "Model Monitoring"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Model Monitoring}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+Model **monitoring** (drift, performance, and statistical views) is configured
+through the Model Registry API in `snowflakeR`. Monitoring requires
+**`snowflake-ml-python` >= 1.7.1** in the active Python environment (see
+`?sfr_add_monitor`).
+
+You need:
+
+1. A **logged model version** in the registry (`sfr_log_model()`, etc.).
+2. An **inference log** table or view in Snowflake with a timestamp column and
+   prediction (and optionally actual) score columns.
+3. A **warehouse** for scheduled monitor computation.
+
+## Configure source and registry settings
+
+```r
+library(snowflakeR)
+
+conn <- sfr_connect()
+reg <- sfr_model_registry(conn, database = "ML_DB", schema = "MODELS")
+
+src <- sfr_monitor_source(
+  "ML_DB.MY_SCH.INFERENCE_LOG",
+  timestamp_column         = "EVENT_TIME",
+  prediction_score_columns = "PREDICTION",
+  actual_score_columns     = "LABEL",
+  id_columns               = "USER_ID"
+)
+
+cfg <- sfr_monitor_config(
+  model_name          = "MY_MODEL",
+  version_name        = "v1",
+  warehouse           = "ML_WH",
+  aggregation_window  = "1 day"
+)
+```
+
+## Register and inspect monitors
+
+```r
+sfr_add_monitor(reg, monitor_name = "MY_MONITOR", src, cfg)
+
+sfr_show_model_monitors(reg)
+sfr_get_monitor(reg, name = "MY_MONITOR")
+```
+
+## Read monitor metrics
+
+```r
+sfr_monitor_drift(reg, "MY_MONITOR")
+sfr_monitor_performance(reg, "MY_MONITOR")
+sfr_monitor_stats(reg, "MY_MONITOR")
+```
+
+Time ranges and granularity follow the function arguments documented in
+**`?sfr_monitor_drift`** (and related pages).
+
+## Segments
+
+Optional **segment** filters narrow metrics to a slice of the population:
+
+```r
+seg <- list(column = "REGION", value = "EMEA")
+sfr_monitor_drift(reg, "MY_MONITOR", segment = seg)
+```
+
+Use **`sfr_add_monitor_segment()`** / **`sfr_drop_monitor_segment()`** to
+manage named segments on an existing monitor when supported by your SDK version.
+
+## Lifecycle and vetiver bridges
+
+- Suspend / resume / describe: `sfr_suspend_monitor()`, `sfr_resume_monitor()`,
+  `sfr_describe_monitor()`, `sfr_delete_monitor()`.
+- **vetiver** interoperability: `sfr_monitor_to_vetiver()`,
+  `sfr_vetiver_to_metrics()`.
+
+## Notebook example
+
+The shipped Workspace notebook **`workspace_model_monitoring.ipynb`** walks
+through a full monitoring setup with `sfnb_setup.py`.
+
+## See also
+
+`?sfr_monitor_source`, `?sfr_monitor_config`, `?sfr_add_monitor`,
+`?sfr_monitor_drift`, `?sfr_monitor_performance`, `?sfr_monitor_stats`

@@ -879,6 +879,20 @@ including:</p>
 method (or you provide custom prediction code via
 <code>predict_body</code>).</p>
 </div>
+<div id="many-model-deployments" class="section level2">
+<h2>Many-model deployments</h2>
+<p>For <strong>collections of related models</strong> (for example one
+forecaster per SKU or segment), use <code>sfr_log_many_model()</code> to
+register multiple versions in one call and
+<code>sfr_deploy_many_model()</code> to deploy them to SPCS.
+Requirements and arguments mirror single-model logging but accept a list
+of models and metadata. See <code>?sfr_log_many_model</code> and
+<code>?sfr_deploy_many_model</code> for full details.</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a><span class="co"># Conceptual sketch -- replace with your model list and column specs</span></span>
+<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a><span class="co"># reg &lt;- sfr_model_registry(conn)</span></span>
+<span id="cb25-3"><a href="#cb25-3" tabindex="-1"></a><span class="co"># sfr_log_many_model(reg, models = list(m1 = fit1, m2 = fit2), ...)</span></span>
+<span id="cb25-4"><a href="#cb25-4" tabindex="-1"></a><span class="co"># sfr_deploy_many_model(reg, ...)</span></span></code></pre></div>
+</div>
 
 
 

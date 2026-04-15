@@ -30,7 +30,8 @@ A list with \code{stage}, \code{compute_pool}, and \code{image_repo} names
 \description{
 Creates the internal stage (if it doesn't exist) and validates that
 the compute pool and image repository are available. Call this once
-before using \code{registerDoSnowflake(mode = "tasks")}.
+before using \code{registerDoSnowflake(mode = "tasks")} or
+\code{registerDoSnowflake(mode = "queue")} with SPCS workers.
 }
 \examples{
 \dontrun{

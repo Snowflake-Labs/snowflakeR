@@ -1,0 +1,83 @@
+---
+title: "Experiment Tracking"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Experiment Tracking}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+`snowflakeR` exposes **ML experiment tracking** on Snowflake (runs, parameters,
+metrics, artifacts, and logged models) through a small R API on top of the
+`snowflake-ml-python` SDK. Experiment tracking requires a recent
+**`snowflake-ml-python`** build (see `?sfr_experiment` for the minimum version
+enforced in your session).
+
+For **model versioning and deployment**, continue to use the Model Registry
+(`vignette("model-registry")`). Experiments complement the registry by capturing
+training exploration and **tidymodels `tune`** grids.
+
+## Basic workflow
+
+```r
+library(snowflakeR)
+
+conn <- sfr_connect()
+exp <- sfr_experiment(conn, name = "MY_EXPERIMENT")
+
+sfr_start_run(exp, name = "run-001")
+
+sfr_exp_log_params(exp, alpha = 0.1, max_depth = 6L)
+sfr_exp_log_metric(exp, "rmse", 0.42, step = 1L)
+
+# Optional: log a model or artifact path
+# sfr_exp_log_model(exp, ...)
+# sfr_exp_log_artifact(exp, "/path/to/file", "plots/curve.png")
+
+sfr_end_run(exp)
+```
+
+## Listing and downloading artifacts
+
+```r
+sfr_exp_list_artifacts(exp, run_name = "run-001")
+sfr_exp_download_artifact(exp, run_name = "run-001",
+                          artifact_path = "plots/curve.png",
+                          target_path   = "curve.png")
+```
+
+## Integration with tidymodels `tune`
+
+Use **`sfr_experiment_from_tune()`** to attach an experiment to a tuning
+workflow, and **`sfr_experiment_log_best()`** to record the best result after
+`tune::fit_resamples()` or `last_fit()`. See the function help pages for the
+exact signatures expected by your `tune` version.
+
+```r
+# Pseudocode -- adapt to your workflow and resampling object
+# exp <- sfr_experiment(conn, "MY_EXPERIMENT")
+# sfr_experiment_from_tune(exp, <tune_workflow_or_last_fit>)
+# ... fit / tune ...
+# sfr_experiment_log_best(exp, <results>)
+```
+
+## Cleanup
+
+```r
+sfr_delete_run(exp, run_name = "run-001")
+sfr_delete_experiment(exp, name = "MY_EXPERIMENT")
+```
+
+## See also
+
+- `?sfr_experiment`, `?sfr_start_run`, `?sfr_end_run`
+- `?sfr_exp_log_param`, `?sfr_exp_log_metric`, `?sfr_exp_log_model`
+- `?sfr_experiment_from_tune`, `?sfr_experiment_log_best`

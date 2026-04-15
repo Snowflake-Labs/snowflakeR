@@ -9,11 +9,13 @@ Maintainer: Simon Field <simon.field@snowflake.com>
 Description: Provides native R functions for working with the Snowflake ML
     platform, including Model Registry (log, deploy, and serve R models),
     Feature Store (create and manage feature views using dplyr/dbplyr or SQL),
-    and REST inference to SPCS model serving endpoints. Uses 'reticulate' to
-    bridge to the 'snowflake-ml-python' SDK for ML operations. Standard
-    database connectivity (DBI, dbplyr) is provided by the 'RSnowflake'
-    package. Supports both Snowflake Workspace Notebooks and local R
-    environments.
+    experiment tracking, model monitoring, and REST inference to SPCS model
+    serving endpoints. Includes optional parallel and distributed R workflows
+    ('foreach' via doSnowflake, SPCS job execution, and 'crew' integration).
+    Uses 'reticulate' to bridge to the 'snowflake-ml-python' SDK for ML
+    operations. Standard database connectivity (DBI, dbplyr) is provided by
+    the 'RSnowflake' package. Supports both Snowflake Workspace Notebooks and
+    local R environments.
 License: Apache License 2.0 | file LICENSE
 URL: https://github.com/Snowflake-Labs/snowflakeR
 BugReports: https://github.com/Snowflake-Labs/snowflakeR/issues

@@ -21,6 +21,11 @@ Interactive Jupyter notebooks demonstrating the `snowflakeR` package.
 | `workspace_parallel_spcs_setup.ipynb` | Workspace | Parallel SPCS lab: synthetic data + monitoring shells (`SFLAB_EP_DEMO`) |
 | `workspace_parallel_spcs_demo.ipynb` | Workspace | Parallel SPCS lab: driver (tasks/queue/registry — extend as needed) |
 | `workspace_parallel_spcs_monitor.ipynb` | Workspace | Parallel SPCS lab: SQL-only monitoring in a **second tab** while the driver runs |
+| `workspace_dosnowflake.ipynb` | Workspace | doSnowflake: `foreach` backends and setup |
+| `workspace_model_monitoring.ipynb` | Workspace | Model monitoring: drift, performance, statistics, segments |
+| `workspace_model_consumption.ipynb` | Workspace | Consume Python models from R (`sfr_predict_sql`) |
+| `workspace_marketing_setup.ipynb` | Workspace | Marketing demo: setup |
+| `workspace_marketing_demo.ipynb` | Workspace | Marketing demo: walkthrough |
 
 ### Supporting Files
 

@@ -19,6 +19,7 @@ R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datas
 | **Datasets** | Versioned, immutable snapshots of query results for reproducible ML |
 | **Admin** | Manage compute pools, image repos, and external access integrations |
 | **REST Inference** | Pure-R prediction against SPCS service endpoints via `sfr_predict_rest()` |
+| **Parallel / SPCS R** | `foreach` via `registerDoSnowflake()` (local, Tasks, Hybrid Table queue); stage scripts with `sfr_run_executor()`; optional `crew` + `mirai` workers via `crew_controller_spcs()` |
 | **Workspace Notebooks** | First-class support for Snowflake Workspace Notebooks with zero-config auth and `%%R` magic cells |
 
 Under the hood, `snowflakeR` uses [`reticulate`](https://rstudio.github.io/reticulate/) to bridge to the [`snowflake-ml-python`](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index) SDK while exposing a native R API with `snake_case` naming, S3 classes, and `cli` messaging. The same code runs identically in local R sessions and Snowflake Workspace Notebooks.
@@ -146,8 +147,17 @@ open `workspace_quickstart.ipynb`. For **local** environments, open
 | `workspace_model_monitoring.ipynb` | Model Monitoring: drift, performance, statistics, segments |
 | `workspace_feature_store.ipynb` | Feature Store: entities, views, training data (Workspace) |
 | `local_feature_store.ipynb` | Feature Store for local environments |
+| `workspace_forecasting_demo.ipynb` | Time series (ARIMA) with custom `predict` logic (Workspace) |
+| `local_forecasting_demo.ipynb` | Forecasting demo for local environments |
+| `workspace_credit_risk_setup.ipynb` / `workspace_credit_risk_demo.ipynb` | Credit risk: data prep, training, registry (Workspace) |
+| `workspace_parallel_spcs_setup.ipynb` | Parallel SPCS lab: synthetic data and setup (`snowflaker_parallel_spcs_config.yaml`) |
+| `workspace_parallel_spcs_demo.ipynb` | Parallel SPCS lab: driver (tasks / queue patterns) |
+| `workspace_parallel_spcs_monitor.ipynb` | Parallel SPCS lab: SQL monitoring while the driver runs |
+| `workspace_dosnowflake.ipynb` | doSnowflake walkthrough (Workspace) |
 | `sfnb_setup.py` | All-in-one bootstrap: EAI, R runtime, packages, context (Workspace) |
-| `snowflaker_config.yaml` | Per-notebook config: context, EAI, packages |
+| `snowflaker_*.yaml` | Per-notebook configs (see `inst/notebooks/README.md` for the full list) |
+| `PARALLEL_SPCS_DEMO.md` | Design notes for the parallel SPCS lab |
+| `streamlit_parallel_demo_monitor.py` | Optional Streamlit monitor for the parallel lab |
 
 For Workspace Notebooks, the first cell runs `setup_notebook()` which
 handles EAI validation, R installation, package installation, and session
@@ -163,6 +173,9 @@ context automatically. No separate config copy step is needed -- edit the
 | `vignette("model-registry")` | Training, logging, deploying, and serving R models |
 | `vignette("feature-store")` | Entities, feature views, training data, inference |
 | `vignette("workspace-notebooks")` | Full guide for Snowflake Workspace Notebooks |
+| `vignette("parallel-dosnowflake")` | Parallel `foreach`, SPCS executor, `crew` / `mirai` workers |
+| `vignette("experiments")` | Experiment runs, params, metrics, artifacts, `tune` hooks |
+| `vignette("model-monitoring")` | Drift, performance, and statistics for deployed models |
 
 ## Requirements
 

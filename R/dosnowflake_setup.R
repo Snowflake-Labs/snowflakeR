@@ -8,7 +8,8 @@
 #'
 #' Creates the internal stage (if it doesn't exist) and validates that
 #' the compute pool and image repository are available. Call this once
-#' before using `registerDoSnowflake(mode = "tasks")`.
+#' before using `registerDoSnowflake(mode = "tasks")` or
+#' `registerDoSnowflake(mode = "queue")` with SPCS workers.
 #'
 #' @param conn An `sfr_connection` object from [sfr_connect()].
 #' @param stage Character. Name of the internal stage to create
