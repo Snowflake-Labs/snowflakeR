@@ -57,11 +57,15 @@
     image_uri    = opts$image_uri
   )
 
-  # 3. Poll task graph for completion
+  # 3. Poll task graph for completion (use chunk child status — root can flip
+  #    SUCCEEDED before SPCS jobs finish and write result_*.rds to stage)
   cli::cli_inform("Task graph deployed. Polling for completion...")
-  .poll_task_graph(bridge, conn, dag_name,
-                   timeout_min = opts$timeout_min,
-                   poll_sec = opts$poll_sec)
+  .poll_task_graph(
+    bridge, conn, dag_name,
+    timeout_min = opts$timeout_min,
+    poll_sec = opts$poll_sec,
+    n_chunks = as.integer(job$n_chunks)
+  )
 
   # 4. Collect results from stage
   cli::cli_inform("Collecting results from stage...")
@@ -164,17 +168,104 @@
 # Task graph polling
 # =============================================================================
 
+#' Normalize child-status payload from sfr_tasks_bridge (Python -> R)
+#' @noRd
+.task_dag_child_counts <- function(bridge, conn, dag_name) {
+  st <- tryCatch(
+    bridge$get_dag_child_status(session = conn$session, dag_name = dag_name),
+    error = function(e) NULL
+  )
+  if (is.null(st)) {
+    return(list(succeeded = 0L, failed = 0L, total = 0L, chunks = list()))
+  }
+  counts <- st[["counts"]]
+  if (is.null(counts)) {
+    counts <- st$counts
+  }
+  if (inherits(counts, "python.builtin.dict")) {
+    counts <- reticulate::py_to_r(counts)
+  }
+  chunks <- st[["chunks"]]
+  if (is.null(chunks)) {
+    chunks <- st$chunks
+  }
+  if (inherits(chunks, "python.builtin.list")) {
+    chunks <- reticulate::py_to_r(chunks)
+  }
+  list(
+    succeeded = as.integer(counts$succeeded %||% 0L),
+    failed = as.integer(counts$failed %||% 0L),
+    total = as.integer(counts$total %||% 0L),
+    chunks = if (is.list(chunks)) chunks else list()
+  )
+}
+
+
+#' Abort with per-chunk error lines when any child FAILED
+#' @noRd
+.cli_abort_task_children <- function(cc, dag_name) {
+  lines <- character()
+  for (ch in cc$chunks) {
+    if (!is.list(ch)) {
+      next
+    }
+    st <- ch[["state"]]
+    if (is.null(st)) {
+      st <- ch[["STATE"]]
+    }
+    if (is.null(st)) {
+      st <- ch$state
+    }
+    if (!identical(as.character(st), "FAILED")) {
+      next
+    }
+    nm <- ch[["name"]]
+    if (is.null(nm)) {
+      nm <- ch[["NAME"]]
+    }
+    if (is.null(nm)) {
+      nm <- ch$name
+    }
+    err <- ch[["error"]]
+    if (is.null(err)) {
+      err <- ch[["ERROR_MESSAGE"]]
+    }
+    if (is.null(err)) {
+      err <- ch$error
+    }
+    lines <- c(lines, paste0(as.character(nm), ": ", as.character(err %||% "")))
+  }
+  if (length(lines) == 0L) {
+    lines <- "(no per-chunk error text returned)"
+  }
+  cli::cli_abort(c(
+    "doSnowflake: one or more chunk tasks FAILED.",
+    "i" = "DAG: {.val {dag_name}}",
+    "x" = paste(lines, collapse = "\n")
+  ))
+}
+
+
 #' Poll a Task graph until it completes or times out
+#'
+#' When `n_chunks` is set, completion requires that many **child** tasks in
+#' `TASK_HISTORY(ROOT_TASK_NAME => dag_name)` to be `SUCCEEDED`. Relying only
+#' on the root row can return `SUCCEEDED` before SPCS workers finish, which
+#' then makes stage `GET` fail with 253006 (no `result_*.rds` yet).
+#'
 #' @param bridge The sfr_tasks_bridge Python module.
 #' @param conn sfr_connection.
 #' @param dag_name Character. Name of the root task.
 #' @param timeout_min Numeric. Maximum minutes to wait.
 #' @param poll_sec Numeric. Seconds between polls.
+#' @param n_chunks Integer or NULL. When non-NULL, poll child chunk tasks.
 #' @noRd
 .poll_task_graph <- function(bridge, conn, dag_name,
-                             timeout_min = 30, poll_sec = 5) {
+                             timeout_min = 30, poll_sec = 5,
+                             n_chunks = NULL) {
   deadline <- Sys.time() + timeout_min * 60
-  last_state <- ""
+  last_root <- ""
+  last_child_line <- ""
 
   repeat {
     if (Sys.time() > deadline) {
@@ -186,24 +277,69 @@
     }
 
     status <- bridge$get_dag_status(session = conn$session, dag_name = dag_name)
-    state <- as.character(status$state)
+    root_state <- as.character(status$state)
 
-    if (state != last_state) {
-      cli::cli_inform("Task graph state: {.val {state}}")
-      last_state <- state
+    if (root_state != last_root) {
+      cli::cli_inform("Task graph (root) state: {.val {root_state}}")
+      last_root <- root_state
     }
 
-    if (state == "SUCCEEDED") {
-      return(invisible(TRUE))
-    }
+    if (!is.null(n_chunks) && !is.na(n_chunks) && n_chunks >= 1L) {
+      cc <- .task_dag_child_counts(bridge, conn, dag_name)
+      line <- paste0(
+        "Chunk tasks: ", cc$succeeded, "/", n_chunks, " SUCCEEDED",
+        " (total in history: ", cc$total, ", failed: ", cc$failed, ")"
+      )
+      if (line != last_child_line) {
+        cli::cli_inform(line)
+        last_child_line <- line
+      }
 
-    if (state == "FAILED") {
-      err_msg <- if (!is.null(status$error)) as.character(status$error) else "unknown error"
-      cli::cli_abort(c(
-        "doSnowflake: Task graph failed.",
-        "x" = "Error: {err_msg}",
-        "i" = "DAG: {.val {dag_name}}. Check Snowsight for per-chunk details."
-      ))
+      if (cc$failed > 0L) {
+        .cli_abort_task_children(cc, dag_name)
+      }
+
+      if (cc$succeeded >= n_chunks) {
+        return(invisible(TRUE))
+      }
+
+      if (identical(root_state, "FAILED")) {
+        err_msg <- if (!is.null(status$error)) {
+          as.character(status$error)
+        } else {
+          "unknown error"
+        }
+        cli::cli_abort(c(
+          "doSnowflake: Task graph root FAILED.",
+          "x" = "Error: {err_msg}",
+          "i" = "DAG: {.val {dag_name}}. Check Snowsight for per-chunk details."
+        ))
+      }
+
+      if (identical(root_state, "SUCCEEDED") && cc$total < 1L) {
+        cli::cli_abort(c(
+          "doSnowflake: Root task SUCCEEDED but TASK_HISTORY shows no child tasks.",
+          "i" = "DAG: {.val {dag_name}}",
+          "i" = "Verify the DAG was deployed in the current database/schema."
+        ))
+      }
+    } else {
+      if (identical(root_state, "SUCCEEDED")) {
+        return(invisible(TRUE))
+      }
+
+      if (identical(root_state, "FAILED")) {
+        err_msg <- if (!is.null(status$error)) {
+          as.character(status$error)
+        } else {
+          "unknown error"
+        }
+        cli::cli_abort(c(
+          "doSnowflake: Task graph failed.",
+          "x" = "Error: {err_msg}",
+          "i" = "DAG: {.val {dag_name}}. Check Snowsight for per-chunk details."
+        ))
+      }
     }
 
     Sys.sleep(poll_sec)

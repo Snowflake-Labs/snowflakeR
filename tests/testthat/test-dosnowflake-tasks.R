@@ -53,6 +53,8 @@ test_that(".resolve_task_options merges defaults correctly", {
   expect_equal(opts$timeout_min, 30)
   expect_equal(opts$poll_sec, 5)
   expect_equal(opts$chunks_per_job, "auto")
+  expect_equal(opts$result_sync_wait_sec, 45)
+  expect_equal(opts$result_sync_poll_sec, 3)
 })
 
 test_that(".resolve_task_options respects user overrides", {

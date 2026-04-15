@@ -121,6 +121,12 @@ MLflow-style experiment tracking on Snowflake:
   Snowflake **253006** (“file does not exist”) when stage visibility lags
   Task graph `SUCCEEDED`. Tune with `result_sync_wait_sec` and
   `result_sync_poll_sec` in `registerDoSnowflake(...)`.
+- **Tasks mode polling** now waits for **`n_chunks` child tasks** in
+  `TASK_HISTORY(ROOT_TASK_NAME => …)` to reach `SUCCEEDED`, not only the root
+  row (the root can report `SUCCEEDED` before SPCS workers finish, which led
+  to very short runtimes and missing `result_*.rds` on `GET`).
+- `GET` to a local directory now uses a **normalized `file:///…/` URI** with a
+  trailing slash on the target folder (connector expectations).
 
 ## Documentation
 

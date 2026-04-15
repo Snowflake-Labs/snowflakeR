@@ -38,7 +38,18 @@
 #' @param local_dir Character. Local directory to download into.
 #' @noRd
 .dosnowflake_stage_get <- function(conn, stage_path, local_dir) {
-  sql <- sprintf("GET '%s' 'file://%s'", stage_path, local_dir)
+  # GET target must be a directory URI with trailing slash (Snowflake / connector
+  # expectations); absolute path -> file:///path/ (three slashes after file:).
+  local_dir <- normalizePath(local_dir, winslash = "/", mustWork = TRUE)
+  if (!grepl("/$", local_dir)) {
+    local_dir <- paste0(local_dir, "/")
+  }
+  file_uri <- if (startsWith(local_dir, "/")) {
+    paste0("file://", local_dir)
+  } else {
+    paste0("file:///", local_dir)
+  }
+  sql <- sprintf("GET '%s' '%s'", stage_path, file_uri)
   sfr_execute(conn, sql)
 }
 
