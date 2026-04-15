@@ -40,6 +40,12 @@ parallel_lab:
   queue_table: DOSNOWFLAKE_QUEUE
   # Reuse benchmark SALES_DATA instead of creating SERIES_EVENTS in setup.
   create_synthetic_series_table: false
+  # Demo driver (tasks + queue cells): same scale as test_dosnowflake_tasks_benchmark.py
+  # (2000 SKUs, 10 chunks / 10 workers — warm pool, a few minutes on MR_PRICE_POOL).
+  demo_forecast_n_skus: 2000
+  demo_tasks_chunks_per_job: 10
+  demo_queue_n_workers: 10
+  demo_queue_chunks_per_job: 10
 
 env_name: "workspace_env"
 

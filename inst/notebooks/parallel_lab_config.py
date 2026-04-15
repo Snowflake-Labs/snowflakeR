@@ -73,6 +73,11 @@ def load_parallel_lab_dict(config_path: str | None = None) -> dict[str, Any]:
         "queue_table": "DOSNOWFLAKE_QUEUE",
         # When false, setup notebook skips SERIES_EVENTS (use existing SOURCE_DATA, e.g. SALES_DATA).
         "create_synthetic_series_table": True,
+        # Demo notebook: forecast foreach scale (see test_dosnowflake_tasks_benchmark.py).
+        "demo_forecast_n_skus": 2000,
+        "demo_tasks_chunks_per_job": 10,
+        "demo_queue_n_workers": 10,
+        "demo_queue_chunks_per_job": 10,
     }
 
     lab = {**defaults, **{k: v for k, v in lab_in.items() if k != "schemas"}}
@@ -134,6 +139,18 @@ def apply_parallel_lab_environment(cfg: dict[str, Any] | None = None) -> dict[st
     os.environ[f"{_ENV_PREFIX}CONFIG_PATH"] = str(cfg.get("_config_path", ""))
     os.environ[f"{_ENV_PREFIX}CREATE_SYNTHETIC_SERIES"] = (
         "1" if cfg.get("create_synthetic_series_table", True) else "0"
+    )
+    os.environ[f"{_ENV_PREFIX}DEMO_FORECAST_N_SKUS"] = str(
+        int(cfg.get("demo_forecast_n_skus", 2000))
+    )
+    os.environ[f"{_ENV_PREFIX}DEMO_TASKS_CHUNKS_PER_JOB"] = str(
+        int(cfg.get("demo_tasks_chunks_per_job", 10))
+    )
+    os.environ[f"{_ENV_PREFIX}DEMO_QUEUE_N_WORKERS"] = str(
+        int(cfg.get("demo_queue_n_workers", 10))
+    )
+    os.environ[f"{_ENV_PREFIX}DEMO_QUEUE_CHUNKS_PER_JOB"] = str(
+        int(cfg.get("demo_queue_chunks_per_job", 10))
     )
     return cfg
 

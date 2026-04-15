@@ -449,15 +449,59 @@ system.file("notebooks", package = "snowflakeR")
 | `workspace_quickstart.ipynb` | Workspace | Connection, config, queries, ggplot2 |
 | `local_quickstart.ipynb` | Local (RStudio, Jupyter) | Same content, native R kernel |
 | `workspace_model_registry.ipynb` | Workspace | Model Registry: log, deploy, serve R models |
+| `workspace_model_consumption.ipynb` | Workspace | Consume Python models from R (`sfr_predict_sql`) |
+| `workspace_model_monitoring.ipynb` | Workspace | Model monitoring: drift, performance, segments |
 | `workspace_feature_store.ipynb` | Workspace | Feature Store: entities, views, training data |
 | `workspace_forecasting_demo.ipynb` | Workspace | Time series forecasting with forecast + ggplot2 |
+| `workspace_credit_risk_setup.ipynb` | Workspace | Credit risk demo: data preparation and setup |
+| `workspace_credit_risk_demo.ipynb` | Workspace | Credit risk demo: training and registry |
+| `workspace_parallel_spcs_setup.ipynb` | Workspace | Parallel SPCS lab: synthetic data and setup |
+| `workspace_parallel_spcs_demo.ipynb` | Workspace | Parallel SPCS lab: driver (tasks / queue patterns) |
+| `workspace_parallel_spcs_monitor.ipynb` | Workspace | Parallel SPCS lab: SQL monitoring in a second tab |
+| `workspace_dosnowflake.ipynb` | Workspace | doSnowflake: `foreach` backends and infrastructure |
+| `workspace_marketing_setup.ipynb` | Workspace | Marketing demo: setup |
+| `workspace_marketing_demo.ipynb` | Workspace | Marketing demo: walkthrough |
 | `local_model_registry.ipynb` | Local | Model Registry for local R environments |
 | `local_feature_store.ipynb` | Local | Feature Store for local R environments |
 | `local_forecasting_demo.ipynb` | Local | Forecasting demo for local R environments |
 
+Supporting files in the same directory include per-notebook `snowflaker_*.yaml`
+configs (for example `snowflaker_parallel_spcs_config.yaml` for the parallel
+lab), `sfnb_setup.py`, `PARALLEL_SPCS_DEMO.md`, `parallel_lab_config.py`, and
+optional `streamlit_parallel_demo_monitor.py`. See `README.md` in that folder
+for the authoritative list.
+
 Workspace notebooks use `setup_notebook()` for context and EAI, and
 `sfr_fqn()` for fully qualified table names. Upload the entire folder to
 your Workspace or copy to a local directory to get started.
+
+## Parallel and distributed R in Workspace
+
+SPCS-backed parallelism uses compute pools, image repositories, and (for
+queue mode) Hybrid Tables configured in your account. The shipped lab wires
+these through **`snowflaker_parallel_spcs_config.yaml`** and shared Python
+helpers (`parallel_lab_config.py`).
+
+**Suggested order:**
+
+1. **`workspace_parallel_spcs_setup.ipynb`** -- creates or validates lab
+   objects and session context.
+2. **`workspace_parallel_spcs_demo.ipynb`** -- driver notebook: run
+   `registerDoSnowflake()` in `tasks` or `queue` mode (adapt paths and pool
+   names to your environment).
+3. **`workspace_parallel_spcs_monitor.ipynb`** (optional) -- open in a
+   **second tab** to run SQL-only monitoring while the demo notebook runs.
+
+Read **`PARALLEL_SPCS_DEMO.md`** in the notebooks folder for the monitoring
+pattern and how bundled Model Registry inference fits the lab. Optionally run
+**`streamlit_parallel_demo_monitor.py`** alongside the driver; it reads the
+same YAML as the notebooks.
+
+For a shorter walkthrough focused on **`foreach`** and setup helpers only, use
+**`workspace_dosnowflake.ipynb`**.
+
+Conceptual overview and function-level references:
+`vignette("parallel-dosnowflake")`.
 
 ## Troubleshooting
 

@@ -817,6 +817,16 @@ package:</p>
 <td>Model Registry: log, deploy, serve R models</td>
 </tr>
 <tr class="even">
+<td><code>workspace_model_consumption.ipynb</code></td>
+<td>Workspace</td>
+<td>Consume Python models from R (<code>sfr_predict_sql</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_model_monitoring.ipynb</code></td>
+<td>Workspace</td>
+<td>Model monitoring: drift, performance, segments</td>
+</tr>
+<tr class="even">
 <td><code>workspace_feature_store.ipynb</code></td>
 <td>Workspace</td>
 <td>Feature Store: entities, views, training data</td>
@@ -825,6 +835,46 @@ package:</p>
 <td><code>workspace_forecasting_demo.ipynb</code></td>
 <td>Workspace</td>
 <td>Time series forecasting with forecast + ggplot2</td>
+</tr>
+<tr class="even">
+<td><code>workspace_credit_risk_setup.ipynb</code></td>
+<td>Workspace</td>
+<td>Credit risk demo: data preparation and setup</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_credit_risk_demo.ipynb</code></td>
+<td>Workspace</td>
+<td>Credit risk demo: training and registry</td>
+</tr>
+<tr class="even">
+<td><code>workspace_parallel_spcs_setup.ipynb</code></td>
+<td>Workspace</td>
+<td>Parallel SPCS lab: synthetic data and setup</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_parallel_spcs_demo.ipynb</code></td>
+<td>Workspace</td>
+<td>Parallel SPCS lab: driver (tasks / queue patterns)</td>
+</tr>
+<tr class="even">
+<td><code>workspace_parallel_spcs_monitor.ipynb</code></td>
+<td>Workspace</td>
+<td>Parallel SPCS lab: SQL monitoring in a second tab</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_dosnowflake.ipynb</code></td>
+<td>Workspace</td>
+<td>doSnowflake: <code>foreach</code> backends and infrastructure</td>
+</tr>
+<tr class="even">
+<td><code>workspace_marketing_setup.ipynb</code></td>
+<td>Workspace</td>
+<td>Marketing demo: setup</td>
+</tr>
+<tr class="odd">
+<td><code>workspace_marketing_demo.ipynb</code></td>
+<td>Workspace</td>
+<td>Marketing demo: walkthrough</td>
 </tr>
 <tr class="even">
 <td><code>local_model_registry.ipynb</code></td>
@@ -843,10 +893,47 @@ package:</p>
 </tr>
 </tbody>
 </table>
+<p>Supporting files in the same directory include per-notebook
+<code>snowflaker_*.yaml</code> configs (for example
+<code>snowflaker_parallel_spcs_config.yaml</code> for the parallel lab),
+<code>sfnb_setup.py</code>, <code>PARALLEL_SPCS_DEMO.md</code>,
+<code>parallel_lab_config.py</code>, and optional
+<code>streamlit_parallel_demo_monitor.py</code>. See
+<code>README.md</code> in that folder for the authoritative list.</p>
 <p>Workspace notebooks use <code>setup_notebook()</code> for context and
 EAI, and <code>sfr_fqn()</code> for fully qualified table names. Upload
 the entire folder to your Workspace or copy to a local directory to get
 started.</p>
+</div>
+<div id="parallel-and-distributed-r-in-workspace" class="section level2">
+<h2>Parallel and distributed R in Workspace</h2>
+<p>SPCS-backed parallelism uses compute pools, image repositories, and
+(for queue mode) Hybrid Tables configured in your account. The shipped
+lab wires these through
+<strong><code>snowflaker_parallel_spcs_config.yaml</code></strong> and
+shared Python helpers (<code>parallel_lab_config.py</code>).</p>
+<p><strong>Suggested order:</strong></p>
+<ol style="list-style-type: decimal">
+<li><strong><code>workspace_parallel_spcs_setup.ipynb</code></strong> –
+creates or validates lab objects and session context.</li>
+<li><strong><code>workspace_parallel_spcs_demo.ipynb</code></strong> –
+driver notebook: run <code>registerDoSnowflake()</code> in
+<code>tasks</code> or <code>queue</code> mode (adapt paths and pool
+names to your environment).</li>
+<li><strong><code>workspace_parallel_spcs_monitor.ipynb</code></strong>
+(optional) – open in a <strong>second tab</strong> to run SQL-only
+monitoring while the demo notebook runs.</li>
+</ol>
+<p>Read <strong><code>PARALLEL_SPCS_DEMO.md</code></strong> in the
+notebooks folder for the monitoring pattern and how bundled Model
+Registry inference fits the lab. Optionally run
+<strong><code>streamlit_parallel_demo_monitor.py</code></strong>
+alongside the driver; it reads the same YAML as the notebooks.</p>
+<p>For a shorter walkthrough focused on
+<strong><code>foreach</code></strong> and setup helpers only, use
+<strong><code>workspace_dosnowflake.ipynb</code></strong>.</p>
+<p>Conceptual overview and function-level references:
+<code>vignette(&quot;parallel-dosnowflake&quot;)</code>.</p>
 </div>
 <div id="troubleshooting" class="section level2">
 <h2>Troubleshooting</h2>

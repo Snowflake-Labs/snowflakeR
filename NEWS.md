@@ -121,6 +121,9 @@ MLflow-style experiment tracking on Snowflake:
 - New vignettes: `parallel-dosnowflake`, `experiments`, `model-monitoring`;
   many-model section in `model-registry`; expanded README module and notebook
   tables; `registerDoSnowflake()` details aligned with implemented modes.
+- `vignette("workspace-notebooks")`: extended interactive notebook index;
+  new section on parallel / SPCS labs (`workspace_parallel_spcs_*.ipynb`,
+  `workspace_dosnowflake.ipynb`, `PARALLEL_SPCS_DEMO.md`).
 - Regenerated NAMESPACE and man/ pages for all new exports.
 - Extended Feature Store and Model Registry vignettes with new sections
   covering online serving, aggregation, introspection, slicing, Iceberg,
