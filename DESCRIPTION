@@ -41,6 +41,9 @@ Collate:
     'experiments.R'
     'rest_inference.R'
     'workspace.R'
+    'crew_spcs.R'
+    'executor.R'
+    'r_executor.R'
     'zzz.R'
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
