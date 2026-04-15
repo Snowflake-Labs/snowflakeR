@@ -1,0 +1,75 @@
+# =============================================================================
+# snowflakeR -- Embarrassingly parallel SPCS demo (Workspace)
+# =============================================================================
+# R + forecast + foreach/iterators for doSnowflake (tasks + queue modes).
+# Companion notebooks: workspace_parallel_spcs_setup.ipynb,
+# workspace_parallel_spcs_demo.ipynb, workspace_parallel_spcs_monitor.ipynb
+#
+# Usage:
+#   from sfnb_setup import setup_notebook
+#   setup_notebook(
+#       config="snowflaker_parallel_spcs_config.yaml",
+#       packages=["snowflakeR", "RSnowflake"]
+#   )
+#
+# Runtime identifiers for the parallel lab (all three notebooks + Streamlit)
+# live under `parallel_lab` below.
+#
+# **Current dev default:** reuse the existing MR Price Snowflake database, warehouse,
+# compute pool, stage, and queue objects that internal doSnowflake benchmarks already
+# exercise (swap to SFLAB_* / generic names before publishing customer-safe repos).
+# =============================================================================
+
+context:
+  warehouse: MR_PRICE_WH
+  database: MR_PRICE_DB
+  schema: SOURCE_DATA
+
+# Single source for workspace_parallel_spcs_* notebooks + streamlit_parallel_demo_monitor.py
+parallel_lab:
+  database: MR_PRICE_DB
+  schemas:
+    source_data: SOURCE_DATA
+    config: CONFIG
+    models: MODELS
+  warehouse: MR_PRICE_WH
+  compute_pool: MR_PRICE_POOL
+  # Same worker image path as internal/doSnowflake/tests/test_dosnowflake_tasks_benchmark.py
+  image_uri: "/mr_price_db/config/mr_price_images/dosnowflake-worker:latest"
+  dosnowflake_stage_name: DOSNOWFLAKE_STAGE
+  queue_table: DOSNOWFLAKE_QUEUE
+  # Reuse benchmark SALES_DATA instead of creating SERIES_EVENTS in setup.
+  create_synthetic_series_table: false
+
+env_name: "workspace_env"
+
+languages:
+  r:
+    enabled: true
+    r_version: "4.5.2"
+    conda_packages:
+      - r-cli
+      - r-rlang>=1.0.0
+      - r-reticulate>=1.25
+      - r-tidyverse
+      - r-dbplyr
+      - r-httr2>=1.0.0
+      - r-lazyeval
+      - r-dbi>=1.2.0
+      - r-jsonlite
+      - r-forecast>=8.0
+      - r-foreach
+      - r-iterators
+    cran_packages: []
+    addons:
+      adbc: false
+      duckdb: false
+    tarballs:
+      snowflakeR: "https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+      RSnowflake: "https://github.com/Snowflake-Labs/RSnowflake/releases/download/v0.2.0/RSnowflake_0.2.0.tar.gz"
+
+  scala:
+    enabled: false
+
+  julia:
+    enabled: false

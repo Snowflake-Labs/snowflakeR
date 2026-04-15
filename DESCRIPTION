@@ -1,6 +1,6 @@
 Package: snowflakeR
 Title: R Interface to the Snowflake ML Platform
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(
     person("Simon", "Field", email = "simon.field@snowflake.com", role = c("aut", "cre")),
     person("Snowflake Inc.", role = "cph"))

@@ -18,6 +18,9 @@ Interactive Jupyter notebooks demonstrating the `snowflakeR` package.
 | `local_forecasting_demo.ipynb` | Local | Forecasting demo for local environments |
 | `workspace_credit_risk_setup.ipynb` | Workspace | Credit risk demo: data preparation and setup |
 | `workspace_credit_risk_demo.ipynb` | Workspace | Credit risk demo: model training and registry |
+| `workspace_parallel_spcs_setup.ipynb` | Workspace | Parallel SPCS lab: synthetic data + monitoring shells (`SFLAB_EP_DEMO`) |
+| `workspace_parallel_spcs_demo.ipynb` | Workspace | Parallel SPCS lab: driver (tasks/queue/registry — extend as needed) |
+| `workspace_parallel_spcs_monitor.ipynb` | Workspace | Parallel SPCS lab: SQL-only monitoring in a **second tab** while the driver runs |
 
 ### Supporting Files
 
@@ -28,6 +31,10 @@ Interactive Jupyter notebooks demonstrating the `snowflakeR` package.
 | `snowflaker_forecast_config.yaml` | Per-notebook config for forecasting demo |
 | `snowflaker_feature_store_config.yaml` | Per-notebook config for feature store demo |
 | `snowflaker_credit_risk_config.yaml` | Per-notebook config for credit risk demo |
+| `snowflaker_parallel_spcs_config.yaml` | Parallel SPCS / doSnowflake / forecast lab |
+| `PARALLEL_SPCS_DEMO.md` | Design notes: monitoring pattern, bundled Registry inference |
+| `parallel_lab_config.py` | Loads `parallel_lab` from `snowflaker_parallel_spcs_config.yaml` (shared by 3 notebooks + Streamlit) |
+| `streamlit_parallel_demo_monitor.py` | Streamlit monitor (FQNs from the same YAML as the notebooks) |
 
 ## Quick Start
 
