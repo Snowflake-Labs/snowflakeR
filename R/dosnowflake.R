@@ -74,6 +74,10 @@ stopDoSnowflake <- function() {
 #'   * `timeout_min` -- max minutes to wait for completion (default 30).
 #'   * `poll_sec` -- seconds between status polls (default 5).
 #'   * `chunks_per_job` -- number of SPCS jobs to create (default `"auto"`).
+#'   * `result_sync_wait_sec` -- max seconds to poll `LIST` on the stage
+#'     before `GET`ing chunk results (default `45`). SPCS volume writes can
+#'     lag behind Task graph `SUCCEEDED`; increase if you see error 253006.
+#'   * `result_sync_poll_sec` -- seconds between `LIST` polls (default `3`).
 #'
 #'   For `mode = "queue"`:
 #'   * `compute_pool` (required for ephemeral) -- name of the SPCS compute pool.
@@ -93,6 +97,8 @@ stopDoSnowflake <- function() {
 #'   * `instance_family` -- character. SPCS instance family for resource
 #'     sizing (default `"CPU_X64_S"`). Resources are auto-sized:
 #'     XS=1c/4G, S=3c/12G, M=6c/24G, L=12c/48G, XL=24c/96G.
+#'   * `result_sync_wait_sec`, `result_sync_poll_sec` -- same as for
+#'     `mode = "tasks"` (stage result collection after workers finish).
 #'
 #' @details
 #' **Local** (default): iterations run on a cached `parallel::makeCluster()`

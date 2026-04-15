@@ -36,6 +36,10 @@ For \code{mode = "tasks"}:
 \item \code{timeout_min} -- max minutes to wait for completion (default 30).
 \item \code{poll_sec} -- seconds between status polls (default 5).
 \item \code{chunks_per_job} -- number of SPCS jobs to create (default \code{"auto"}).
+\item \code{result_sync_wait_sec} -- max seconds to poll \code{LIST} on the stage
+before \code{GET}ing chunk results (default \code{45}). SPCS volume writes can
+lag behind Task graph \code{SUCCEEDED}; increase if you see error 253006.
+\item \code{result_sync_poll_sec} -- seconds between \code{LIST} polls (default \code{3}).
 }
 
 For \code{mode = "queue"}:
@@ -57,6 +61,8 @@ lets early workers start immediately.
 \item \code{instance_family} -- character. SPCS instance family for resource
 sizing (default \code{"CPU_X64_S"}). Resources are auto-sized:
 XS=1c/4G, S=3c/12G, M=6c/24G, L=12c/48G, XL=24c/96G.
+\item \code{result_sync_wait_sec}, \code{result_sync_poll_sec} -- same as for
+\code{mode = "tasks"} (stage result collection after workers finish).
 }}
 }
 \value{

@@ -65,8 +65,13 @@
 
   # 4. Collect results from stage
   cli::cli_inform("Collecting results from stage...")
-  raw_results <- .collect_results_from_stage(conn, job$stage_path,
-                                             job$n_chunks)
+  raw_results <- .collect_results_from_stage(
+    conn,
+    job$stage_path,
+    job$n_chunks,
+    sync_wait_sec = opts$result_sync_wait_sec,
+    sync_poll_sec = opts$result_sync_poll_sec
+  )
 
   for (i in seq_along(raw_results)) {
     accumulator(list(raw_results[[i]]), i)
@@ -148,7 +153,9 @@
     stage          = user_opts$stage %||% "DOSNOWFLAKE_STAGE",
     timeout_min    = as.numeric(user_opts$timeout_min %||% 30),
     poll_sec       = as.numeric(user_opts$poll_sec %||% 5),
-    chunks_per_job = user_opts$chunks_per_job %||% "auto"
+    chunks_per_job = user_opts$chunks_per_job %||% "auto",
+    result_sync_wait_sec = as.numeric(user_opts$result_sync_wait_sec %||% 45),
+    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3)
   )
 }
 

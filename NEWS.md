@@ -114,6 +114,14 @@ MLflow-style experiment tracking on Snowflake:
 - `sfr_add_monitor_segment()` / `sfr_drop_monitor_segment()`: Added
   missing `segment` parameter in the Python bridge call.
 
+## doSnowflake
+
+- Tasks and queue modes poll `LIST` on the job `results/` prefix before
+  downloading chunk `.rds` files (defaults: 45s max wait, 3s poll), reducing
+  Snowflake **253006** (“file does not exist”) when stage visibility lags
+  Task graph `SUCCEEDED`. Tune with `result_sync_wait_sec` and
+  `result_sync_poll_sec` in `registerDoSnowflake(...)`.
+
 ## Documentation
 
 - `DESCRIPTION` **Version** set to **0.2.0** (was 0.1.0), matching this

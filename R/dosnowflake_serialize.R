@@ -144,6 +144,72 @@
 # Result collection
 # =============================================================================
 
+#' Count result_*.rds files visible under a job results prefix (via LIST)
+#' @noRd
+.n_stage_result_rds_files <- function(conn, result_prefix) {
+  prefix <- gsub("/+$", "", result_prefix)
+  path_for_list <- paste0(prefix, "/")
+  sql <- sprintf("LIST '%s'", path_for_list)
+  rows <- tryCatch(
+    sfr_query(conn, sql, .keep_case = FALSE),
+    error = function(e) {
+      cli::cli_warn("LIST stage results failed: {conditionMessage(e)}")
+      data.frame()
+    }
+  )
+  if (NROW(rows) == 0L) {
+    return(0L)
+  }
+  nm_col <- if ("name" %in% names(rows)) {
+    "name"
+  } else if ("NAME" %in% names(rows)) {
+    "NAME"
+  } else {
+    names(rows)[1L]
+  }
+  nm <- rows[[nm_col]]
+  base <- basename(as.character(nm))
+  as.integer(sum(grepl("^result_[0-9]+\\.rds$", base)))
+}
+
+
+#' Wait until LIST shows enough result files (SPCS volume / stage propagation)
+#'
+#' Internal benchmarks sleep here: worker output may not be visible to
+#' GET immediately after the Task graph reports SUCCEEDED.
+#' @noRd
+.wait_for_stage_result_rds <- function(conn, stage_path, n_chunks,
+                                       max_wait_sec, poll_sec) {
+  result_prefix <- paste0(gsub("/+$", "", stage_path), "/results")
+  t0 <- Sys.time()
+  last_n <- -1L
+  repeat {
+    n <- .n_stage_result_rds_files(conn, result_prefix)
+    if (n != last_n) {
+      cli::cli_inform(
+        "Result files visible on stage (LIST): {n}/{n_chunks}"
+      )
+      last_n <- n
+    }
+    if (n >= n_chunks) {
+      return(invisible(TRUE))
+    }
+    if (as.numeric(difftime(Sys.time(), t0, units = "secs")) > max_wait_sec) {
+      cli::cli_warn(c(
+        "!" = paste0(
+          "Only ", n, "/", n_chunks,
+          " result file(s) visible after ",
+          max_wait_sec, "s (LIST). GET may still fail."
+        ),
+        "i" = "Increase {.arg result_sync_wait_sec} in {.fn registerDoSnowflake} if needed."
+      ))
+      return(invisible(FALSE))
+    }
+    Sys.sleep(poll_sec)
+  }
+}
+
+
 #' Collect results from stage after worker completion
 #'
 #' Downloads result .rds files from the stage, deserializes them, and
@@ -152,9 +218,22 @@
 #' @param conn sfr_connection.
 #' @param stage_path Character. Base stage path for the job.
 #' @param n_chunks Integer. Number of chunks to collect.
+#' @param sync_wait_sec Max seconds to poll LIST before GET (stage propagation).
+#' @param sync_poll_sec Seconds between LIST polls.
 #' @returns A list of results, one per original iteration, in order.
 #' @noRd
-.collect_results_from_stage <- function(conn, stage_path, n_chunks) {
+.collect_results_from_stage <- function(conn, stage_path, n_chunks,
+                                         sync_wait_sec = 45,
+                                         sync_poll_sec = 3) {
+  cli::cli_inform(
+    "Waiting for result files on stage (LIST, up to {sync_wait_sec}s)..."
+  )
+  .wait_for_stage_result_rds(
+    conn, stage_path, n_chunks,
+    max_wait_sec = sync_wait_sec,
+    poll_sec = sync_poll_sec
+  )
+
   tmp_dir <- tempfile(pattern = "dosnowflake_results_")
   dir.create(tmp_dir, recursive = TRUE)
   on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)

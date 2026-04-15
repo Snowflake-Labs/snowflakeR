@@ -128,8 +128,13 @@
 
   # 6. Collect results from stage
   cli::cli_inform("Collecting results from stage...")
-  raw_results <- .collect_results_from_stage(conn, job$stage_path,
-                                             job$n_chunks)
+  raw_results <- .collect_results_from_stage(
+    conn,
+    job$stage_path,
+    job$n_chunks,
+    sync_wait_sec = opts$result_sync_wait_sec,
+    sync_poll_sec = opts$result_sync_poll_sec
+  )
 
   for (i in seq_along(raw_results)) {
     accumulator(list(raw_results[[i]]), i)
@@ -227,7 +232,9 @@
     pre_warm          = isTRUE(user_opts$pre_warm),
     service_name      = user_opts$service_name %||% NULL,
     instance_family   = user_opts$instance_family %||% "CPU_X64_S",
-    warehouse         = user_opts$warehouse %||% ""
+    warehouse         = user_opts$warehouse %||% "",
+    result_sync_wait_sec = as.numeric(user_opts$result_sync_wait_sec %||% 45),
+    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3)
   )
 }
 
