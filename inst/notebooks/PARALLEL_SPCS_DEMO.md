@@ -29,6 +29,15 @@ Call this out in the demo notebook introduction.
 
 2. **Second notebook** — `workspace_parallel_spcs_monitor.ipynb` contains only **setup + SQL/R query cells** (no long-running `%dopar%`). Keep it open in another Workspace tab; run “Refresh” cells while the driver notebook is busy. Same SQL as Streamlit, for users who prefer Worksheets-style monitoring.
 
+### RStudio / Positron alternative
+
+For customer environments where RStudio/VSCode is preferred, use:
+
+- `parallel_spcs_workflow.R` (setup + tasks/queue execution helpers)
+- `run_parallel_spcs_workflow.R` (CLI wrapper for `Rscript`)
+- `parallel_spcs_demo_rstudio.R` (idiomatic R entrypoints)
+- `parallel_spcs_monitor_r.R` (dbplyr data pulls + ggplot monitoring charts)
+
 **Not recommended:** trying to overlap execution in one kernel without a separate process (adds complexity and is fragile in Workspace).
 
 ## Batch inference: SKU bundles in the partition UDTF vs stage-write

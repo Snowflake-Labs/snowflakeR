@@ -70,6 +70,11 @@ stopDoSnowflake <- function() {
 #'   For `mode = "tasks"`:
 #'   * `compute_pool` (required) -- name of the SPCS compute pool.
 #'   * `image_uri` (required) -- worker Docker image URI in image repo.
+#'   * `warehouse` -- optional Snowflake warehouse for the Task DAG root task.
+#'     When omitted, Snowflake may create a **serverless** task graph, which
+#'     requires the `EXECUTE MANAGED TASK` account privilege on the session role.
+#'     Set this (for example to the same warehouse as your lab `context`) so the
+#'     graph is **user-managed** and runs without that privilege.
 #'   * `stage` -- stage name (default `"DOSNOWFLAKE_STAGE"`).
 #'   * `timeout_min` -- max minutes to wait for completion (default 30).
 #'   * `poll_sec` -- seconds between status polls (default 5).

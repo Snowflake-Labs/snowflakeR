@@ -54,7 +54,8 @@
     n_chunks     = as.integer(job$n_chunks),
     stage_path   = job$stage_path,
     compute_pool = opts$compute_pool,
-    image_uri    = opts$image_uri
+    image_uri    = opts$image_uri,
+    warehouse    = opts$warehouse
   )
 
   # 3. Poll task graph for completion (use chunk child status — root can flip
@@ -151,9 +152,17 @@
     ))
   }
 
+  wh <- user_opts$warehouse
+  if (is.null(wh) || !length(wh) || !nzchar(as.character(wh)[[1L]])) {
+    warehouse <- NULL
+  } else {
+    warehouse <- as.character(wh)[[1L]]
+  }
+
   list(
     compute_pool   = compute_pool,
     image_uri      = image_uri,
+    warehouse      = warehouse,
     stage          = user_opts$stage %||% "DOSNOWFLAKE_STAGE",
     timeout_min    = as.numeric(user_opts$timeout_min %||% 30),
     poll_sec       = as.numeric(user_opts$poll_sec %||% 5),
@@ -173,10 +182,16 @@
 .task_dag_child_counts <- function(bridge, conn, dag_name) {
   st <- tryCatch(
     bridge$get_dag_child_status(session = conn$session, dag_name = dag_name),
-    error = function(e) NULL
+    error = function(e) structure(list(.error = e), class = "task_child_status_error")
   )
-  if (is.null(st)) {
-    return(list(succeeded = 0L, failed = 0L, total = 0L, chunks = list()))
+  if (inherits(st, "task_child_status_error")) {
+    return(list(
+      succeeded = 0L,
+      failed = 0L,
+      total = 0L,
+      chunks = list(),
+      unavailable = TRUE
+    ))
   }
   counts <- st[["counts"]]
   if (is.null(counts)) {
@@ -196,7 +211,8 @@
     succeeded = as.integer(counts$succeeded %||% 0L),
     failed = as.integer(counts$failed %||% 0L),
     total = as.integer(counts$total %||% 0L),
-    chunks = if (is.list(chunks)) chunks else list()
+    chunks = if (is.list(chunks)) chunks else list(),
+    unavailable = FALSE
   )
 }
 
@@ -264,8 +280,10 @@
                              timeout_min = 30, poll_sec = 5,
                              n_chunks = NULL) {
   deadline <- Sys.time() + timeout_min * 60
+  history_grace_sec <- 90
   last_root <- ""
   last_child_line <- ""
+  root_succeeded_nochild_since <- NULL
 
   repeat {
     if (Sys.time() > deadline) {
@@ -295,6 +313,18 @@
         last_child_line <- line
       }
 
+      if (isTRUE(cc$unavailable)) {
+        if (identical(root_state, "SUCCEEDED")) {
+          cli::cli_warn(c(
+            "Child TASK_HISTORY is unavailable in this account/session.",
+            "i" = "Falling back to root-task completion and stage result synchronization."
+          ))
+          return(invisible(TRUE))
+        }
+        Sys.sleep(poll_sec)
+        next
+      }
+
       if (cc$failed > 0L) {
         .cli_abort_task_children(cc, dag_name)
       }
@@ -317,11 +347,27 @@
       }
 
       if (identical(root_state, "SUCCEEDED") && cc$total < 1L) {
-        cli::cli_abort(c(
-          "doSnowflake: Root task SUCCEEDED but TASK_HISTORY shows no child tasks.",
-          "i" = "DAG: {.val {dag_name}}",
-          "i" = "Verify the DAG was deployed in the current database/schema."
-        ))
+        if (is.null(root_succeeded_nochild_since)) {
+          root_succeeded_nochild_since <- Sys.time()
+          cli::cli_inform(c(
+            "Root task is SUCCEEDED but child TASK_HISTORY is still empty.",
+            "i" = "Waiting up to {history_grace_sec}s for history visibility..."
+          ))
+        }
+
+        if (as.numeric(difftime(
+          Sys.time(),
+          root_succeeded_nochild_since,
+          units = "secs"
+        )) > history_grace_sec) {
+          cli::cli_abort(c(
+            "doSnowflake: Root task SUCCEEDED but TASK_HISTORY still shows no child tasks.",
+            "i" = "DAG: {.val {dag_name}}",
+            "i" = "Verify the DAG was deployed in the current database/schema."
+          ))
+        }
+      } else {
+        root_succeeded_nochild_since <- NULL
       }
     } else {
       if (identical(root_state, "SUCCEEDED")) {

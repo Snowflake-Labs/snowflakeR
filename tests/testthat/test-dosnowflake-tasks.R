@@ -55,6 +55,7 @@ test_that(".resolve_task_options merges defaults correctly", {
   expect_equal(opts$chunks_per_job, "auto")
   expect_equal(opts$result_sync_wait_sec, 45)
   expect_equal(opts$result_sync_poll_sec, 3)
+  expect_null(opts$warehouse)
 })
 
 test_that(".resolve_task_options respects user overrides", {
@@ -64,7 +65,8 @@ test_that(".resolve_task_options respects user overrides", {
     stage          = "CUSTOM_STAGE",
     timeout_min    = 60,
     poll_sec       = 10,
-    chunks_per_job = 4L
+    chunks_per_job = 4L,
+    warehouse      = "DEMO_WH"
   ))
   opts <- snowflakeR:::.resolve_task_options(data)
 
@@ -72,6 +74,7 @@ test_that(".resolve_task_options respects user overrides", {
   expect_equal(opts$timeout_min, 60)
   expect_equal(opts$poll_sec, 10)
   expect_equal(opts$chunks_per_job, 4L)
+  expect_equal(opts$warehouse, "DEMO_WH")
 })
 
 # ---------------------------------------------------------------------------
@@ -96,7 +99,7 @@ test_that(".generate_job_id returns unique values", {
 test_that("registerDoSnowflake with tasks mode sets correct backend name", {
   conn <- mock_conn()
   suppressMessages(
-    registerDoSnowflake(conn, mode = "tasks",
+    snowflakeR::registerDoSnowflake(conn, mode = "tasks",
                         compute_pool = "POOL",
                         image_uri = "/db/schema/repo/img:latest")
   )
@@ -106,7 +109,7 @@ test_that("registerDoSnowflake with tasks mode sets correct backend name", {
 test_that("registerDoSnowflake with tasks mode accepts all options", {
   conn <- mock_conn()
   expect_message(
-    registerDoSnowflake(conn, mode = "tasks",
+    snowflakeR::registerDoSnowflake(conn, mode = "tasks",
                         compute_pool = "POOL",
                         image_uri = "/db/schema/repo/img:latest",
                         stage = "MY_STAGE",

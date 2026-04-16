@@ -7,9 +7,7 @@ that orchestrate SPCS job services for parallel R foreach execution.
 Called from R via reticulate.
 """
 
-import json
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 def create_and_run_dag(
@@ -41,7 +39,6 @@ def create_and_run_dag(
         Dict with dag_name and status.
     """
     from snowflake.core import Root
-    from snowflake.core.task import Cron
     from snowflake.core.task.dagv1 import DAG, DAGOperation, DAGTask
 
     root = Root(session)
@@ -112,8 +109,12 @@ def get_dag_status(session, dag_name: str) -> Dict[str, Any]:
     return {
         "state": str(row["STATE"]),
         "error": str(row["ERROR_MESSAGE"]) if row["ERROR_MESSAGE"] else None,
-        "scheduled_time": str(row["SCHEDULED_TIME"]) if row["SCHEDULED_TIME"] else None,
-        "completed_time": str(row["COMPLETED_TIME"]) if row["COMPLETED_TIME"] else None,
+        "scheduled_time": (
+            str(row["SCHEDULED_TIME"]) if row["SCHEDULED_TIME"] else None
+        ),
+        "completed_time": (
+            str(row["COMPLETED_TIME"]) if row["COMPLETED_TIME"] else None
+        ),
     }
 
 
@@ -129,20 +130,64 @@ def get_dag_child_status(session, dag_name: str) -> Dict[str, Any]:
     Returns:
         Dict with total, completed, failed, running counts and per-chunk details.
     """
-    result = (
-        session.sql(
-            f"""
-        SELECT NAME, STATE, ERROR_MESSAGE, COMPLETED_TIME
-        FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(
-            ROOT_TASK_NAME => '{dag_name}',
-            RESULT_LIMIT => 100
-        ))
-        WHERE NAME != '{dag_name}'
-        ORDER BY NAME
-    """
+    try:
+        result = (
+            session.sql(
+                f"""
+            SELECT NAME, STATE, ERROR_MESSAGE, COMPLETED_TIME
+            FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(
+                ROOT_TASK_NAME => '{dag_name}',
+                RESULT_LIMIT => 100
+            ))
+            WHERE NAME != '{dag_name}'
+            ORDER BY NAME
+        """
+            )
+            .collect()
         )
-        .collect()
-    )
+    except Exception:
+        # Compatibility fallback for accounts where
+        # TASK_HISTORY(ROOT_TASK_NAME => ...) is not supported.
+        # Enumerate child task names, then query TASK_HISTORY per child task.
+        tasks = (
+            session.sql(
+                f"""
+            SHOW TASKS LIKE '{dag_name}%'
+        """
+            )
+            .collect()
+        )
+        child_names = [
+            str(row["name"])
+            for row in tasks
+            if str(row["name"]) != dag_name
+        ]
+        result = []
+        for child_name in sorted(child_names):
+            hist = (
+                session.sql(
+                    f"""
+                SELECT NAME, STATE, ERROR_MESSAGE, COMPLETED_TIME
+                FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(
+                    TASK_NAME => '{child_name}',
+                    RESULT_LIMIT => 1
+                ))
+            """
+                )
+                .collect()
+            )
+            if len(hist) > 0:
+                result.append(hist[0])
+            else:
+                # No run history yet: synthesize a scheduled placeholder.
+                result.append(
+                    {
+                        "NAME": child_name,
+                        "STATE": "SCHEDULED",
+                        "ERROR_MESSAGE": None,
+                        "COMPLETED_TIME": None,
+                    }
+                )
 
     chunks = []
     counts = {"total": 0, "succeeded": 0, "failed": 0, "running": 0, "scheduled": 0}
@@ -153,7 +198,9 @@ def get_dag_child_status(session, dag_name: str) -> Dict[str, Any]:
             {
                 "name": str(row["NAME"]),
                 "state": state,
-                "error": str(row["ERROR_MESSAGE"]) if row["ERROR_MESSAGE"] else None,
+                "error": (
+                    str(row["ERROR_MESSAGE"]) if row["ERROR_MESSAGE"] else None
+                ),
             }
         )
         counts["total"] += 1

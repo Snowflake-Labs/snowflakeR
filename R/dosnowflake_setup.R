@@ -131,9 +131,13 @@ sfr_dosnowflake_build_image <- function(conn,
   validate_connection(conn)
   variant <- match.arg(variant)
 
-  # Resolve image repository URL
+  # Resolve image repository URL (IN ACCOUNT: current database/schema may not
+  # be CONFIG, so LIKE alone can return no rows and NA repository_url).
   repo_info <- tryCatch(
-    sfr_query(conn, sprintf("SHOW IMAGE REPOSITORIES LIKE '%s'", image_repo)),
+    sfr_query(conn, sprintf(
+      "SHOW IMAGE REPOSITORIES LIKE '%s' IN ACCOUNT",
+      image_repo
+    )),
     error = function(e) {
       cli::cli_abort(c(
         "Cannot find image repository {.val {image_repo}}.",
@@ -181,12 +185,17 @@ sfr_dosnowflake_build_image <- function(conn,
     }
   }
 
-  # Docker build + push
+  # Docker build + push (-f must be absolute: Docker resolves it vs client cwd,
+  # not the build context directory.)
+  dockerfile_in_context <- file.path(build_dir, paste0("Dockerfile.", variant))
+  dockerfile_in_context <- normalizePath(dockerfile_in_context, winslash = "/",
+                                         mustWork = TRUE)
+  build_dir <- normalizePath(build_dir, winslash = "/", mustWork = TRUE)
   cli::cli_inform("Building Docker image {.val {full_uri}} (variant = {.val {variant}})...")
   build_cmd <- sprintf(
     "docker build -t %s -f %s %s",
     shQuote(full_uri),
-    shQuote(paste0("Dockerfile.", variant)),
+    shQuote(dockerfile_in_context),
     shQuote(build_dir)
   )
   build_result <- system(build_cmd, intern = FALSE)
@@ -211,11 +220,16 @@ sfr_dosnowflake_build_image <- function(conn,
 #' @noRd
 .find_docker_context <- function() {
   # Check relative to workspace (development) or installed package
+  wd_ctx <- file.path(getwd(), "internal", "doSnowflake", "docker")
+  pkg_root <- system.file(package = "snowflakeR")
   candidates <- c(
     system.file("docker", package = "snowflakeR"),
-    file.path(system.file(package = "snowflakeR"), "..", "..", "..",
-              "internal", "doSnowflake", "docker")
+    # Monorepo dev layout: package at <repo>/snowflakeR
+    file.path(pkg_root, "..", "internal", "doSnowflake", "docker")
   )
+  if (dir.exists(wd_ctx)) {
+    candidates <- c(normalizePath(wd_ctx, winslash = "/", mustWork = FALSE), candidates)
+  }
 
   for (path in candidates) {
     if (nzchar(path) && dir.exists(path)) return(path)

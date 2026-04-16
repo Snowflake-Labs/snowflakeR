@@ -36,10 +36,15 @@ class ParallelLabNames:
     warehouse: str
     compute_pool: str
     image_uri: str
+    # When False, skip MR_PRICE substring guard (internal diagnostics only).
+    clean_room: bool = True
 
     @classmethod
     def from_cfg(cls, cfg: dict) -> "ParallelLabNames":
         sch = cfg["schemas"]
+        cr = cfg.get("clean_room", True)
+        if not isinstance(cr, bool):
+            cr = bool(cr)
         return cls(
             database=str(cfg["database"]),
             source_schema=str(sch["source_data"]),
@@ -52,6 +57,7 @@ class ParallelLabNames:
             warehouse=str(cfg.get("warehouse") or ""),
             compute_pool=str(cfg.get("compute_pool") or ""),
             image_uri=str(cfg.get("image_uri") or ""),
+            clean_room=cr,
         )
 
     def contains_forbidden_refs(
@@ -77,12 +83,13 @@ class ParallelLabNames:
         return hits
 
     def validate_clean_room(self) -> None:
-        hits = self.contains_forbidden_refs()
-        if hits:
-            joined = ", ".join(sorted(set(hits)))
-            raise ValueError(
-                f"Config still contains forbidden identifiers: {joined}"
-            )
+        if self.clean_room:
+            hits = self.contains_forbidden_refs()
+            if hits:
+                joined = ", ".join(sorted(set(hits)))
+                raise ValueError(
+                    f"Config still contains forbidden identifiers: {joined}"
+                )
         if not self.image_uri:
             raise ValueError(
                 "parallel_lab.image_uri is required for tasks/queue demos"

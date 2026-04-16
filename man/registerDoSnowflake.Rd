@@ -32,6 +32,11 @@ For \code{mode = "tasks"}:
 \itemize{
 \item \code{compute_pool} (required) -- name of the SPCS compute pool.
 \item \code{image_uri} (required) -- worker Docker image URI in image repo.
+\item \code{warehouse} -- optional Snowflake warehouse for the Task DAG root task.
+When omitted, Snowflake may create a \strong{serverless} task graph, which
+requires the \verb{EXECUTE MANAGED TASK} account privilege on the session role.
+Set this (for example to the same warehouse as your lab \code{context}) so the
+graph is \strong{user-managed} and runs without that privilege.
 \item \code{stage} -- stage name (default \code{"DOSNOWFLAKE_STAGE"}).
 \item \code{timeout_min} -- max minutes to wait for completion (default 30).
 \item \code{poll_sec} -- seconds between status polls (default 5).
