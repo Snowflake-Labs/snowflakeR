@@ -20,27 +20,26 @@
 # =============================================================================
 
 context:
-  warehouse: MR_PRICE_WH
-  database: MR_PRICE_DB
+  warehouse: DEMO_WH
+  database: DEMO_DB
   schema: SOURCE_DATA
 
 # Single source for workspace_parallel_spcs_* notebooks + streamlit_parallel_demo_monitor.py
 # Customise database / warehouse / image_uri for your account.
 parallel_lab:
-  clean_room: false
-  database: MR_PRICE_DB
+  database: DEMO_DB
   schemas:
     source_data: SOURCE_DATA
     config: CONFIG
     models: MODELS
-  warehouse: MR_PRICE_WH
+  warehouse: DEMO_WH
   # Workspace accounts: use the account CPU pool (avoids dedicated-pool node
   # limits). Grant the notebook role USAGE/MONITOR/OPERATE on this pool.
-  # Override to a dedicated pool (e.g. SFLAB_EP_POOL) if your account does not
-  # expose SYSTEM_COMPUTE_POOL_CPU.
+  # Override to a dedicated pool if your account does not expose
+  # SYSTEM_COMPUTE_POOL_CPU.
   compute_pool: SYSTEM_COMPUTE_POOL_CPU
   # Image repository path for doSnowflake worker image (tasks/queue modes).
-  image_uri: "/mr_price_db/config/mr_price_images/dosnowflake-worker:latest"
+  image_uri: "/demo_db/config/demo_images/dosnowflake-worker:latest"
   dosnowflake_stage_name: DOSNOWFLAKE_STAGE
   queue_table: DOSNOWFLAKE_QUEUE
   # Create deterministic synthetic data by default (no external table dependency).

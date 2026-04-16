@@ -2,8 +2,8 @@
 % Please edit documentation in R/snowflakeR-package.R
 \docType{package}
 \name{snowflakeR-package}
+\alias{snowflakeR}
 \alias{snowflakeR-package}
-\alias{_PACKAGE}
 \title{snowflakeR: R Interface to the Snowflake ML Platform}
 \description{
 Provides native R functions for working with the Snowflake ML platform, including Model Registry (log, deploy, and serve R models), Feature Store (create and manage feature views using dplyr/dbplyr or SQL), experiment tracking, model monitoring, and REST inference to SPCS model serving endpoints. Includes optional parallel and distributed R workflows ('foreach' via doSnowflake, SPCS job execution, and 'crew' integration). Uses 'reticulate' to bridge to the 'snowflake-ml-python' SDK for ML operations. Standard database connectivity (DBI, dbplyr) is provided by the 'RSnowflake' package. Supports both Snowflake Workspace Notebooks and local R environments.

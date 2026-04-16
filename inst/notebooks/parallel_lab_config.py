@@ -78,7 +78,7 @@ def load_parallel_lab_dict(config_path: str | None = None) -> dict[str, Any]:
         "demo_tasks_chunks_per_job": 10,
         "demo_queue_n_workers": 10,
         "demo_queue_chunks_per_job": 10,
-        # When false, skip MR_PRICE substring guard in validate (internal diagnostics).
+        # When false, skip customer-name substring guard in validate (internal diagnostics).
         "clean_room": True,
     }
 

@@ -57,7 +57,7 @@ Registration is O(1) regardless of partition count: ~13 seconds for
 \examples{
 \dontrun{
 conn <- sfr_connect()
-reg  <- sfr_registry(conn, database = "MR_PRICE_DB", schema = "MODELS")
+reg  <- sfr_registry(conn, database = "DEMO_DB", schema = "MODELS")
 index <- sfr_build_model_index(conn, run_id = "v2_S_2000sku_4c")
 
 result <- sfr_log_many_model(

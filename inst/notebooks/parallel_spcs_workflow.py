@@ -36,7 +36,7 @@ class ParallelLabNames:
     warehouse: str
     compute_pool: str
     image_uri: str
-    # When False, skip MR_PRICE substring guard (internal diagnostics only).
+    # When False, skip customer-name substring guard (internal diagnostics only).
     clean_room: bool = True
 
     @classmethod
@@ -61,7 +61,7 @@ class ParallelLabNames:
         )
 
     def contains_forbidden_refs(
-        self, forbidden: Iterable[str] = ("MR_PRICE",)
+        self, forbidden: Iterable[str] = ()
     ) -> list[str]:
         all_values = [
             self.database,
@@ -82,9 +82,9 @@ class ParallelLabNames:
                 hits.append(needle)
         return hits
 
-    def validate_clean_room(self) -> None:
+    def validate_clean_room(self, forbidden: Iterable[str] | None = None) -> None:
         if self.clean_room:
-            hits = self.contains_forbidden_refs()
+            hits = self.contains_forbidden_refs(forbidden) if forbidden else self.contains_forbidden_refs()
             if hits:
                 joined = ", ".join(sorted(set(hits)))
                 raise ValueError(

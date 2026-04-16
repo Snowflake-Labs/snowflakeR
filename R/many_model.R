@@ -18,10 +18,10 @@
 #'
 #' @param conn An `sfr_connection` object.
 #' @param view_fqn Fully-qualified view name, e.g.
-#'   `"MR_PRICE_DB.MODELS.MODEL_INDEX"`.
+#'   `"DEMO_DB.MODELS.MODEL_INDEX"`.
 #' @param run_id Optional character. Filter to a specific training run.
 #' @param stage_prefix Stage path prefix prepended to RELATIVE_PATH.
-#'   Defaults to `"@MR_PRICE_DB.MODELS.MODELS_STAGE/"`.
+#'   Defaults to `"@DEMO_DB.MODELS.MODELS_STAGE/"`.
 #'
 #' @returns A named list: `list(SKU_001 = "@stage/path.rds", ...)`.
 #'
@@ -29,16 +29,16 @@
 #' \dontrun{
 #' conn <- sfr_connect()
 #' index <- sfr_build_model_index(conn,
-#'   view_fqn = "MR_PRICE_DB.MODELS.MODEL_INDEX",
+#'   view_fqn = "DEMO_DB.MODELS.MODEL_INDEX",
 #'   run_id = "v2_S_2000sku_4c"
 #' )
 #' cat("Partitions:", length(index), "\n")
 #' }
 #' @export
 sfr_build_model_index <- function(conn,
-                                  view_fqn = "MR_PRICE_DB.MODELS.MODEL_INDEX",
+                                  view_fqn = "DEMO_DB.MODELS.MODEL_INDEX",
                                   run_id = NULL,
-                                  stage_prefix = "@MR_PRICE_DB.MODELS.MODELS_STAGE/") {
+                                  stage_prefix = "@DEMO_DB.MODELS.MODELS_STAGE/") {
   session <- .get_session(conn)
   bridge <- .get_many_model_bridge()
 
@@ -90,7 +90,7 @@ sfr_build_model_index <- function(conn,
 #' @examples
 #' \dontrun{
 #' conn <- sfr_connect()
-#' reg  <- sfr_registry(conn, database = "MR_PRICE_DB", schema = "MODELS")
+#' reg  <- sfr_registry(conn, database = "DEMO_DB", schema = "MODELS")
 #' index <- sfr_build_model_index(conn, run_id = "v2_S_2000sku_4c")
 #'
 #' result <- sfr_log_many_model(
@@ -158,7 +158,7 @@ sfr_log_many_model <- function(reg,
 #'   model_name = "R_SKU_FORECAST",
 #'   version_name = "V_2k",
 #'   service_name = "R_FORECAST_SVC",
-#'   compute_pool = "MR_PRICE_POOL"
+#'   compute_pool = "DEMO_POOL"
 #' )
 #' }
 #' @export

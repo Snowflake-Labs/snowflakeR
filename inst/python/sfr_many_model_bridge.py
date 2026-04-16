@@ -77,7 +77,7 @@ def _build_aggregator_class(partition_columns: List[str],
                     account=os.environ.get("SNOWFLAKE_ACCOUNT", ""),
                     authenticator="oauth",
                     token=token,
-                    database="MR_PRICE_DB",
+                    database="DEMO_DB",
                     schema="MODELS",
                 )
             except FileNotFoundError:
@@ -85,7 +85,7 @@ def _build_aggregator_class(partition_columns: List[str],
                     account=os.environ.get("SNOWFLAKE_ACCOUNT", ""),
                     user=os.environ.get("SNOWFLAKE_USER", ""),
                     password=os.environ.get("SNOWFLAKE_PASSWORD", ""),
-                    database="MR_PRICE_DB",
+                    database="DEMO_DB",
                     schema="MODELS",
                 )
             return self._sf_conn
@@ -298,9 +298,9 @@ def registry_log_many_model(session,
 
 
 def build_model_index_from_view(session,
-                                view_fqn: str = "MR_PRICE_DB.MODELS.MODEL_INDEX",
+                                view_fqn: str = "DEMO_DB.MODELS.MODEL_INDEX",
                                 run_id: Optional[str] = None,
-                                stage_prefix: str = "@MR_PRICE_DB.MODELS.MODELS_STAGE/"):
+                                stage_prefix: str = "@DEMO_DB.MODELS.MODELS_STAGE/"):
     """Build model index dict from MODEL_INDEX view.
 
     Returns dict: {partition_key: stage_path}

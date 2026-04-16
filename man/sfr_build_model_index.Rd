@@ -6,21 +6,21 @@
 \usage{
 sfr_build_model_index(
   conn,
-  view_fqn = "MR_PRICE_DB.MODELS.MODEL_INDEX",
+  view_fqn = "DEMO_DB.MODELS.MODEL_INDEX",
   run_id = NULL,
-  stage_prefix = "@MR_PRICE_DB.MODELS.MODELS_STAGE/"
+  stage_prefix = "@DEMO_DB.MODELS.MODELS_STAGE/"
 )
 }
 \arguments{
 \item{conn}{An \code{sfr_connection} object.}
 
 \item{view_fqn}{Fully-qualified view name, e.g.
-\code{"MR_PRICE_DB.MODELS.MODEL_INDEX"}.}
+\code{"DEMO_DB.MODELS.MODEL_INDEX"}.}
 
 \item{run_id}{Optional character. Filter to a specific training run.}
 
 \item{stage_prefix}{Stage path prefix prepended to RELATIVE_PATH.
-Defaults to \code{"@MR_PRICE_DB.MODELS.MODELS_STAGE/"}.}
+Defaults to \code{"@DEMO_DB.MODELS.MODELS_STAGE/"}.}
 }
 \value{
 A named list: \code{list(SKU_001 = "@stage/path.rds", ...)}.
@@ -34,7 +34,7 @@ to their stage paths.
 \dontrun{
 conn <- sfr_connect()
 index <- sfr_build_model_index(conn,
-  view_fqn = "MR_PRICE_DB.MODELS.MODEL_INDEX",
+  view_fqn = "DEMO_DB.MODELS.MODEL_INDEX",
   run_id = "v2_S_2000sku_4c"
 )
 cat("Partitions:", length(index), "\n")

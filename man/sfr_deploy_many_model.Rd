@@ -43,7 +43,7 @@ sfr_deploy_many_model(
   model_name = "R_SKU_FORECAST",
   version_name = "V_2k",
   service_name = "R_FORECAST_SVC",
-  compute_pool = "MR_PRICE_POOL"
+  compute_pool = "DEMO_POOL"
 )
 }
 }

@@ -81,7 +81,7 @@ parallel_lab_load_config <- function(config_path = "snowflaker_parallel_spcs_con
   out
 }
 
-parallel_lab_contains_forbidden_refs <- function(cfg, forbidden = c("MR_PRICE")) {
+parallel_lab_contains_forbidden_refs <- function(cfg, forbidden = character(0)) {
   vals <- c(
     cfg$database, cfg$warehouse, cfg$compute_pool, cfg$image_uri,
     cfg$dosnowflake_stage_name, cfg$queue_table,
@@ -124,7 +124,7 @@ parallel_lab_sql_bootstrap <- function(cfg) {
 
   # CREATE DATABASE requires account-level CREATE DATABASE (fails for restricted
   # demo roles). When clean_room is FALSE, assume the database already exists
-  # (e.g. provision_sc_mr_price_demo.py / admin DDL).
+  # (e.g. provision_sc_demo.py / admin DDL).
   db_stmt <- if (isTRUE(cfg$clean_room %||% TRUE)) {
     sprintf("CREATE DATABASE IF NOT EXISTS %s", db)
   } else {
