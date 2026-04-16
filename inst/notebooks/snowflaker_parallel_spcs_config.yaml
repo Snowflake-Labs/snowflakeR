@@ -15,33 +15,31 @@
 # Runtime identifiers for the parallel lab (all three notebooks + Streamlit)
 # live under `parallel_lab` below.
 #
-# **Current dev default:** reuse the existing MR Price Snowflake database, warehouse,
-# compute pool, stage, and queue objects that internal doSnowflake benchmarks already
-# exercise (swap to SFLAB_* / generic names before publishing customer-safe repos).
+# Generic defaults for clean-room demo runs. Override in private/internal clones
+# if you need account-specific objects for benchmarking.
 # =============================================================================
 
 context:
-  warehouse: MR_PRICE_WH
-  database: MR_PRICE_DB
+  warehouse: SFLAB_EP_WH
+  database: SFLAB_EP_DEMO
   schema: SOURCE_DATA
 
 # Single source for workspace_parallel_spcs_* notebooks + streamlit_parallel_demo_monitor.py
 parallel_lab:
-  database: MR_PRICE_DB
+  database: SFLAB_EP_DEMO
   schemas:
     source_data: SOURCE_DATA
     config: CONFIG
     models: MODELS
-  warehouse: MR_PRICE_WH
-  compute_pool: MR_PRICE_POOL
-  # Same worker image path as internal/doSnowflake/tests/test_dosnowflake_tasks_benchmark.py
-  image_uri: "/mr_price_db/config/mr_price_images/dosnowflake-worker:latest"
+  warehouse: SFLAB_EP_WH
+  compute_pool: SFLAB_EP_POOL
+  # Set this to your own image repository path before running tasks/queue jobs.
+  image_uri: "/sflab_ep_demo/config/sfr_images/dosnowflake-worker:latest"
   dosnowflake_stage_name: DOSNOWFLAKE_STAGE
   queue_table: DOSNOWFLAKE_QUEUE
-  # Reuse benchmark SALES_DATA instead of creating SERIES_EVENTS in setup.
-  create_synthetic_series_table: false
-  # Demo driver (tasks + queue cells): same scale as test_dosnowflake_tasks_benchmark.py
-  # (2000 SKUs, 10 chunks / 10 workers — warm pool, a few minutes on MR_PRICE_POOL).
+  # Create deterministic synthetic data by default (no external table dependency).
+  create_synthetic_series_table: true
+  # Demo driver defaults.
   demo_forecast_n_skus: 2000
   demo_tasks_chunks_per_job: 10
   demo_queue_n_workers: 10

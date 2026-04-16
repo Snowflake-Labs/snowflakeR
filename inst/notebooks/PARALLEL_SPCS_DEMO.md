@@ -6,7 +6,7 @@
 
 **Driver scale (optional keys under `parallel_lab`):** `demo_forecast_n_skus`, `demo_tasks_chunks_per_job`, `demo_queue_n_workers`, `demo_queue_chunks_per_job` — defaults mirror `internal/doSnowflake/tests/test_dosnowflake_tasks_benchmark.py` (2000 SKUs, 10-way parallelism).
 
-**Internal benchmarks** (`internal/doSnowflake/tests/*.py`) still use **hard-coded** Python constants — they are **not** wired to this YAML. For **velocity**, the checked-in `snowflaker_parallel_spcs_config.yaml` may temporarily point `parallel_lab` at the **same MR Price** DB / pool / image paths those tests use; before syncing to **public** repos, switch `parallel_lab` (and `context`) back to generic placeholders (`SFLAB_EP_DEMO`, etc.) and set `create_synthetic_series_table: true` if you drop `SALES_DATA`.
+**Internal benchmarks** (`internal/doSnowflake/tests/*.py`) still use **hard-coded** Python constants — they are **not** wired to this YAML. The checked-in `snowflaker_parallel_spcs_config.yaml` now defaults to a generic clean-room setup (`SFLAB_EP_*`) with `create_synthetic_series_table: true` so the demo can run without account-specific source tables.
 
 ## Workload framing
 

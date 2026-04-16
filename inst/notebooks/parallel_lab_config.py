@@ -10,8 +10,8 @@ Reads the `parallel_lab` (and optional `context`) section from
 - streamlit_parallel_demo_monitor.py
 
 Snowflake internal benchmarks under internal/doSnowflake/tests/ still use
-account-specific constants (e.g. MR_PRICE_*) in Python — they are not wired
-to this file. Public / generic demos should use only this YAML.
+account-specific constants in Python — they are not wired to this file.
+Public/generic demos should use only this YAML.
 """
 
 from __future__ import annotations
