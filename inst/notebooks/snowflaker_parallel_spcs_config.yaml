@@ -49,6 +49,11 @@ parallel_lab:
   demo_queue_n_workers: 10
   demo_queue_chunks_per_job: 10
 
+# EAI is admin-provisioned (MULTILANG_NOTEBOOK_EAI owned by ACCOUNTADMIN,
+# USAGE granted to the notebook role). Skip Phase 0 CREATE in the installer.
+network_rule:
+  apply_in_installer: false
+
 env_name: "workspace_env"
 
 languages:
