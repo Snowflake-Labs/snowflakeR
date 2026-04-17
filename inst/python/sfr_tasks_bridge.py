@@ -257,6 +257,8 @@ def _build_job_spec(
     Returns:
         YAML string for the SPCS service specification.
     """
+    stage_base = stage_path.split("/job_")[0]
+    job_subdir = "job_" + stage_path.split("/job_")[1]
     spec = f"""
 spec:
   containers:
@@ -266,6 +268,11 @@ spec:
       JOB_ID: "{job_id}"
       CHUNK_ID: "{chunk_id}"
       STAGE_PATH: "{stage_path}"
+      STAGE_MOUNT: "/data/stage"
+      JOB_SUBDIR: "{job_subdir}"
+    volumeMounts:
+    - name: stage-vol
+      mountPath: /data/stage
     resources:
       requests:
         cpu: 2
@@ -275,7 +282,7 @@ spec:
         memory: 8Gi
   volumes:
   - name: stage-vol
-    source: "{stage_path.split('/job_')[0]}"
+    source: "{stage_base}"
     uid: 1000
     gid: 1000
 """

@@ -193,7 +193,7 @@ sfr_dosnowflake_build_image <- function(conn,
   build_dir <- normalizePath(build_dir, winslash = "/", mustWork = TRUE)
   cli::cli_inform("Building Docker image {.val {full_uri}} (variant = {.val {variant}})...")
   build_cmd <- sprintf(
-    "docker build -t %s -f %s %s",
+    "docker build --platform linux/amd64 -t %s -f %s %s",
     shQuote(full_uri),
     shQuote(dockerfile_in_context),
     shQuote(build_dir)

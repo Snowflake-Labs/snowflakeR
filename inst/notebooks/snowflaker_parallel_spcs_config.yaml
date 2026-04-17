@@ -33,11 +33,10 @@ parallel_lab:
     config: CONFIG
     models: MODELS
   warehouse: DEMO_WH
-  # Workspace accounts: use the account CPU pool (avoids dedicated-pool node
-  # limits). Grant the notebook role USAGE/MONITOR/OPERATE on this pool.
-  # Override to a dedicated pool if your account does not expose
-  # SYSTEM_COMPUTE_POOL_CPU.
-  compute_pool: SYSTEM_COMPUTE_POOL_CPU
+  # Dedicated pool provisioned by provision_*_demo.py. Grant the notebook role
+  # USAGE/MONITOR/OPERATE on this pool.  Alternatively use
+  # SYSTEM_COMPUTE_POOL_CPU if your account exposes it.
+  compute_pool: DEMO_POOL
   # Image repository path for doSnowflake worker image (tasks/queue modes).
   image_uri: "/demo_db/config/demo_images/dosnowflake-worker:latest"
   dosnowflake_stage_name: DOSNOWFLAKE_STAGE
