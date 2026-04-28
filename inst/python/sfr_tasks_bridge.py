@@ -10,6 +10,20 @@ Called from R via reticulate.
 from typing import Any, Dict, Optional
 
 
+# "packed" profile: see sfr_queue_bridge.py for rationale and node specs.
+# Limits are set to the per-container share (node_cpu / containers_per_node),
+# NOT full node capacity.  Setting limits too high causes detectCores() to
+# return the limit value, which makes mclapply fork far more processes than
+# physical cores available — destroying throughput via context switching.
+INSTANCE_FAMILY_RESOURCES = {
+    "CPU_X64_XS": {"cpu": 1, "memory": "4Gi",  "cpu_lim": 1,  "mem_lim": "6Gi"},
+    "CPU_X64_S":  {"cpu": 2, "memory": "6Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
+    "CPU_X64_M":  {"cpu": 3, "memory": "12Gi", "cpu_lim": 6,  "mem_lim": "14Gi"},
+    "CPU_X64_SL": {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "27Gi"},
+    "CPU_X64_L":  {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "29Gi"},
+}
+
+
 def create_and_run_dag(
     session,
     dag_name: str,
@@ -19,6 +33,7 @@ def create_and_run_dag(
     compute_pool: str,
     image_uri: str,
     warehouse: Optional[str] = None,
+    instance_family: str = "CPU_X64_S",
 ) -> Dict[str, Any]:
     """Build a Task DAG with one SPCS job per chunk and execute it.
 
@@ -34,6 +49,7 @@ def create_and_run_dag(
         compute_pool: Name of the SPCS compute pool.
         image_uri: Full image URI (e.g. /db/schema/repo/image:tag).
         warehouse: Optional warehouse for non-serverless tasks.
+        instance_family: SPCS instance family for container resource sizing.
 
     Returns:
         Dict with dag_name and status.
@@ -55,6 +71,7 @@ def create_and_run_dag(
                 chunk_id=chunk_id,
                 stage_path=stage_path,
                 image_uri=image_uri,
+                instance_family=instance_family,
             )
             DAGTask(
                 f"chunk_{chunk_id}",
@@ -242,21 +259,33 @@ def _build_job_spec(
     chunk_id: str,
     stage_path: str,
     image_uri: str,
+    instance_family: str = "CPU_X64_S",
 ) -> str:
     """Generate a YAML service specification for a worker job container.
 
     The spec passes job metadata via environment variables that worker.R
-    reads on startup.
+    reads on startup.  Container resources are sized from *instance_family*
+    using the same lookup table as the queue bridge.
 
     Args:
         job_id: UUID for the foreach job.
         chunk_id: Zero-padded chunk identifier (e.g. "001").
         stage_path: Full stage path to the job directory.
         image_uri: Docker image URI in the Snowflake image repo.
+        instance_family: SPCS instance family for resource sizing.
 
     Returns:
         YAML string for the SPCS service specification.
     """
+    res = INSTANCE_FAMILY_RESOURCES.get(
+        instance_family.upper(),
+        INSTANCE_FAMILY_RESOURCES["CPU_X64_S"],
+    )
+    cpu_req = res["cpu"]
+    mem_req = res["memory"]
+    cpu_lim = res["cpu_lim"]
+    mem_lim = res["mem_lim"]
+
     stage_base = stage_path.split("/job_")[0]
     job_subdir = "job_" + stage_path.split("/job_")[1]
     spec = f"""
@@ -275,11 +304,11 @@ spec:
       mountPath: /data/stage
     resources:
       requests:
-        cpu: 2
-        memory: 4Gi
+        cpu: {cpu_req}
+        memory: {mem_req}
       limits:
-        cpu: 4
-        memory: 8Gi
+        cpu: {cpu_lim}
+        memory: {mem_lim}
   volumes:
   - name: stage-vol
     source: "{stage_base}"

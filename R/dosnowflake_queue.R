@@ -234,7 +234,11 @@
     instance_family   = user_opts$instance_family %||% "CPU_X64_S",
     warehouse         = user_opts$warehouse %||% "",
     result_sync_wait_sec = as.numeric(user_opts$result_sync_wait_sec %||% 45),
-    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3)
+    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3),
+    data_query           = user_opts$data_query,
+    save_models          = isTRUE(user_opts$save_models),
+    model_key_arg        = user_opts$model_key_arg,
+    model_run_id         = user_opts$model_run_id
   )
 }
 

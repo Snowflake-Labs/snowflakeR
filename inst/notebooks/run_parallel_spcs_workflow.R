@@ -22,6 +22,9 @@ parse_args <- function(argv) {
     package_path = "snowflakeR",
     connection_name = NULL,
     private_key_file = NULL,
+    run_id = NULL,
+    forecast_h = NULL,
+    version_name = NULL,
     help = FALSE
   )
 
@@ -84,6 +87,21 @@ parse_args <- function(argv) {
       i <- i + 2L
       next
     }
+    if (identical(a, "--run-id")) {
+      out$run_id <- argv[[i + 1L]]
+      i <- i + 2L
+      next
+    }
+    if (identical(a, "--forecast-h")) {
+      out$forecast_h <- as.integer(argv[[i + 1L]])
+      i <- i + 2L
+      next
+    }
+    if (identical(a, "--version")) {
+      out$version_name <- argv[[i + 1L]]
+      i <- i + 2L
+      next
+    }
 
     stop(sprintf("Unknown argument: %s", a), call. = FALSE)
   }
@@ -99,12 +117,15 @@ print_help <- function() {
     "  Rscript run_parallel_spcs_workflow.R [options]\n",
     "\n",
     "Options:\n",
-    "  --mode <bootstrap_sql|setup|tasks|queue>\n",
+    "  --mode <bootstrap_sql|setup|tasks|queue|benchmark|register|inference>\n",
     "  --config <path>                      YAML config path\n",
     "  --create-series <true|false>         setup only (default: true)\n",
     "  --n-units <int>                      synthetic units (default: 120)\n",
     "  --n-days <int>                       synthetic days (default: 365)\n",
     "  --run                                execute tasks/queue demo\n",
+    "  --run-id <id>                        model run ID (for register/inference)\n",
+    "  --forecast-h <int>                   forecast horizon for inference\n",
+    "  --version <name>                     version name for register mode\n",
     "  --load-local                         load snowflakeR from local source via pkgload\n",
     "  --package-path <path>                local package path (default: snowflakeR)\n",
     "  --connection-name <name>             sfr_connect(name=...)\n",
@@ -138,8 +159,10 @@ source(file.path(script_dir, "parallel_spcs_workflow.R"))
 cfg <- parallel_lab_load_config(opts$config)
 parallel_lab_validate_clean_room(
   cfg,
-  require_runtime = opts$mode %in% c("setup", "tasks", "queue")
+  require_runtime = opts$mode %in% c("setup", "tasks", "queue", "benchmark")
 )
+
+`%||%` <- function(x, y) if (is.null(x) || (is.character(x) && !nzchar(x))) y else x
 
 if (identical(opts$mode, "bootstrap_sql")) {
   sql <- parallel_lab_sql_bootstrap(cfg)
@@ -189,6 +212,39 @@ if (identical(opts$mode, "tasks")) {
 
 if (identical(opts$mode, "queue")) {
   parallel_lab_run_queue_demo(conn, cfg, run = isTRUE(opts$run))
+  quit(status = 0L)
+}
+
+if (identical(opts$mode, "benchmark")) {
+  parallel_lab_run_benchmark(conn, cfg, run = isTRUE(opts$run))
+  quit(status = 0L)
+}
+
+if (identical(opts$mode, "register")) {
+  run_id <- opts$run_id
+  if (is.null(run_id) || !nzchar(run_id)) {
+    stop("--run-id is required for register mode", call. = FALSE)
+  }
+  parallel_lab_register_models(
+    conn, cfg,
+    model_run_id = run_id,
+    version_name = opts$version_name %||% run_id,
+    forecast_h   = as.integer(opts$forecast_h %||% 12L)
+  )
+  quit(status = 0L)
+}
+
+if (identical(opts$mode, "inference")) {
+  run_id <- opts$run_id
+  if (is.null(run_id) || !nzchar(run_id)) {
+    stop("--run-id is required for inference mode", call. = FALSE)
+  }
+  parallel_lab_run_inference(
+    conn, cfg,
+    model_run_id = run_id,
+    version_name = opts$version_name %||% run_id,
+    forecast_h   = as.integer(opts$forecast_h %||% 12L)
+  )
   quit(status = 0L)
 }
 

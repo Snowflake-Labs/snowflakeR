@@ -29,7 +29,9 @@ import pandas as pd
 
 def _build_aggregator_class(partition_columns: List[str],
                             r_packages: List[str],
-                            horizon: int = 12):
+                            horizon: int = 12,
+                            database: str = "DEMO_DB",
+                            schema: str = "MODELS"):
     """Build a CustomModel subclass for many-model R forecast aggregator.
 
     Uses @partitioned_api for run_batch distribution and
@@ -40,6 +42,8 @@ def _build_aggregator_class(partition_columns: List[str],
     pcols = list(partition_columns)
     pkgs = list(r_packages)
     h = horizon
+    _db = database
+    _sc = schema
 
     class RManyModelAggregator(custom_model.CustomModel):
 
@@ -77,16 +81,16 @@ def _build_aggregator_class(partition_columns: List[str],
                     account=os.environ.get("SNOWFLAKE_ACCOUNT", ""),
                     authenticator="oauth",
                     token=token,
-                    database="DEMO_DB",
-                    schema="MODELS",
+                    database=_db,
+                    schema=_sc,
                 )
             except FileNotFoundError:
                 self._sf_conn = snowflake.connector.connect(
                     account=os.environ.get("SNOWFLAKE_ACCOUNT", ""),
                     user=os.environ.get("SNOWFLAKE_USER", ""),
                     password=os.environ.get("SNOWFLAKE_PASSWORD", ""),
-                    database="DEMO_DB",
-                    schema="MODELS",
+                    database=_db,
+                    schema=_sc,
                 )
             return self._sf_conn
 
@@ -220,6 +224,8 @@ def registry_log_many_model(session,
         partition_columns=partition_columns,
         r_packages=r_packages,
         horizon=horizon,
+        database=database_name or "DEMO_DB",
+        schema=schema_name or "MODELS",
     )
 
     index_dir = tempfile.mkdtemp(prefix="sfr_mm_")

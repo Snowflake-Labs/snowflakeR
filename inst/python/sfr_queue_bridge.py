@@ -9,7 +9,6 @@ Called from R via reticulate.
 """
 
 import time
-import uuid
 from typing import Any, Dict, List, Optional
 
 
@@ -35,6 +34,8 @@ def create_queue_table(session, fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE") -> bool:
             STATUS       VARCHAR DEFAULT 'PENDING',
             WORKER_ID    VARCHAR,
             CLAIMED_AT   TIMESTAMP_NTZ,
+            LEASE_UNTIL  TIMESTAMP_NTZ,
+            ATTEMPTS     NUMBER DEFAULT 0,
             COMPLETED_AT TIMESTAMP_NTZ,
             ERROR_MSG    VARCHAR,
             STAGE_PATH   VARCHAR NOT NULL,
@@ -92,55 +93,97 @@ def claim_work(
     job_id: str,
     worker_id: str,
     queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
+    lease_minutes: int = 10,
 ) -> Optional[Dict[str, str]]:
-    """Attempt to claim one PENDING chunk from the queue.
+    """Claim one PENDING (or expired-lease RUNNING) chunk via compare-and-swap.
 
-    Uses UPDATE ... WHERE STATUS='PENDING' LIMIT 1 for atomic claiming
-    on Hybrid Tables. Returns the claimed row or None if queue is empty.
+    Two-step CAS prevents silent race losses that caused stuck PENDING chunks:
+      1. SELECT a candidate row (PENDING or expired LEASE_UNTIL)
+      2. UPDATE with WHERE re-checking claimability
+      3. Check rows_affected: 0 means race lost -> return "RETRY"
 
     Args:
         session: Snowpark session.
         job_id: UUID of the job to claim from (or '*' for any job).
         worker_id: Identifier for this worker.
         queue_fqn: Fully-qualified queue table name.
+        lease_minutes: Lease duration in minutes.
 
     Returns:
-        Dict with QUEUE_ID, JOB_ID, CHUNK_ID, STAGE_PATH or None.
+        Dict with QUEUE_ID, JOB_ID, CHUNK_ID, STAGE_PATH; or
+        "RETRY" if race lost; or None if queue is empty.
     """
     job_filter = "" if job_id == "*" else f"AND JOB_ID = '{job_id}'"
+    safe_wid = worker_id.replace("'", "''")
 
-    claim_marker = f"{worker_id}_{uuid.uuid4().hex[:8]}"
-
-    session.sql(f"""
-        UPDATE {queue_fqn}
-        SET STATUS = 'RUNNING',
-            WORKER_ID = '{claim_marker}',
-            CLAIMED_AT = CURRENT_TIMESTAMP()
-        WHERE QUEUE_ID = (
-            SELECT QUEUE_ID FROM {queue_fqn}
-            WHERE STATUS = 'PENDING' {job_filter}
-            ORDER BY CREATED_AT
-            LIMIT 1
-        )
-    """).collect()
-
-    result = session.sql(f"""
-        SELECT QUEUE_ID, JOB_ID, CHUNK_ID, STAGE_PATH
-        FROM {queue_fqn}
-        WHERE WORKER_ID = '{claim_marker}' AND STATUS = 'RUNNING'
+    candidate = session.sql(f"""
+        SELECT QUEUE_ID FROM {queue_fqn}
+        WHERE (STATUS = 'PENDING'
+               OR (STATUS = 'RUNNING'
+                   AND LEASE_UNTIL IS NOT NULL
+                   AND LEASE_UNTIL < CURRENT_TIMESTAMP()))
+          {job_filter}
+        ORDER BY CREATED_AT
         LIMIT 1
     """).collect()
 
-    if len(result) == 0:
+    if len(candidate) == 0:
         return None
 
-    row = result[0]
+    cand_id = str(candidate[0]["QUEUE_ID"])
+
+    result = session.sql(f"""
+        UPDATE {queue_fqn}
+        SET STATUS      = 'RUNNING',
+            WORKER_ID   = '{safe_wid}',
+            CLAIMED_AT  = CURRENT_TIMESTAMP(),
+            LEASE_UNTIL = DATEADD('minute', {lease_minutes}, CURRENT_TIMESTAMP()),
+            ATTEMPTS    = NVL(ATTEMPTS, 0) + 1
+        WHERE QUEUE_ID = '{cand_id}'
+          AND (STATUS = 'PENDING'
+               OR (STATUS = 'RUNNING'
+                   AND LEASE_UNTIL IS NOT NULL
+                   AND LEASE_UNTIL < CURRENT_TIMESTAMP()))
+    """).collect()
+
+    n_updated = _rows_affected(result)
+    if n_updated == 0:
+        return "RETRY"
+
+    row_result = session.sql(f"""
+        SELECT QUEUE_ID, JOB_ID, CHUNK_ID, STAGE_PATH
+        FROM {queue_fqn} WHERE QUEUE_ID = '{cand_id}'
+    """).collect()
+
+    if len(row_result) == 0:
+        return None
+
+    row = row_result[0]
     return {
         "queue_id": str(row["QUEUE_ID"]),
         "job_id": str(row["JOB_ID"]),
         "chunk_id": str(row["CHUNK_ID"]),
         "stage_path": str(row["STAGE_PATH"]),
     }
+
+
+def renew_lease(
+    session,
+    queue_id: str,
+    worker_id: str,
+    queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
+    lease_minutes: int = 10,
+) -> bool:
+    """Extend the lease on a claimed queue item."""
+    safe_wid = worker_id.replace("'", "''")
+    session.sql(f"""
+        UPDATE {queue_fqn}
+        SET LEASE_UNTIL = DATEADD('minute', {lease_minutes}, CURRENT_TIMESTAMP())
+        WHERE QUEUE_ID = '{queue_id}'
+          AND WORKER_ID = '{safe_wid}'
+          AND STATUS = 'RUNNING'
+    """).collect()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -152,10 +195,12 @@ def mark_done(
     queue_id: str,
     queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
 ) -> bool:
-    """Mark a queue item as DONE."""
+    """Mark a queue item as DONE and release its lease."""
     session.sql(f"""
         UPDATE {queue_fqn}
-        SET STATUS = 'DONE', COMPLETED_AT = CURRENT_TIMESTAMP()
+        SET STATUS = 'DONE',
+            COMPLETED_AT = CURRENT_TIMESTAMP(),
+            LEASE_UNTIL = NULL
         WHERE QUEUE_ID = '{queue_id}'
     """).collect()
     return True
@@ -167,12 +212,13 @@ def mark_failed(
     error_msg: str,
     queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
 ) -> bool:
-    """Mark a queue item as FAILED with an error message."""
+    """Mark a queue item as FAILED with an error message and release its lease."""
     safe_msg = error_msg.replace("'", "''")[:1000]
     session.sql(f"""
         UPDATE {queue_fqn}
         SET STATUS = 'FAILED',
             COMPLETED_AT = CURRENT_TIMESTAMP(),
+            LEASE_UNTIL = NULL,
             ERROR_MSG = '{safe_msg}'
         WHERE QUEUE_ID = '{queue_id}'
     """).collect()
@@ -283,13 +329,16 @@ def _requeue_stale(
     stale_timeout_sec: int,
     queue_fqn: str,
 ) -> int:
-    """Mark RUNNING items older than stale_timeout_sec back to PENDING."""
+    """Requeue RUNNING items that are stale (old CLAIMED_AT) or have expired leases."""
     result = session.sql(f"""
         UPDATE {queue_fqn}
-        SET STATUS = 'PENDING', WORKER_ID = NULL, CLAIMED_AT = NULL
+        SET STATUS = 'PENDING', WORKER_ID = NULL,
+            CLAIMED_AT = NULL, LEASE_UNTIL = NULL
         WHERE JOB_ID = '{job_id}'
           AND STATUS = 'RUNNING'
-          AND CLAIMED_AT < TIMESTAMPADD(SECOND, -{stale_timeout_sec}, CURRENT_TIMESTAMP())
+          AND (CLAIMED_AT < TIMESTAMPADD(SECOND, -{stale_timeout_sec}, CURRENT_TIMESTAMP())
+               OR (LEASE_UNTIL IS NOT NULL
+                   AND LEASE_UNTIL < CURRENT_TIMESTAMP()))
     """).collect()
     return _rows_affected(result)
 
@@ -298,7 +347,8 @@ def _force_requeue_running(session, job_id: str, queue_fqn: str) -> int:
     """Immediately requeue all RUNNING items (workers confirmed dead)."""
     result = session.sql(f"""
         UPDATE {queue_fqn}
-        SET STATUS = 'PENDING', WORKER_ID = NULL, CLAIMED_AT = NULL
+        SET STATUS = 'PENDING', WORKER_ID = NULL,
+            CLAIMED_AT = NULL, LEASE_UNTIL = NULL
         WHERE JOB_ID = '{job_id}' AND STATUS = 'RUNNING'
     """).collect()
     return _rows_affected(result)
@@ -446,29 +496,57 @@ spec:
     return service_name
 
 
+# Node specs (from SHOW COMPUTE POOL INSTANCE FAMILIES):
+#   CPU_X64_XS:  1 vCPU /   6 GiB   (1 container/node)
+#   CPU_X64_S:   3 vCPU /  13 GiB   (1 container/node)
+#   CPU_X64_M:   6 vCPU /  28 GiB   (2 containers/node)
+#   CPU_X64_SL: 14 vCPU /  54 GiB   (~2 containers/node)
+#   CPU_X64_L:  28 vCPU / 116 GiB   (~4 containers/node)
+#
+# "packed" profile: small requests → multiple containers per node → max
+# concurrency.  Empirically best for embarrassingly parallel R workloads
+# (see benchmarking_and_sizing.md §10).
+#
+# CRITICAL: limits must be set to the per-container share of the node, NOT
+# the full node capacity.  worker.R uses mclapply(mc.cores=detectCores()-1),
+# and detectCores() returns the container's CPU *limit*.  Setting limits to
+# full node values (e.g. 28 on CPU_X64_L) causes 27 mclapply forks fighting
+# for ~7 physical cores, destroying throughput via context switching.
 INSTANCE_FAMILY_RESOURCES = {
-    "CPU_X64_XS": {"cpu": 1, "memory": "4Gi"},
-    "CPU_X64_S":  {"cpu": 3, "memory": "12Gi"},
-    "CPU_X64_M":  {"cpu": 6, "memory": "24Gi"},
-    "CPU_X64_L":  {"cpu": 12, "memory": "48Gi"},
-    "CPU_X64_XL": {"cpu": 24, "memory": "96Gi"},
+    "CPU_X64_XS": {"cpu": 1, "memory": "4Gi",  "cpu_lim": 1,  "mem_lim": "6Gi"},
+    "CPU_X64_S":  {"cpu": 2, "memory": "6Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
+    "CPU_X64_M":  {"cpu": 3, "memory": "12Gi", "cpu_lim": 6,  "mem_lim": "14Gi"},
+    "CPU_X64_SL": {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "27Gi"},
+    "CPU_X64_L":  {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "29Gi"},
 }
+
+# "dedicated" profile (1 container per node, full node resources):
+# INSTANCE_FAMILY_RESOURCES_DEDICATED = {
+#     "CPU_X64_XS": {"cpu": 1,  "memory": "5Gi",   "cpu_lim": 1,  "mem_lim": "6Gi"},
+#     "CPU_X64_S":  {"cpu": 2,  "memory": "11Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
+#     "CPU_X64_M":  {"cpu": 5,  "memory": "24Gi",  "cpu_lim": 6,  "mem_lim": "28Gi"},
+#     "CPU_X64_SL": {"cpu": 12, "memory": "46Gi",  "cpu_lim": 14, "mem_lim": "54Gi"},
+#     "CPU_X64_L":  {"cpu": 24, "memory": "100Gi", "cpu_lim": 28, "mem_lim": "116Gi"},
+# }
 
 
 def _get_resource_spec(instance_family: str) -> Dict[str, Any]:
-    """Return appropriate cpu/memory requests for an instance family."""
+    """Return cpu/memory request+limit for an instance family.
+
+    Uses the "packed" profile by default: small requests that allow SPCS
+    to pack multiple containers per node, maximising concurrency.
+    Limits are set to the per-container share of the node (node_cpu /
+    containers_per_node) to keep detectCores() accurate for mclapply.
+    """
     resources = INSTANCE_FAMILY_RESOURCES.get(
         instance_family.upper(),
         INSTANCE_FAMILY_RESOURCES["CPU_X64_S"],
     )
-    cpu = resources["cpu"]
-    mem = resources["memory"]
-    mem_limit = f"{int(mem.replace('Gi', '')) * 2}Gi"
     return {
-        "cpu_request": cpu,
-        "memory_request": mem,
-        "cpu_limit": cpu * 2,
-        "memory_limit": mem_limit,
+        "cpu_request": resources["cpu"],
+        "memory_request": resources["memory"],
+        "cpu_limit": resources["cpu_lim"],
+        "memory_limit": resources["mem_lim"],
     }
 
 
@@ -519,7 +597,8 @@ spec:
       JOB_ID: "{job_id}"
       QUEUE_FQN: "{queue_fqn}"
       STAGE_PATH: "{stage_path}"
-      STAGE_MOUNT: "/stage"{wh_env}
+      STAGE_MOUNT: "/stage"
+      LEASE_MINUTES: "10"{wh_env}
     volumeMounts:
     - name: stage-vol
       mountPath: /stage
@@ -645,3 +724,236 @@ def estimate_throughput(
     eta = remaining / throughput if throughput > 0 else None
 
     return {"throughput_per_min": round(throughput, 1), "eta_minutes": round(eta, 1) if eta else None}
+
+
+# ---------------------------------------------------------------------------
+# Time-boxed dynamic queue feeder (benchmark mode)
+# ---------------------------------------------------------------------------
+
+def run_time_boxed_queue(
+    session,
+    compute_pool: str,
+    image_uri: str,
+    job_id: str,
+    stage_path: str,
+    total_chunks: int,
+    n_workers: int,
+    time_limit_sec: float,
+    queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
+    instance_family: str = "CPU_X64_S",
+    low_water: int = 4,
+    batch_size: int = 4,
+    skus_per_chunk: int = 0,
+    poll_sec: int = 3,
+    max_empty_polls: int = 30,
+) -> Dict[str, Any]:
+    """Run queue workers with a time-boxed continuous feeder.
+
+    Pre-serialized chunks (chunk_001 .. chunk_{total_chunks}) must already
+    exist on *stage_path*.  This function:
+
+    1. Launches *n_workers* ephemeral workers (with a high MAX_EMPTY_POLLS
+       so they survive brief queue-empty gaps).
+    2. Seeds an initial batch of queue rows.
+    3. Continuously feeds more rows whenever PENDING drops below *low_water*,
+       until *time_limit_sec* elapses or all chunks are enqueued.
+    4. Waits for workers to drain remaining queue rows.
+    5. Returns stats: chunks processed, SKUs, elapsed time, throughput.
+
+    Args:
+        session: Snowpark session.
+        compute_pool: SPCS compute pool name.
+        image_uri: Docker image URI for workers.
+        job_id: UUID for this benchmark job.
+        stage_path: Full stage path containing chunk files.
+        total_chunks: Number of pre-serialized chunks available.
+        n_workers: Number of ephemeral worker replicas.
+        time_limit_sec: Maximum seconds for the feeder to keep adding work.
+        queue_fqn: Fully-qualified Hybrid Table name.
+        instance_family: Instance family for worker resource sizing.
+        low_water: Enqueue more when PENDING count drops below this.
+        batch_size: Number of chunks to enqueue per batch.
+        skus_per_chunk: SKUs per chunk (for reporting only).
+        poll_sec: Seconds between feeder/poll cycles.
+        max_empty_polls: MAX_EMPTY_POLLS env var for workers.
+
+    Returns:
+        Dict with chunks_fed, chunks_done, chunks_failed, skus_processed,
+        elapsed_sec, skus_per_sec, feeder_stopped_at.
+    """
+    import sys
+
+    res = _get_resource_spec(instance_family)
+    stage_root = stage_path.split("/job_")[0] if "/job_" in stage_path else stage_path
+
+    # Resolve warehouse
+    warehouse = ""
+    try:
+        wh_rows = session.sql("SELECT CURRENT_WAREHOUSE() AS WH").collect()
+        warehouse = wh_rows[0]["WH"] if wh_rows and wh_rows[0]["WH"] else ""
+    except Exception:
+        pass
+    wh_env = f'\n      SNOWFLAKE_WAREHOUSE: "{warehouse}"' if warehouse else ""
+
+    # --- 1. Launch workers with high MAX_EMPTY_POLLS ----
+    spec = f"""
+spec:
+  containers:
+  - name: r-worker
+    image: {image_uri}
+    command:
+    - bash
+    - -c
+    - "if [ -f /stage/worker_queue.R ]; then Rscript /stage/worker_queue.R; else Rscript /app/worker_queue.R; fi"
+    env:
+      WORKER_MODE: "ephemeral"
+      JOB_ID: "{job_id}"
+      QUEUE_FQN: "{queue_fqn}"
+      STAGE_PATH: "{stage_path}"
+      STAGE_MOUNT: "/stage"
+      LEASE_MINUTES: "10"
+      MAX_EMPTY_POLLS: "{max_empty_polls}"{wh_env}
+    volumeMounts:
+    - name: stage-vol
+      mountPath: /stage
+    resources:
+      requests:
+        cpu: {res['cpu_request']}
+        memory: {res['memory_request']}
+      limits:
+        cpu: {res['cpu_limit']}
+        memory: {res['memory_limit']}
+  volumes:
+  - name: stage-vol
+    source: "{stage_root}"
+    uid: 1000
+    gid: 1000
+    """.strip()
+
+    ejs_sql = f"""
+        EXECUTE JOB SERVICE
+        IN COMPUTE POOL {compute_pool}
+        FROM SPECIFICATION $${spec}$$
+        REPLICAS = {n_workers}
+    """
+
+    # --- 2. Seed initial batch BEFORE launching workers ---
+    # Workers may start on a warm pool before seeding completes,
+    # and a cold pool gives us time to seed while nodes provision.
+    chunks_fed = 0
+    initial_batch = min(n_workers * 2, total_chunks)
+
+    def _feed_batch(n):
+        nonlocal chunks_fed
+        to_feed = min(n, total_chunks - chunks_fed)
+        if to_feed <= 0:
+            return 0
+        values = []
+        for _ in range(to_feed):
+            chunks_fed += 1
+            cid = f"{chunks_fed:03d}"
+            values.append(f"('{job_id}', '{cid}', '{stage_path}')")
+        session.sql(
+            f"INSERT INTO {queue_fqn} (JOB_ID, CHUNK_ID, STAGE_PATH) "
+            f"VALUES {', '.join(values)}"
+        ).collect()
+        return to_feed
+
+    fed = _feed_batch(initial_batch)
+    print(f"[benchmark] Seeded {fed} chunks into queue", flush=True)
+
+    print(
+        f"[benchmark] Launching {n_workers} workers in {compute_pool} "
+        f"(MAX_EMPTY_POLLS={max_empty_polls})",
+        flush=True,
+    )
+    # EJS .collect() blocks until the job completes, which would deadlock
+    # the feeder loop.  Submit asynchronously via the underlying cursor.
+    import threading
+    def _submit_ejs():
+        try:
+            session.sql(ejs_sql).collect()
+        except Exception as e:
+            print(f"[benchmark] EJS error: {e}", flush=True)
+    _ejs_thread = threading.Thread(target=_submit_ejs, daemon=True)
+    _ejs_thread.start()
+    print("[benchmark] Workers submitted (async)", flush=True)
+
+    # --- 3. Feeder loop ---
+    start = time.time()
+    feeder_stopped_at = None
+
+    while True:
+        elapsed = time.time() - start
+
+        status = poll_job_status(session, job_id, queue_fqn)
+        pending = status.get("pending", 0)
+        done = status.get("done", 0)
+        failed = status.get("failed", 0)
+        running = status.get("running", 0)
+
+        print(
+            f"[benchmark] {elapsed:.0f}s | "
+            f"done={done} running={running} pending={pending} "
+            f"fed={chunks_fed}/{total_chunks}",
+            flush=True,
+        )
+
+        if feeder_stopped_at is None:
+            if elapsed >= time_limit_sec:
+                feeder_stopped_at = elapsed
+                print(
+                    f"[benchmark] Feeder stopped at {elapsed:.1f}s "
+                    f"(limit={time_limit_sec:.0f}s). "
+                    f"Chunks fed: {chunks_fed}, done: {done}",
+                    flush=True,
+                )
+            elif pending < low_water and chunks_fed < total_chunks:
+                fed = _feed_batch(batch_size)
+                if fed > 0:
+                    print(
+                        f"[benchmark] +{fed} chunks (total fed={chunks_fed})",
+                        flush=True,
+                    )
+
+        all_fed = chunks_fed >= total_chunks
+        all_done = (done + failed) >= chunks_fed and pending == 0 and running == 0
+
+        if all_fed and all_done:
+            if feeder_stopped_at is None:
+                feeder_stopped_at = elapsed
+            print(
+                f"[benchmark] All {chunks_fed} chunks complete at {elapsed:.1f}s",
+                flush=True,
+            )
+            break
+
+        if feeder_stopped_at is not None and pending == 0 and running == 0:
+            break
+
+        if elapsed > time_limit_sec * 2 + 120:
+            print(f"[benchmark] Safety timeout at {elapsed:.1f}s", flush=True)
+            break
+
+        time.sleep(poll_sec)
+
+    total_elapsed = time.time() - start
+
+    final = poll_job_status(session, job_id, queue_fqn)
+    total_done = final.get("done", 0)
+    total_failed = final.get("failed", 0)
+    total_skus = total_done * skus_per_chunk if skus_per_chunk else 0
+    skus_per_sec = total_skus / total_elapsed if total_elapsed > 0 and total_skus else 0
+
+    result = {
+        "chunks_fed": chunks_fed,
+        "chunks_done": total_done,
+        "chunks_failed": total_failed,
+        "skus_per_chunk": skus_per_chunk,
+        "skus_processed": total_skus,
+        "elapsed_sec": round(total_elapsed, 1),
+        "feeder_stopped_at": round(feeder_stopped_at, 1) if feeder_stopped_at else None,
+        "skus_per_sec": round(skus_per_sec, 1),
+    }
+    print(f"[benchmark] Queue result: {result}", flush=True)
+    return result

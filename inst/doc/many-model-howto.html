@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>How To Build a Many-Model Forecasting Solution on Snowflake</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">How To Build a Many-Model Forecasting
+Solution on Snowflake</h1>
+
+
+
+<p>This guide walks through the complete <strong>many-model
+pattern</strong> on Snowflake: fit hundreds or thousands of independent
+models in parallel using Snowpark Container Services (SPCS), persist
+them to a stage, register them in Model Registry as a single model
+version, and run server-side batch inference via
+<code>run_batch</code>.</p>
+<p>The accompanying <strong>reference implementation</strong> lives in
+<code>internal/doSnowflake/demos/parallel_forecast/</code>. The code
+snippets below are extracted from that implementation. Lines marked
+<code>## ADAPT</code> are the parts you replace for your own data and
+models.</p>
+<div id="architecture-overview" class="section level2">
+<h2>1. Architecture Overview</h2>
+<p>The many-model workflow has four phases:</p>
+<pre><code> ┌──────────────┐   foreach / SPCS     ┌──────────────┐
+ │ SERIES_EVENTS├──────────────────────► .rds models  │
+ │  (data table)│  N parallel workers  │  on @STAGE   │
+ └──────────────┘                      └──────┬───────┘
+                                              │
+                                   sfr_log_many_model()
+                                              │
+                                       ┌──────▼───────┐
+                                       │Model Registry│
+                                       │ (aggregator) │
+                                       └──────┬───────┘
+                                              │
+                                    sfr_run_batch()
+                                              │
+                                      ┌───────▼────────┐
+                                      │FORECAST_RESULTS│
+                                      │  (output table)│
+                                      └────────────────┘</code></pre>
+<p><strong>Two dispatch modes</strong> are available:</p>
+<table style="width:100%;">
+<colgroup>
+<col width="22%" />
+<col width="40%" />
+<col width="37%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Mode</th>
+<th>Mechanism</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Tasks</strong></td>
+<td>Snowflake Tasks + SPCS jobs; fixed batch of chunks dispatched
+upfront</td>
+<td>Known workload; all chunks must complete</td>
+</tr>
+<tr class="even">
+<td><strong>Queue</strong></td>
+<td>Hybrid Table queue; dynamic feeder adds chunks as workers
+finish</td>
+<td>Time-boxed runs; streaming; scale-out/in</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The “screen then refine” pattern</strong>: run a fast Tasks
+pass (e.g. stepwise ARIMA) over all SKUs, capture accuracy metrics, then
+rank the worst performers and feed them into a time-boxed Queue run that
+applies a more expensive model contest (ARIMA + ETS + TBATS with holdout
+validation). The time budget is spent where it matters most.</p>
+</div>
+<div id="prerequisites" class="section level2">
+<h2>2. Prerequisites</h2>
+<div id="snowflake-objects" class="section level3">
+<h3>Snowflake objects</h3>
+<ul>
+<li>A <strong>compute pool</strong> with enough nodes
+(e.g. <code>CPU_X64_L</code>, 4 nodes).</li>
+<li>An <strong>image repository</strong> with the
+<code>dosnowflake-worker</code> Docker image pushed.</li>
+<li>A <strong>warehouse</strong> (XS is fine for orchestration
+SQL).</li>
+<li>The role used must have <code>USAGE</code> on the compute pool and
+<code>CREATE SERVICE</code> / <code>CREATE TASK</code> privileges.</li>
+</ul>
+</div>
+<div id="local-r-environment" class="section level3">
+<h3>Local R environment</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="fu">c</span>(<span class="st">&quot;snowflakeR&quot;</span>, <span class="st">&quot;foreach&quot;</span>, <span class="st">&quot;iterators&quot;</span>, <span class="st">&quot;forecast&quot;</span>,</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>                    <span class="st">&quot;ggplot2&quot;</span>, <span class="st">&quot;yaml&quot;</span>))</span></code></pre></div>
+</div>
+<div id="authentication" class="section level3">
+<h3>Authentication</h3>
+<p>Configure <code>~/.snowflake/connections.toml</code> with a named
+profile using key-pair (JWT) auth:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode toml"><code class="sourceCode toml"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="kw">[my_demo_jwt]</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="dt">account</span>   <span class="op">=</span> <span class="st">&quot;MYORG-MYACCOUNT&quot;</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="dt">user</span>      <span class="op">=</span> <span class="st">&quot;MY_USER&quot;</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="dt">authenticator</span> <span class="op">=</span> <span class="st">&quot;SNOWFLAKE_JWT&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="dt">private_key_path</span> <span class="op">=</span> <span class="st">&quot;~/.snowflake/keys/rsa_key.p8&quot;</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="dt">warehouse</span> <span class="op">=</span> <span class="st">&quot;MY_WH&quot;</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="dt">database</span>  <span class="op">=</span> <span class="st">&quot;MY_DB&quot;</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="dt">role</span>      <span class="op">=</span> <span class="st">&quot;MY_ROLE&quot;</span></span></code></pre></div>
+</div>
+</div>
+<div id="config-and-bootstrap" class="section level2">
+<h2>3. Config and Bootstrap</h2>
+<div id="the-yaml-config-file" class="section level3">
+<h3>The YAML config file</h3>
+<p>All environment-specific values live in a single YAML file. The
+reference implementation uses
+<code>snowflaker_parallel_spcs_benchmark_ak_small.yaml</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co">## ADAPT: replace every value below with your account&#39;s objects</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">context</span><span class="kw">:</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="at">  </span><span class="fu">warehouse</span><span class="kw">:</span><span class="at"> MY_WAREHOUSE</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="at">  </span><span class="fu">database</span><span class="kw">:</span><span class="at">  MY_DATABASE</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at">    SOURCE_DATA</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="fu">parallel_lab</span><span class="kw">:</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="at">  </span><span class="fu">clean_room</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="at">  </span><span class="fu">database</span><span class="kw">:</span><span class="at">  MY_DATABASE</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="at">  </span><span class="fu">schemas</span><span class="kw">:</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="at">    </span><span class="fu">source_data</span><span class="kw">:</span><span class="at"> SOURCE_DATA</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="at">    </span><span class="fu">config</span><span class="kw">:</span><span class="at">      CONFIG</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="at">    </span><span class="fu">models</span><span class="kw">:</span><span class="at">      MODELS</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="at">  </span><span class="fu">warehouse</span><span class="kw">:</span><span class="at">     MY_WAREHOUSE</span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="at">  </span><span class="fu">compute_pool</span><span class="kw">:</span><span class="at">  MY_COMPUTE_POOL</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="at">  </span><span class="fu">image_uri</span><span class="kw">:</span><span class="at">     </span><span class="st">&quot;myorg-myacct.registry.../my_db/config/images/dosnowflake-worker:latest&quot;</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="at">  </span><span class="fu">dosnowflake_stage_name</span><span class="kw">:</span><span class="at"> DOSNOWFLAKE_STAGE</span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="at">  </span><span class="fu">queue_table</span><span class="kw">:</span><span class="at"> DOSNOWFLAKE_QUEUE</span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="at">  </span><span class="fu">instance_family</span><span class="kw">:</span><span class="at"> CPU_X64_L</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="at">  </span><span class="fu">demo_forecast_n_skus</span><span class="kw">:</span><span class="at"> </span><span class="dv">2000</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="at">  </span><span class="fu">demo_tasks_chunks_per_job</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="at">  </span><span class="fu">demo_queue_n_workers</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="at">  </span><span class="fu">demo_queue_chunks_per_job</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span></code></pre></div>
+</div>
+<div id="loading-config-and-connecting" class="section level3">
+<h3>Loading config and connecting</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">source</span>(<span class="st">&quot;snowflakeR/inst/notebooks/parallel_spcs_workflow.R&quot;</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>cfg  <span class="ot">&lt;-</span> <span class="fu">parallel_lab_load_config</span>(<span class="st">&quot;path/to/my_config.yaml&quot;</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>conn <span class="ot">&lt;-</span> snowflakeR<span class="sc">::</span><span class="fu">sfr_connect</span>(</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">name =</span> <span class="st">&quot;my_demo_jwt&quot;</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">private_key_file =</span> <span class="st">&quot;~/.snowflake/keys/rsa_key.p8&quot;</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="bootstrap-ddl" class="section level3">
+<h3>Bootstrap DDL</h3>
+<p><code>parallel_lab_setup()</code> runs bootstrap SQL that
+creates:</p>
+<ul>
+<li><strong>3 schemas</strong>: <code>SOURCE_DATA</code>,
+<code>CONFIG</code>, <code>MODELS</code></li>
+<li><strong>Internal stage</strong> <code>DOSNOWFLAKE_STAGE</code> with
+<code>DIRECTORY = (ENABLE = TRUE)</code></li>
+<li><strong>Hybrid Table</strong> <code>DOSNOWFLAKE_QUEUE</code> (for
+queue mode)</li>
+<li><strong>Tables</strong>: <code>TRAINING_RESULTS</code>,
+<code>TRAINING_METRICS</code>, <code>FORECAST_RESULTS</code></li>
+<li><strong>View</strong>: <code>MODEL_INDEX</code> (parses
+<code>RELATIVE_PATH</code> from the stage directory table into
+<code>RUN_ID</code> + <code>PARTITION_KEY</code>)</li>
+</ul>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">parallel_lab_setup</span>(conn, cfg, <span class="at">create_series =</span> <span class="cn">TRUE</span>, <span class="at">n_units =</span> <span class="dv">2000</span>, <span class="at">n_days =</span> <span class="dv">1095</span>)</span></code></pre></div>
+<p>Set <code>create_series = TRUE</code> for synthetic data (generates 3
+years of daily observations per SKU with weekly + annual seasonality,
+trend changepoints, and occasional outliers), or <code>FALSE</code> if
+your source table already exists.</p>
+<p><strong>ADAPT</strong>: the <code>SERIES_EVENTS</code> schema is
+<code>(UNIT_ID VARCHAR, OBS_DATE DATE, Y FLOAT)</code>. Replace this
+with your own data table’s DDL.</p>
+</div>
+</div>
+<div id="the-foreach-expression" class="section level2">
+<h2>4. The foreach Expression</h2>
+<p>The worker expression is the R code that runs <strong>inside each
+SPCS container</strong> for every unit (SKU/store/sensor/etc.). It
+receives an injected <code>unit_data</code> data.frame and a
+<code>unit_id</code> variable.</p>
+<div id="anatomy-of-a-worker-expression" class="section level3">
+<h3>Anatomy of a worker expression</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="do">## This runs inside the SPCS container for each unit_id.</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="do">## `unit_data` is automatically injected by doSnowflake — it contains the rows</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="do">## from SERIES_EVENTS where UNIT_ID == unit_id.</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">suppressPackageStartupMessages</span>(<span class="fu">library</span>(forecast))</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="do">## ADAPT: convert your data to a ts object with the right frequency</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="do">## frequency = 7 for daily data (weekly cycle); use 12 for monthly, 365.25 for</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="do">## daily with annual cycle, etc.</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>ts_full <span class="ot">&lt;-</span> <span class="fu">ts</span>(unit_data<span class="sc">$</span>Y, <span class="at">frequency =</span> <span class="dv">7</span>)</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="do">## ADAPT: fit your model here (any R model that produces forecasts)</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">auto.arima</span>(ts_full, <span class="at">stepwise =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>fc    <span class="ot">&lt;-</span> <span class="fu">forecast</span>(model, <span class="at">h =</span> <span class="dv">30</span><span class="dt">L</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>acc   <span class="ot">&lt;-</span> forecast<span class="sc">::</span><span class="fu">accuracy</span>(model)</span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="do">## Contract: return a list with these fields</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="fu">list</span>(</span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>  <span class="at">unit_id   =</span> unit_id,</span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a>  <span class="at">model     =</span> <span class="fu">as.character</span>(fc<span class="sc">$</span>method),</span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a>  <span class="at">forecast  =</span> <span class="fu">as.numeric</span>(fc<span class="sc">$</span>mean),</span>
+<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a>  <span class="at">n_obs     =</span> <span class="fu">nrow</span>(unit_data),</span>
+<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a>  <span class="at">model_obj =</span> model,           <span class="co"># saved as .rds on stage</span></span>
+<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a>  <span class="at">aicc      =</span> model<span class="sc">$</span>aicc,</span>
+<span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a>  <span class="at">rmse      =</span> acc[<span class="dv">1</span>, <span class="st">&quot;RMSE&quot;</span>],</span>
+<span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>  <span class="at">mape      =</span> holdout_mape,    <span class="co"># see holdout validation below</span></span>
+<span id="cb7-27"><a href="#cb7-27" tabindex="-1"></a>  <span class="at">mase      =</span> acc[<span class="dv">1</span>, <span class="st">&quot;MASE&quot;</span>]</span>
+<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a>)</span></code></pre></div>
+<p><strong>Key contract</strong>: the returned list must include
+<code>unit_id</code> (the partition key) and <code>model_obj</code> (the
+fitted model object — serialized as <code>.rds</code> on the stage).
+Additional fields (<code>forecast</code>, metrics) are collected in the
+results list.</p>
+</div>
+<div id="holdout-validation" class="section level3">
+<h3>Holdout validation</h3>
+<p>For fair cross-method comparison, compute an <strong>out-of-sample
+holdout MAPE</strong> by reserving the last 30 days (or 1/4 of the
+series) as a test set:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="fu">length</span>(ts_full)</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>holdout_n <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="dv">30</span><span class="dt">L</span>, <span class="fu">as.integer</span>(<span class="fu">floor</span>(n <span class="sc">/</span> <span class="dv">4</span>)))</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>holdout_mape <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>({</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  ts_train <span class="ot">&lt;-</span> <span class="fu">window</span>(ts_full, <span class="at">end =</span> <span class="fu">time</span>(ts_full)[n <span class="sc">-</span> holdout_n])</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  ts_test  <span class="ot">&lt;-</span> <span class="fu">window</span>(ts_full, <span class="at">start =</span> <span class="fu">time</span>(ts_full)[n <span class="sc">-</span> holdout_n <span class="sc">+</span> <span class="dv">1</span>])</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  m_ho     <span class="ot">&lt;-</span> <span class="fu">auto.arima</span>(ts_train, <span class="at">stepwise =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  fc_ho    <span class="ot">&lt;-</span> <span class="fu">forecast</span>(m_ho, <span class="at">h =</span> holdout_n)</span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>  <span class="fu">mean</span>(<span class="fu">abs</span>((ts_test <span class="sc">-</span> fc_ho<span class="sc">$</span>mean) <span class="sc">/</span> ts_test)) <span class="sc">*</span> <span class="dv">100</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>}, <span class="at">error =</span> <span class="cf">function</span>(e) <span class="cn">NA_real_</span>)</span></code></pre></div>
+</div>
+</div>
+<div id="tasks-mode-fixed-batch" class="section level2">
+<h2>5. Tasks Mode (Fixed Batch)</h2>
+<p>Tasks mode dispatches all chunks upfront using a Snowflake Task DAG.
+Each task launches an SPCS job service that processes one chunk of
+<code>unit_ids</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>tasks_out <span class="ot">&lt;-</span> <span class="fu">parallel_lab_run_tasks_demo</span>(conn, cfg,</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">run            =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">arima_stepwise =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">forecast_h     =</span> <span class="dv">30</span><span class="dt">L</span>,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">save_models    =</span> <span class="cn">TRUE</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>)</span></code></pre></div>
+<div id="how-it-works" class="section level3">
+<h3>How it works</h3>
+<ol style="list-style-type: decimal">
+<li><code>registerDoSnowflake(conn, mode = &quot;tasks&quot;, ...)</code> sets up
+the backend.</li>
+<li>The <code>foreach</code> loop iterates over <code>unit_ids</code>;
+doSnowflake chunks them into <code>chunks_per_job</code> groups.</li>
+<li>Each chunk becomes an SPCS job service that:
+<ul>
+<li>Bulk-reads its partition of <code>SERIES_EVENTS</code> via the
+<code>data_query</code> spec</li>
+<li>Runs <code>mclapply</code> over the units within the container</li>
+<li>Writes <code>.rds</code> model files to
+<code>@STAGE/models/&lt;run_id&gt;/&lt;unit_id&gt;.rds</code></li>
+<li>Writes result <code>.rds</code> back to
+<code>@STAGE/&lt;job&gt;/results/result_&lt;chunk&gt;.rds</code></li>
+</ul></li>
+<li>The orchestrator polls until all chunks complete, then collects
+results.</li>
+</ol>
+</div>
+<div id="chunk-sizing" class="section level3">
+<h3>Chunk sizing</h3>
+<p>Balance parallelism vs overhead:</p>
+<ul>
+<li><strong>Too few chunks</strong> (e.g. 1): all work in one container,
+no parallelism across nodes.</li>
+<li><strong>Too many chunks</strong> (e.g. 2000, one per SKU): excessive
+job-launch overhead.</li>
+<li><strong>Sweet spot</strong>: 4–20 chunks for 2000 units. Each
+container gets 100–500 SKUs and uses <code>mclapply</code> for
+intra-node parallelism.</li>
+</ul>
+</div>
+</div>
+<div id="queue-mode-time-boxed-streaming" class="section level2">
+<h2>6. Queue Mode (Time-Boxed Streaming)</h2>
+<p>Queue mode uses a Hybrid Table as a work queue. A <strong>dynamic
+feeder</strong> inserts rows as workers pull them, up to a time
+budget.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>queue_out <span class="ot">&lt;-</span> <span class="fu">parallel_lab_run_queue_timeboxed</span>(conn, cfg,</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="at">run            =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">time_limit_sec =</span> tasks_out<span class="sc">$</span>elapsed,   <span class="co"># match Tasks wall time</span></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">model_contest  =</span> <span class="cn">TRUE</span>,                <span class="co"># ARIMA + ETS + TBATS contest</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">forecast_h     =</span> tasks_out<span class="sc">$</span>params<span class="sc">$</span>forecast_h,</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">n_chunks       =</span> <span class="dv">40</span><span class="dt">L</span>,</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="at">unit_ids       =</span> worst_skus           <span class="co"># worst-first from Tasks</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>)</span></code></pre></div>
+<div id="dynamic-feeder-pattern" class="section level3">
+<h3>Dynamic feeder pattern</h3>
+<p>Unlike Tasks, the Queue does <strong>not</strong> dispatch all work
+upfront. The feeder loop:</p>
+<ol style="list-style-type: decimal">
+<li>Checks how many chunks are <code>PENDING</code> in the queue.</li>
+<li>If slots are available and the time budget hasn’t expired, inserts
+the next chunk.</li>
+<li>Launches SPCS workers that claim rows via compare-and-swap (CAS):
+<code>UPDATE ... SET STATUS = &#39;RUNNING&#39; WHERE STATUS = &#39;PENDING&#39; LIMIT 1</code>.</li>
+<li>When the feeder’s time budget expires, it stops feeding but waits
+for in-flight chunks to finish.</li>
+</ol>
+<p>This gives a natural “time-boxed” behavior: you spend exactly as much
+wall time as you budget, processing as many chunks as workers can
+handle.</p>
+</div>
+<div id="accuracy-ranked-feeding" class="section level3">
+<h3>Accuracy-ranked feeding</h3>
+<p>By ranking SKUs worst-first (highest holdout MAPE from the Tasks
+run), the time budget is spent where it has the greatest impact:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>worst_skus <span class="ot">&lt;-</span> <span class="fu">parallel_lab_rank_skus_by_accuracy</span>(</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="at">run_results =</span> tasks_out,</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">metric      =</span> <span class="st">&quot;mape&quot;</span>,</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">descending  =</span> <span class="cn">TRUE</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="model-contest" class="section level3">
+<h3>Model contest</h3>
+<p>When <code>model_contest = TRUE</code>, each SKU’s worker expression
+runs a holdout- validated competition:</p>
+<ol style="list-style-type: decimal">
+<li>Split the daily series into training (~1065 days) and test (30
+days).</li>
+<li>Fit three candidates:
+<ul>
+<li><code>auto.arima(stepwise = FALSE)</code> (exhaustive ARIMA
+search)</li>
+<li><code>ets()</code> (exponential smoothing)</li>
+<li><code>tbats()</code> (Trigonometric seasonality, Box-Cox, ARMA
+errors, Trend, Seasonal — handles multiple seasonal periods natively,
+e.g. weekly + annual cycles in daily data)</li>
+</ul></li>
+<li>The candidate with the lowest test-set MAPE wins.</li>
+<li>The winner is refit on the full series for the production
+model.</li>
+</ol>
+<p>TBATS is particularly well-suited to this contest because the daily
+synthetic data has <strong>two nested seasonal cycles</strong> (weekly
+period = 7, annual period = 365.25) that ARIMA and ETS cannot capture
+simultaneously.</p>
+<p><strong>ADAPT</strong>: replace the three candidate model families
+with whatever makes sense for your domain (Prophet, XGBoost, LSTM,
+etc.).</p>
+</div>
+</div>
+<div id="metrics-and-comparison" class="section level2">
+<h2>7. Metrics and Comparison</h2>
+<div id="persisting-metrics" class="section level3">
+<h3>Persisting metrics</h3>
+<p>After each run, save per-unit accuracy metrics to the
+<code>TRAINING_METRICS</code> table:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="fu">parallel_lab_save_metrics</span>(conn, cfg, tasks_out)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="fu">parallel_lab_save_metrics</span>(conn, cfg, queue_out)</span></code></pre></div>
+<p>This writes
+<code>(MODEL_RUN_ID, UNIT_ID, ARIMA_MODEL, AICC, RMSE, MAPE, MASE, N_OBS)</code>
+for every successfully fitted unit. The <code>MAPE</code> column stores
+the <strong>holdout</strong> (out-of-sample) MAPE — not the training
+MAPE.</p>
+</div>
+<div id="why-holdout-mape" class="section level3">
+<h3>Why holdout MAPE?</h3>
+<p>Training MAPE reflects how well the model fits historical data.
+Holdout MAPE reflects how well it <strong>predicts unseen data</strong>.
+When comparing a simple stepwise ARIMA (Tasks) against a model contest
+(Queue), training MAPE will look similar because both methods fit the
+full series. The difference only shows up in out-of-sample
+performance.</p>
+</div>
+<div id="plotting" class="section level3">
+<h3>Plotting</h3>
+<p>Single-run histogram:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">parallel_lab_plot_accuracy</span>(tasks_out, <span class="at">metric =</span> <span class="st">&quot;mape&quot;</span>)</span></code></pre></div>
+<p>Faceted comparison (Tasks vs Queue, matched SKUs only):</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">parallel_lab_plot_accuracy_comparison</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  tasks_out, queue_out,</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;mape&quot;</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">matched_only =</span> <span class="cn">TRUE</span></span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>)</span></code></pre></div>
+<p>The <code>matched_only = TRUE</code> parameter restricts the
+comparison to SKUs that appear in both runs, making the distributions
+directly comparable.</p>
+</div>
+</div>
+<div id="model-registry" class="section level2">
+<h2>8. Model Registry</h2>
+<div id="registering-n-models-as-one-version" class="section level3">
+<h3>Registering N models as one version</h3>
+<p>After training, each SKU’s <code>.rds</code> model file lives at
+<code>@STAGE/models/&lt;run_id&gt;/&lt;unit_id&gt;.rds</code>. The
+stage’s <code>DIRECTORY</code> table tracks all files. The
+<code>MODEL_INDEX</code> view extracts <code>RUN_ID</code> and
+<code>PARTITION_KEY</code> from the file paths.</p>
+<p><code>sfr_log_many_model()</code> registers a <strong>CustomModel
+aggregator</strong> in Model Registry. The aggregator:</p>
+<ul>
+<li>Carries a <code>model_index.json</code> mapping <code>UNIT_ID</code>
+→ stage path</li>
+<li>Exposes <code>@partitioned_api predict()</code> for
+<code>run_batch</code> (TABLE_FUNCTION)</li>
+<li>Exposes <code>@inference_api predict_single()</code> for SPCS
+service (FUNCTION)</li>
+<li>Registers in O(1) time (~8–13s regardless of partition count)</li>
+</ul>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>reg_tasks <span class="ot">&lt;-</span> <span class="fu">parallel_lab_register_models</span>(conn, cfg,</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>  <span class="at">model_run_id =</span> tasks_out<span class="sc">$</span>model_run_id,</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>  <span class="at">forecast_h   =</span> tasks_out<span class="sc">$</span>params<span class="sc">$</span>forecast_h</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="the-ray-shuffle-bug-snow-2193288" class="section level3">
+<h3>The Ray shuffle bug (SNOW-2193288)</h3>
+<p>Model Registry’s <code>run_batch</code> uses Ray internally for
+partitioned dispatch. When the number of unique partition keys is much
+less than ~200, Ray’s shuffle mechanism can fail. <strong>Always ensure
+&gt;= 200 partition keys</strong> when using <code>run_batch</code>. The
+reference implementation warns if this threshold is not met.</p>
+</div>
+</div>
+<div id="batch-inference" class="section level2">
+<h2>9. Batch Inference</h2>
+<div id="server-side-partitioned-inference" class="section level3">
+<h3>Server-side partitioned inference</h3>
+<p><code>sfr_run_batch()</code> launches an SPCS batch job that:</p>
+<ol style="list-style-type: decimal">
+<li>Partitions the input DataFrame by <code>UNIT_ID</code>.</li>
+<li>For each partition, the <code>RManyModelAggregator</code> downloads
+the <code>.rds</code> model from stage, loads it via <code>rpy2</code>,
+and runs <code>forecast::forecast(model, h=...)</code>.</li>
+<li>Returns a DataFrame of
+<code>(PARTITION_KEY, PERIOD, FORECAST, LOWER_80,    UPPER_80, LOWER_95, UPPER_95, STATUS)</code>.</li>
+</ol>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a>fc_df <span class="ot">&lt;-</span> <span class="fu">parallel_lab_run_inference</span>(conn, cfg,</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a>  <span class="at">model_run_id =</span> tasks_out<span class="sc">$</span>model_run_id,</span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a>  <span class="at">forecast_h   =</span> tasks_out<span class="sc">$</span>params<span class="sc">$</span>forecast_h</span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>)</span></code></pre></div>
+<p>The results are written to the <code>FORECAST_RESULTS</code> table
+with columns:
+<code>RUN_ID, UNIT_ID, HORIZON, FORECAST_DATE, POINT_FORECAST, LO_80, HI_80, LO_95, HI_95, STATUS</code>.</p>
+</div>
+<div id="input-contract" class="section level3">
+<h3>Input contract</h3>
+<p>The input DataFrame needs at minimum a <code>UNIT_ID</code> column
+(the partition key). Additional columns are ignored by the aggregator —
+it loads the model from stage rather than re-training.</p>
+</div>
+</div>
+<div id="monitoring" class="section level2">
+<h2>10. Monitoring</h2>
+<p>The reference implementation includes two Streamlit dashboards:</p>
+<ul>
+<li><strong><code>streamlit_benchmark_monitor.py</code></strong>: live
+progress for Tasks vs Queue benchmark runs, filtered by
+<code>JOB_ID</code>.</li>
+<li><strong><code>streamlit_parallel_demo_monitor.py</code></strong>:
+general-purpose SPCS service and queue monitoring.</li>
+</ul>
+<p>Deploy to Snowflake (Streamlit-in-Snowflake) with:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="ex">python</span> deploy_streamlit_monitor.py <span class="dt">\</span></span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>  <span class="at">--connection-name</span> my_demo_jwt <span class="dt">\</span></span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a>  <span class="at">--private-key-file</span> ~/.snowflake/keys/rsa_key.p8</span></code></pre></div>
+<p><strong>Tip</strong>: scope dashboard queries by <code>JOB_ID</code>
+to avoid showing cumulative counts from previous runs.</p>
+</div>
+<div id="lessons-learned" class="section level2">
+<h2>11. Lessons Learned</h2>
+<div id="jwt-expiry-and-stale-sessions" class="section level3">
+<h3>JWT expiry and stale sessions</h3>
+<p><code>sfr_connect()</code> auto-detects Workspace Notebook sessions.
+When running in RStudio with explicit <code>name</code> /
+<code>account</code> parameters, it skips auto-detection to avoid
+wrapping a stale, expired Python session. If you see
+<code>JWT token is invalid</code> after a timeout, explicitly
+reconnect:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a>conn <span class="ot">&lt;-</span> snowflakeR<span class="sc">::</span><span class="fu">sfr_connect</span>(</span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a>  <span class="at">name =</span> <span class="st">&quot;my_demo_jwt&quot;</span>,</span>
+<span id="cb18-3"><a href="#cb18-3" tabindex="-1"></a>  <span class="at">private_key_file =</span> <span class="st">&quot;~/.snowflake/keys/rsa_key.p8&quot;</span></span>
+<span id="cb18-4"><a href="#cb18-4" tabindex="-1"></a>)</span>
+<span id="cb18-5"><a href="#cb18-5" tabindex="-1"></a>dbi_con <span class="ot">&lt;-</span> snowflakeR<span class="sc">::</span><span class="fu">sfr_dbi_connection</span>(conn)</span></code></pre></div>
+</div>
+<div id="rstudio-connections-pane" class="section level3">
+<h3>RStudio Connections Pane</h3>
+<p>Call <code>sfr_dbi_connection(conn)</code> after
+<code>sfr_connect()</code> to populate the Connections Pane with
+database catalog info. If schemas or tables don’t appear, disconnect in
+the pane and reconnect — RStudio caches connection observer
+closures.</p>
+</div>
+<div id="setting-the-right-ts-frequency" class="section level3">
+<h3>Setting the right ts frequency</h3>
+<p>Use <code>ts(data, frequency = 7)</code> for daily data with a weekly
+cycle, or <code>frequency = 12</code> for monthly data. Without the
+correct frequency, <code>auto.arima</code> cannot learn seasonal
+patterns and forecasts will be flat. For daily data with both weekly and
+annual cycles, TBATS auto-detects multiple seasonal periods from the
+<code>frequency</code> attribute.</p>
+</div>
+<div id="chunk-count-parity" class="section level3">
+<h3>Chunk count parity</h3>
+<p>When comparing Tasks vs Queue, use chunk counts that give comparable
+total work. The Queue’s dynamic feeder means fewer chunks may complete
+within the time budget — that’s by design (time-boxed, not
+work-boxed).</p>
+</div>
+<div id="bquote-vs-quote-for-parameter-substitution" class="section level3">
+<h3><code>bquote</code> vs <code>quote</code> for parameter
+substitution</h3>
+<p>The worker expression uses <code>bquote()</code> with
+<code>.()</code> splicing to inject parameter values
+(e.g. <code>.(forecast_h)</code>, <code>.(arima_stepwise)</code>) at
+definition time. Using <code>quote()</code> would capture the variable
+<em>names</em>, not their <em>values</em>, causing failures when the
+expression runs in a remote container where those variables don’t
+exist.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a>forecast_expr <span class="ot">&lt;-</span> <span class="fu">bquote</span>({</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">auto.arima</span>(ts_full, <span class="at">stepwise =</span> .(arima_stepwise))</span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a>  fc    <span class="ot">&lt;-</span> <span class="fu">forecast</span>(model, <span class="at">h =</span> .(forecast_h))</span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a>  <span class="co"># ...</span></span>
+<span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a>})</span></code></pre></div>
+</div>
+</div>
+<div id="further-reading" class="section level2">
+<h2>Further Reading</h2>
+<ul>
+<li><strong><code>vignette(&quot;parallel-dosnowflake&quot;)</code></strong>: the
+low-level <code>registerDoSnowflake</code> API reference (foreach
+backend, generic SPCS executor, crew/mirai workers).</li>
+<li><strong>Reference implementation</strong>:
+<code>internal/doSnowflake/demos/parallel_forecast/</code> contains the
+complete runnable demo with configs, deploy scripts, and tests.</li>
+<li><strong>Function reference</strong>:
+<code>?sfr_log_many_model</code>, <code>?sfr_run_batch</code>,
+<code>?sfr_model_registry</code>,
+<code>?registerDoSnowflake</code>.</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

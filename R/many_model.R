@@ -206,7 +206,7 @@ sfr_deploy_many_model <- function(reg,
 .resolve_reg <- function(reg) {
   if (inherits(reg, "sfr_model_registry")) {
     list(
-      session = reg$session,
+      session = reg$conn$session,
       database = reg$database,
       schema = reg$schema
     )
@@ -225,7 +225,7 @@ sfr_deploy_many_model <- function(reg,
   if (inherits(conn, "sfr_connection")) {
     conn$session
   } else if (inherits(conn, "sfr_model_registry")) {
-    conn$session
+    conn$conn$session
   } else {
     stop("`conn` must be an sfr_connection or sfr_model_registry object.")
   }

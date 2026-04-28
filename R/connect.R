@@ -262,8 +262,12 @@ sfr_connect <- function(name = NULL,
                         private_key_file = NULL,
                         ...,
                         .use_snowflakeauth = TRUE) {
-  # Attempt Workspace Notebook auto-detect first
-  session <- tryCatch(
+  # Attempt Workspace Notebook auto-detect first — but only when no explicit
+  # connection parameters were supplied.  If the caller passed `name` or
+  # `account`, honour those even when a stale Snowpark session exists in the
+  # Python process (common after a session expires in RStudio).
+  has_explicit_params <- !is.null(name) || !is.null(account)
+  session <- if (has_explicit_params) NULL else tryCatch(
     {
       bridge <- get_bridge_module("sfr_connect_bridge")
       bridge$get_active_session()
@@ -368,6 +372,7 @@ sfr_connect <- function(name = NULL,
       warehouse = warehouse,
       role = role,
       auth_method = auth_method,
+      private_key_file = private_key_file,
       environment = env_type,
       created_at = Sys.time()
     ),
@@ -633,16 +638,32 @@ sfr_dbi_connection <- function(conn) {
   if (identical(conn$environment, "workspace")) {
     dbi_con <- DBI::dbConnect(RSnowflake::Snowflake())
   } else {
-    dbi_con <- DBI::dbConnect(
-      RSnowflake::Snowflake(),
-      name      = .subset2(conn, ".connect_name"),
-      account   = conn$account,
-      user      = conn$user,
-      database  = conn$database,
-      schema    = conn$schema,
-      warehouse = conn$warehouse,
-      role      = conn$role
-    )
+    connect_name <- .subset2(conn, ".connect_name")
+    pk_file      <- .subset2(conn, "private_key_file")
+
+    dbi_args <- list(drv = RSnowflake::Snowflake())
+
+    if (!is.null(connect_name) && nzchar(connect_name)) {
+      # Prefer profile name — dbConnect resolves account, user, auth
+      # from connections.toml. Pass private_key_path explicitly when
+      # it was supplied to sfr_connect (may not be in the profile).
+      dbi_args$name <- connect_name
+      if (!is.null(pk_file) && nzchar(pk_file)) {
+        dbi_args$private_key_path <- pk_file
+      }
+    } else {
+      dbi_args$account   <- conn$account
+      dbi_args$user      <- conn$user
+      dbi_args$database  <- conn$database
+      dbi_args$schema    <- conn$schema
+      dbi_args$warehouse <- conn$warehouse
+      dbi_args$role      <- conn$role
+      if (!is.null(pk_file) && nzchar(pk_file)) {
+        dbi_args$private_key_path <- pk_file
+      }
+    }
+
+    dbi_con <- do.call(DBI::dbConnect, dbi_args)
   }
 
   conn[["dbi_con"]] <- dbi_con

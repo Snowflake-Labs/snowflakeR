@@ -1,0 +1,814 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={How To Build a Many-Model Forecasting Solution on Snowflake},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{How To Build a Many-Model Forecasting Solution on Snowflake}
+\author{}
+\date{\vspace{-2.5em}}
+
+\begin{document}
+\maketitle
+
+This guide walks through the complete \textbf{many-model pattern} on
+Snowflake: fit hundreds or thousands of independent models in parallel
+using Snowpark Container Services (SPCS), persist them to a stage,
+register them in Model Registry as a single model version, and run
+server-side batch inference via \texttt{run\_batch}.
+
+The accompanying \textbf{reference implementation} lives in
+\texttt{internal/doSnowflake/demos/parallel\_forecast/}. The code
+snippets below are extracted from that implementation. Lines marked
+\texttt{\#\#\ ADAPT} are the parts you replace for your own data and
+models.
+
+\subsection{1. Architecture Overview}\label{architecture-overview}
+
+The many-model workflow has four phases:
+
+\begin{verbatim}
+ ┌──────────────┐   foreach / SPCS     ┌──────────────┐
+ │ SERIES_EVENTS├──────────────────────► .rds models  │
+ │  (data table)│  N parallel workers  │  on @STAGE   │
+ └──────────────┘                      └──────┬───────┘
+                                              │
+                                   sfr_log_many_model()
+                                              │
+                                       ┌──────▼───────┐
+                                       │Model Registry│
+                                       │ (aggregator) │
+                                       └──────┬───────┘
+                                              │
+                                    sfr_run_batch()
+                                              │
+                                      ┌───────▼────────┐
+                                      │FORECAST_RESULTS│
+                                      │  (output table)│
+                                      └────────────────┘
+\end{verbatim}
+
+\textbf{Two dispatch modes} are available:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.2222}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.4074}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3704}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Mode
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Mechanism
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Best for
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{Tasks} & Snowflake Tasks + SPCS jobs; fixed batch of chunks
+dispatched upfront & Known workload; all chunks must complete \\
+\textbf{Queue} & Hybrid Table queue; dynamic feeder adds chunks as
+workers finish & Time-boxed runs; streaming; scale-out/in \\
+\end{longtable}
+
+\textbf{The ``screen then refine'' pattern}: run a fast Tasks pass
+(e.g.~stepwise ARIMA) over all SKUs, capture accuracy metrics, then rank
+the worst performers and feed them into a time-boxed Queue run that
+applies a more expensive model contest (ARIMA + ETS + TBATS with holdout
+validation). The time budget is spent where it matters most.
+
+\subsection{2. Prerequisites}\label{prerequisites}
+
+\subsubsection{Snowflake objects}\label{snowflake-objects}
+
+\begin{itemize}
+\tightlist
+\item
+  A \textbf{compute pool} with enough nodes (e.g.~\texttt{CPU\_X64\_L},
+  4 nodes).
+\item
+  An \textbf{image repository} with the \texttt{dosnowflake-worker}
+  Docker image pushed.
+\item
+  A \textbf{warehouse} (XS is fine for orchestration SQL).
+\item
+  The role used must have \texttt{USAGE} on the compute pool and
+  \texttt{CREATE\ SERVICE} / \texttt{CREATE\ TASK} privileges.
+\end{itemize}
+
+\subsubsection{Local R environment}\label{local-r-environment}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{install.packages}\NormalTok{(}\FunctionTok{c}\NormalTok{(}\StringTok{"snowflakeR"}\NormalTok{, }\StringTok{"foreach"}\NormalTok{, }\StringTok{"iterators"}\NormalTok{, }\StringTok{"forecast"}\NormalTok{,}
+                    \StringTok{"ggplot2"}\NormalTok{, }\StringTok{"yaml"}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Authentication}\label{authentication}
+
+Configure \texttt{\textasciitilde{}/.snowflake/connections.toml} with a
+named profile using key-pair (JWT) auth:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{[my\_demo\_jwt]}
+\DataTypeTok{account}   \OperatorTok{=} \StringTok{"MYORG{-}MYACCOUNT"}
+\DataTypeTok{user}      \OperatorTok{=} \StringTok{"MY\_USER"}
+\DataTypeTok{authenticator} \OperatorTok{=} \StringTok{"SNOWFLAKE\_JWT"}
+\DataTypeTok{private\_key\_path} \OperatorTok{=} \StringTok{"\textasciitilde{}/.snowflake/keys/rsa\_key.p8"}
+\DataTypeTok{warehouse} \OperatorTok{=} \StringTok{"MY\_WH"}
+\DataTypeTok{database}  \OperatorTok{=} \StringTok{"MY\_DB"}
+\DataTypeTok{role}      \OperatorTok{=} \StringTok{"MY\_ROLE"}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{3. Config and Bootstrap}\label{config-and-bootstrap}
+
+\subsubsection{The YAML config file}\label{the-yaml-config-file}
+
+All environment-specific values live in a single YAML file. The
+reference implementation uses
+\texttt{snowflaker\_parallel\_spcs\_benchmark\_ak\_small.yaml}:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\#\# ADAPT: replace every value below with your account\textquotesingle{}s objects}
+\FunctionTok{context}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{warehouse}\KeywordTok{:}\AttributeTok{ MY\_WAREHOUSE}
+\AttributeTok{  }\FunctionTok{database}\KeywordTok{:}\AttributeTok{  MY\_DATABASE}
+\AttributeTok{  }\FunctionTok{schema}\KeywordTok{:}\AttributeTok{    SOURCE\_DATA}
+
+\FunctionTok{parallel\_lab}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{clean\_room}\KeywordTok{:}\AttributeTok{ }\CharTok{false}
+\AttributeTok{  }\FunctionTok{database}\KeywordTok{:}\AttributeTok{  MY\_DATABASE}
+\AttributeTok{  }\FunctionTok{schemas}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{source\_data}\KeywordTok{:}\AttributeTok{ SOURCE\_DATA}
+\AttributeTok{    }\FunctionTok{config}\KeywordTok{:}\AttributeTok{      CONFIG}
+\AttributeTok{    }\FunctionTok{models}\KeywordTok{:}\AttributeTok{      MODELS}
+\AttributeTok{  }\FunctionTok{warehouse}\KeywordTok{:}\AttributeTok{     MY\_WAREHOUSE}
+\AttributeTok{  }\FunctionTok{compute\_pool}\KeywordTok{:}\AttributeTok{  MY\_COMPUTE\_POOL}
+\AttributeTok{  }\FunctionTok{image\_uri}\KeywordTok{:}\AttributeTok{     }\StringTok{"myorg{-}myacct.registry.../my\_db/config/images/dosnowflake{-}worker:latest"}
+\AttributeTok{  }\FunctionTok{dosnowflake\_stage\_name}\KeywordTok{:}\AttributeTok{ DOSNOWFLAKE\_STAGE}
+\AttributeTok{  }\FunctionTok{queue\_table}\KeywordTok{:}\AttributeTok{ DOSNOWFLAKE\_QUEUE}
+\AttributeTok{  }\FunctionTok{instance\_family}\KeywordTok{:}\AttributeTok{ CPU\_X64\_L}
+
+\AttributeTok{  }\FunctionTok{demo\_forecast\_n\_skus}\KeywordTok{:}\AttributeTok{ }\DecValTok{2000}
+\AttributeTok{  }\FunctionTok{demo\_tasks\_chunks\_per\_job}\KeywordTok{:}\AttributeTok{ }\DecValTok{4}
+\AttributeTok{  }\FunctionTok{demo\_queue\_n\_workers}\KeywordTok{:}\AttributeTok{ }\DecValTok{4}
+\AttributeTok{  }\FunctionTok{demo\_queue\_chunks\_per\_job}\KeywordTok{:}\AttributeTok{ }\DecValTok{8}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Loading config and
+connecting}\label{loading-config-and-connecting}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{source}\NormalTok{(}\StringTok{"snowflakeR/inst/notebooks/parallel\_spcs\_workflow.R"}\NormalTok{)}
+
+\NormalTok{cfg  }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_load\_config}\NormalTok{(}\StringTok{"path/to/my\_config.yaml"}\NormalTok{)}
+\NormalTok{conn }\OtherTok{\textless{}{-}}\NormalTok{ snowflakeR}\SpecialCharTok{::}\FunctionTok{sfr\_connect}\NormalTok{(}
+  \AttributeTok{name =} \StringTok{"my\_demo\_jwt"}\NormalTok{,}
+  \AttributeTok{private\_key\_file =} \StringTok{"\textasciitilde{}/.snowflake/keys/rsa\_key.p8"}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Bootstrap DDL}\label{bootstrap-ddl}
+
+\texttt{parallel\_lab\_setup()} runs bootstrap SQL that creates:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{3 schemas}: \texttt{SOURCE\_DATA}, \texttt{CONFIG},
+  \texttt{MODELS}
+\item
+  \textbf{Internal stage} \texttt{DOSNOWFLAKE\_STAGE} with
+  \texttt{DIRECTORY\ =\ (ENABLE\ =\ TRUE)}
+\item
+  \textbf{Hybrid Table} \texttt{DOSNOWFLAKE\_QUEUE} (for queue mode)
+\item
+  \textbf{Tables}: \texttt{TRAINING\_RESULTS},
+  \texttt{TRAINING\_METRICS}, \texttt{FORECAST\_RESULTS}
+\item
+  \textbf{View}: \texttt{MODEL\_INDEX} (parses \texttt{RELATIVE\_PATH}
+  from the stage directory table into \texttt{RUN\_ID} +
+  \texttt{PARTITION\_KEY})
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{parallel\_lab\_setup}\NormalTok{(conn, cfg, }\AttributeTok{create\_series =} \ConstantTok{TRUE}\NormalTok{, }\AttributeTok{n\_units =} \DecValTok{2000}\NormalTok{, }\AttributeTok{n\_days =} \DecValTok{1095}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Set \texttt{create\_series\ =\ TRUE} for synthetic data (generates 3
+years of daily observations per SKU with weekly + annual seasonality,
+trend changepoints, and occasional outliers), or \texttt{FALSE} if your
+source table already exists.
+
+\textbf{ADAPT}: the \texttt{SERIES\_EVENTS} schema is
+\texttt{(UNIT\_ID\ VARCHAR,\ OBS\_DATE\ DATE,\ Y\ FLOAT)}. Replace this
+with your own data table's DDL.
+
+\subsection{4. The foreach Expression}\label{the-foreach-expression}
+
+The worker expression is the R code that runs \textbf{inside each SPCS
+container} for every unit (SKU/store/sensor/etc.). It receives an
+injected \texttt{unit\_data} data.frame and a \texttt{unit\_id}
+variable.
+
+\subsubsection{Anatomy of a worker
+expression}\label{anatomy-of-a-worker-expression}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# This runs inside the SPCS container for each unit\_id.}
+\DocumentationTok{\#\# \textasciigrave{}unit\_data\textasciigrave{} is automatically injected by doSnowflake — it contains the rows}
+\DocumentationTok{\#\# from SERIES\_EVENTS where UNIT\_ID == unit\_id.}
+
+\FunctionTok{suppressPackageStartupMessages}\NormalTok{(}\FunctionTok{library}\NormalTok{(forecast))}
+
+\DocumentationTok{\#\# ADAPT: convert your data to a ts object with the right frequency}
+\DocumentationTok{\#\# frequency = 7 for daily data (weekly cycle); use 12 for monthly, 365.25 for}
+\DocumentationTok{\#\# daily with annual cycle, etc.}
+\NormalTok{ts\_full }\OtherTok{\textless{}{-}} \FunctionTok{ts}\NormalTok{(unit\_data}\SpecialCharTok{$}\NormalTok{Y, }\AttributeTok{frequency =} \DecValTok{7}\NormalTok{)}
+
+\DocumentationTok{\#\# ADAPT: fit your model here (any R model that produces forecasts)}
+\NormalTok{model }\OtherTok{\textless{}{-}} \FunctionTok{auto.arima}\NormalTok{(ts\_full, }\AttributeTok{stepwise =} \ConstantTok{TRUE}\NormalTok{)}
+\NormalTok{fc    }\OtherTok{\textless{}{-}} \FunctionTok{forecast}\NormalTok{(model, }\AttributeTok{h =} \DecValTok{30}\DataTypeTok{L}\NormalTok{)}
+\NormalTok{acc   }\OtherTok{\textless{}{-}}\NormalTok{ forecast}\SpecialCharTok{::}\FunctionTok{accuracy}\NormalTok{(model)}
+
+\DocumentationTok{\#\# Contract: return a list with these fields}
+\FunctionTok{list}\NormalTok{(}
+  \AttributeTok{unit\_id   =}\NormalTok{ unit\_id,}
+  \AttributeTok{model     =} \FunctionTok{as.character}\NormalTok{(fc}\SpecialCharTok{$}\NormalTok{method),}
+  \AttributeTok{forecast  =} \FunctionTok{as.numeric}\NormalTok{(fc}\SpecialCharTok{$}\NormalTok{mean),}
+  \AttributeTok{n\_obs     =} \FunctionTok{nrow}\NormalTok{(unit\_data),}
+  \AttributeTok{model\_obj =}\NormalTok{ model,           }\CommentTok{\# saved as .rds on stage}
+  \AttributeTok{aicc      =}\NormalTok{ model}\SpecialCharTok{$}\NormalTok{aicc,}
+  \AttributeTok{rmse      =}\NormalTok{ acc[}\DecValTok{1}\NormalTok{, }\StringTok{"RMSE"}\NormalTok{],}
+  \AttributeTok{mape      =}\NormalTok{ holdout\_mape,    }\CommentTok{\# see holdout validation below}
+  \AttributeTok{mase      =}\NormalTok{ acc[}\DecValTok{1}\NormalTok{, }\StringTok{"MASE"}\NormalTok{]}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\textbf{Key contract}: the returned list must include \texttt{unit\_id}
+(the partition key) and \texttt{model\_obj} (the fitted model object ---
+serialized as \texttt{.rds} on the stage). Additional fields
+(\texttt{forecast}, metrics) are collected in the results list.
+
+\subsubsection{Holdout validation}\label{holdout-validation}
+
+For fair cross-method comparison, compute an \textbf{out-of-sample
+holdout MAPE} by reserving the last 30 days (or 1/4 of the series) as a
+test set:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{n }\OtherTok{\textless{}{-}} \FunctionTok{length}\NormalTok{(ts\_full)}
+\NormalTok{holdout\_n }\OtherTok{\textless{}{-}} \FunctionTok{min}\NormalTok{(}\DecValTok{30}\DataTypeTok{L}\NormalTok{, }\FunctionTok{as.integer}\NormalTok{(}\FunctionTok{floor}\NormalTok{(n }\SpecialCharTok{/} \DecValTok{4}\NormalTok{)))}
+
+\NormalTok{holdout\_mape }\OtherTok{\textless{}{-}} \FunctionTok{tryCatch}\NormalTok{(\{}
+\NormalTok{  ts\_train }\OtherTok{\textless{}{-}} \FunctionTok{window}\NormalTok{(ts\_full, }\AttributeTok{end =} \FunctionTok{time}\NormalTok{(ts\_full)[n }\SpecialCharTok{{-}}\NormalTok{ holdout\_n])}
+\NormalTok{  ts\_test  }\OtherTok{\textless{}{-}} \FunctionTok{window}\NormalTok{(ts\_full, }\AttributeTok{start =} \FunctionTok{time}\NormalTok{(ts\_full)[n }\SpecialCharTok{{-}}\NormalTok{ holdout\_n }\SpecialCharTok{+} \DecValTok{1}\NormalTok{])}
+\NormalTok{  m\_ho     }\OtherTok{\textless{}{-}} \FunctionTok{auto.arima}\NormalTok{(ts\_train, }\AttributeTok{stepwise =} \ConstantTok{TRUE}\NormalTok{)}
+\NormalTok{  fc\_ho    }\OtherTok{\textless{}{-}} \FunctionTok{forecast}\NormalTok{(m\_ho, }\AttributeTok{h =}\NormalTok{ holdout\_n)}
+  \FunctionTok{mean}\NormalTok{(}\FunctionTok{abs}\NormalTok{((ts\_test }\SpecialCharTok{{-}}\NormalTok{ fc\_ho}\SpecialCharTok{$}\NormalTok{mean) }\SpecialCharTok{/}\NormalTok{ ts\_test)) }\SpecialCharTok{*} \DecValTok{100}
+\NormalTok{\}, }\AttributeTok{error =} \ControlFlowTok{function}\NormalTok{(e) }\ConstantTok{NA\_real\_}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{5. Tasks Mode (Fixed Batch)}\label{tasks-mode-fixed-batch}
+
+Tasks mode dispatches all chunks upfront using a Snowflake Task DAG.
+Each task launches an SPCS job service that processes one chunk of
+\texttt{unit\_ids}.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{tasks\_out }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_run\_tasks\_demo}\NormalTok{(conn, cfg,}
+  \AttributeTok{run            =} \ConstantTok{TRUE}\NormalTok{,}
+  \AttributeTok{arima\_stepwise =} \ConstantTok{TRUE}\NormalTok{,}
+  \AttributeTok{forecast\_h     =} \DecValTok{30}\DataTypeTok{L}\NormalTok{,}
+  \AttributeTok{save\_models    =} \ConstantTok{TRUE}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{How it works}\label{how-it-works}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \texttt{registerDoSnowflake(conn,\ mode\ =\ "tasks",\ ...)} sets up
+  the backend.
+\item
+  The \texttt{foreach} loop iterates over \texttt{unit\_ids};
+  doSnowflake chunks them into \texttt{chunks\_per\_job} groups.
+\item
+  Each chunk becomes an SPCS job service that:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Bulk-reads its partition of \texttt{SERIES\_EVENTS} via the
+    \texttt{data\_query} spec
+  \item
+    Runs \texttt{mclapply} over the units within the container
+  \item
+    Writes \texttt{.rds} model files to
+    \texttt{@STAGE/models/\textless{}run\_id\textgreater{}/\textless{}unit\_id\textgreater{}.rds}
+  \item
+    Writes result \texttt{.rds} back to
+    \texttt{@STAGE/\textless{}job\textgreater{}/results/result\_\textless{}chunk\textgreater{}.rds}
+  \end{itemize}
+\item
+  The orchestrator polls until all chunks complete, then collects
+  results.
+\end{enumerate}
+
+\subsubsection{Chunk sizing}\label{chunk-sizing}
+
+Balance parallelism vs overhead:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Too few chunks} (e.g.~1): all work in one container, no
+  parallelism across nodes.
+\item
+  \textbf{Too many chunks} (e.g.~2000, one per SKU): excessive
+  job-launch overhead.
+\item
+  \textbf{Sweet spot}: 4--20 chunks for 2000 units. Each container gets
+  100--500 SKUs and uses \texttt{mclapply} for intra-node parallelism.
+\end{itemize}
+
+\subsection{6. Queue Mode (Time-Boxed
+Streaming)}\label{queue-mode-time-boxed-streaming}
+
+Queue mode uses a Hybrid Table as a work queue. A \textbf{dynamic
+feeder} inserts rows as workers pull them, up to a time budget.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{queue\_out }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_run\_queue\_timeboxed}\NormalTok{(conn, cfg,}
+  \AttributeTok{run            =} \ConstantTok{TRUE}\NormalTok{,}
+  \AttributeTok{time\_limit\_sec =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{elapsed,   }\CommentTok{\# match Tasks wall time}
+  \AttributeTok{model\_contest  =} \ConstantTok{TRUE}\NormalTok{,                }\CommentTok{\# ARIMA + ETS + TBATS contest}
+  \AttributeTok{forecast\_h     =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{params}\SpecialCharTok{$}\NormalTok{forecast\_h,}
+  \AttributeTok{n\_chunks       =} \DecValTok{40}\DataTypeTok{L}\NormalTok{,}
+  \AttributeTok{unit\_ids       =}\NormalTok{ worst\_skus           }\CommentTok{\# worst{-}first from Tasks}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Dynamic feeder pattern}\label{dynamic-feeder-pattern}
+
+Unlike Tasks, the Queue does \textbf{not} dispatch all work upfront. The
+feeder loop:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Checks how many chunks are \texttt{PENDING} in the queue.
+\item
+  If slots are available and the time budget hasn't expired, inserts the
+  next chunk.
+\item
+  Launches SPCS workers that claim rows via compare-and-swap (CAS):
+  \texttt{UPDATE\ ...\ SET\ STATUS\ =\ \textquotesingle{}RUNNING\textquotesingle{}\ WHERE\ STATUS\ =\ \textquotesingle{}PENDING\textquotesingle{}\ LIMIT\ 1}.
+\item
+  When the feeder's time budget expires, it stops feeding but waits for
+  in-flight chunks to finish.
+\end{enumerate}
+
+This gives a natural ``time-boxed'' behavior: you spend exactly as much
+wall time as you budget, processing as many chunks as workers can
+handle.
+
+\subsubsection{Accuracy-ranked feeding}\label{accuracy-ranked-feeding}
+
+By ranking SKUs worst-first (highest holdout MAPE from the Tasks run),
+the time budget is spent where it has the greatest impact:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{worst\_skus }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_rank\_skus\_by\_accuracy}\NormalTok{(}
+  \AttributeTok{run\_results =}\NormalTok{ tasks\_out,}
+  \AttributeTok{metric      =} \StringTok{"mape"}\NormalTok{,}
+  \AttributeTok{descending  =} \ConstantTok{TRUE}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Model contest}\label{model-contest}
+
+When \texttt{model\_contest\ =\ TRUE}, each SKU's worker expression runs
+a holdout- validated competition:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Split the daily series into training (\textasciitilde1065 days) and
+  test (30 days).
+\item
+  Fit three candidates:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{auto.arima(stepwise\ =\ FALSE)} (exhaustive ARIMA search)
+  \item
+    \texttt{ets()} (exponential smoothing)
+  \item
+    \texttt{tbats()} (Trigonometric seasonality, Box-Cox, ARMA errors,
+    Trend, Seasonal --- handles multiple seasonal periods natively,
+    e.g.~weekly + annual cycles in daily data)
+  \end{itemize}
+\item
+  The candidate with the lowest test-set MAPE wins.
+\item
+  The winner is refit on the full series for the production model.
+\end{enumerate}
+
+TBATS is particularly well-suited to this contest because the daily
+synthetic data has \textbf{two nested seasonal cycles} (weekly period =
+7, annual period = 365.25) that ARIMA and ETS cannot capture
+simultaneously.
+
+\textbf{ADAPT}: replace the three candidate model families with whatever
+makes sense for your domain (Prophet, XGBoost, LSTM, etc.).
+
+\subsection{7. Metrics and Comparison}\label{metrics-and-comparison}
+
+\subsubsection{Persisting metrics}\label{persisting-metrics}
+
+After each run, save per-unit accuracy metrics to the
+\texttt{TRAINING\_METRICS} table:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{parallel\_lab\_save\_metrics}\NormalTok{(conn, cfg, tasks\_out)}
+\FunctionTok{parallel\_lab\_save\_metrics}\NormalTok{(conn, cfg, queue\_out)}
+\end{Highlighting}
+\end{Shaded}
+
+This writes
+\texttt{(MODEL\_RUN\_ID,\ UNIT\_ID,\ ARIMA\_MODEL,\ AICC,\ RMSE,\ MAPE,\ MASE,\ N\_OBS)}
+for every successfully fitted unit. The \texttt{MAPE} column stores the
+\textbf{holdout} (out-of-sample) MAPE --- not the training MAPE.
+
+\subsubsection{Why holdout MAPE?}\label{why-holdout-mape}
+
+Training MAPE reflects how well the model fits historical data. Holdout
+MAPE reflects how well it \textbf{predicts unseen data}. When comparing
+a simple stepwise ARIMA (Tasks) against a model contest (Queue),
+training MAPE will look similar because both methods fit the full
+series. The difference only shows up in out-of-sample performance.
+
+\subsubsection{Plotting}\label{plotting}
+
+Single-run histogram:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{parallel\_lab\_plot\_accuracy}\NormalTok{(tasks\_out, }\AttributeTok{metric =} \StringTok{"mape"}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Faceted comparison (Tasks vs Queue, matched SKUs only):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{parallel\_lab\_plot\_accuracy\_comparison}\NormalTok{(}
+\NormalTok{  tasks\_out, queue\_out,}
+  \AttributeTok{metric =} \StringTok{"mape"}\NormalTok{,}
+  \AttributeTok{matched\_only =} \ConstantTok{TRUE}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+The \texttt{matched\_only\ =\ TRUE} parameter restricts the comparison
+to SKUs that appear in both runs, making the distributions directly
+comparable.
+
+\subsection{8. Model Registry}\label{model-registry}
+
+\subsubsection{Registering N models as one
+version}\label{registering-n-models-as-one-version}
+
+After training, each SKU's \texttt{.rds} model file lives at
+\texttt{@STAGE/models/\textless{}run\_id\textgreater{}/\textless{}unit\_id\textgreater{}.rds}.
+The stage's \texttt{DIRECTORY} table tracks all files. The
+\texttt{MODEL\_INDEX} view extracts \texttt{RUN\_ID} and
+\texttt{PARTITION\_KEY} from the file paths.
+
+\texttt{sfr\_log\_many\_model()} registers a \textbf{CustomModel
+aggregator} in Model Registry. The aggregator:
+
+\begin{itemize}
+\tightlist
+\item
+  Carries a \texttt{model\_index.json} mapping \texttt{UNIT\_ID} → stage
+  path
+\item
+  Exposes \texttt{@partitioned\_api\ predict()} for \texttt{run\_batch}
+  (TABLE\_FUNCTION)
+\item
+  Exposes \texttt{@inference\_api\ predict\_single()} for SPCS service
+  (FUNCTION)
+\item
+  Registers in O(1) time (\textasciitilde8--13s regardless of partition
+  count)
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{reg\_tasks }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_register\_models}\NormalTok{(conn, cfg,}
+  \AttributeTok{model\_run\_id =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{model\_run\_id,}
+  \AttributeTok{forecast\_h   =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{params}\SpecialCharTok{$}\NormalTok{forecast\_h}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{The Ray shuffle bug
+(SNOW-2193288)}\label{the-ray-shuffle-bug-snow-2193288}
+
+Model Registry's \texttt{run\_batch} uses Ray internally for partitioned
+dispatch. When the number of unique partition keys is much less than
+\textasciitilde200, Ray's shuffle mechanism can fail. \textbf{Always
+ensure \textgreater= 200 partition keys} when using \texttt{run\_batch}.
+The reference implementation warns if this threshold is not met.
+
+\subsection{9. Batch Inference}\label{batch-inference}
+
+\subsubsection{Server-side partitioned
+inference}\label{server-side-partitioned-inference}
+
+\texttt{sfr\_run\_batch()} launches an SPCS batch job that:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Partitions the input DataFrame by \texttt{UNIT\_ID}.
+\item
+  For each partition, the \texttt{RManyModelAggregator} downloads the
+  \texttt{.rds} model from stage, loads it via \texttt{rpy2}, and runs
+  \texttt{forecast::forecast(model,\ h=...)}.
+\item
+  Returns a DataFrame of
+  \texttt{(PARTITION\_KEY,\ PERIOD,\ FORECAST,\ LOWER\_80,\ \ \ \ UPPER\_80,\ LOWER\_95,\ UPPER\_95,\ STATUS)}.
+\end{enumerate}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{fc\_df }\OtherTok{\textless{}{-}} \FunctionTok{parallel\_lab\_run\_inference}\NormalTok{(conn, cfg,}
+  \AttributeTok{model\_run\_id =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{model\_run\_id,}
+  \AttributeTok{forecast\_h   =}\NormalTok{ tasks\_out}\SpecialCharTok{$}\NormalTok{params}\SpecialCharTok{$}\NormalTok{forecast\_h}
+\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+The results are written to the \texttt{FORECAST\_RESULTS} table with
+columns:
+\texttt{RUN\_ID,\ UNIT\_ID,\ HORIZON,\ FORECAST\_DATE,\ POINT\_FORECAST,\ LO\_80,\ HI\_80,\ LO\_95,\ HI\_95,\ STATUS}.
+
+\subsubsection{Input contract}\label{input-contract}
+
+The input DataFrame needs at minimum a \texttt{UNIT\_ID} column (the
+partition key). Additional columns are ignored by the aggregator --- it
+loads the model from stage rather than re-training.
+
+\subsection{10. Monitoring}\label{monitoring}
+
+The reference implementation includes two Streamlit dashboards:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{\texttt{streamlit\_benchmark\_monitor.py}}: live progress for
+  Tasks vs Queue benchmark runs, filtered by \texttt{JOB\_ID}.
+\item
+  \textbf{\texttt{streamlit\_parallel\_demo\_monitor.py}}:
+  general-purpose SPCS service and queue monitoring.
+\end{itemize}
+
+Deploy to Snowflake (Streamlit-in-Snowflake) with:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{python}\NormalTok{ deploy\_streamlit\_monitor.py }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}connection{-}name}\NormalTok{ my\_demo\_jwt }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}private{-}key{-}file}\NormalTok{ \textasciitilde{}/.snowflake/keys/rsa\_key.p8}
+\end{Highlighting}
+\end{Shaded}
+
+\textbf{Tip}: scope dashboard queries by \texttt{JOB\_ID} to avoid
+showing cumulative counts from previous runs.
+
+\subsection{11. Lessons Learned}\label{lessons-learned}
+
+\subsubsection{JWT expiry and stale
+sessions}\label{jwt-expiry-and-stale-sessions}
+
+\texttt{sfr\_connect()} auto-detects Workspace Notebook sessions. When
+running in RStudio with explicit \texttt{name} / \texttt{account}
+parameters, it skips auto-detection to avoid wrapping a stale, expired
+Python session. If you see \texttt{JWT\ token\ is\ invalid} after a
+timeout, explicitly reconnect:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{conn }\OtherTok{\textless{}{-}}\NormalTok{ snowflakeR}\SpecialCharTok{::}\FunctionTok{sfr\_connect}\NormalTok{(}
+  \AttributeTok{name =} \StringTok{"my\_demo\_jwt"}\NormalTok{,}
+  \AttributeTok{private\_key\_file =} \StringTok{"\textasciitilde{}/.snowflake/keys/rsa\_key.p8"}
+\NormalTok{)}
+\NormalTok{dbi\_con }\OtherTok{\textless{}{-}}\NormalTok{ snowflakeR}\SpecialCharTok{::}\FunctionTok{sfr\_dbi\_connection}\NormalTok{(conn)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{RStudio Connections Pane}\label{rstudio-connections-pane}
+
+Call \texttt{sfr\_dbi\_connection(conn)} after \texttt{sfr\_connect()}
+to populate the Connections Pane with database catalog info. If schemas
+or tables don't appear, disconnect in the pane and reconnect --- RStudio
+caches connection observer closures.
+
+\subsubsection{Setting the right ts
+frequency}\label{setting-the-right-ts-frequency}
+
+Use \texttt{ts(data,\ frequency\ =\ 7)} for daily data with a weekly
+cycle, or \texttt{frequency\ =\ 12} for monthly data. Without the
+correct frequency, \texttt{auto.arima} cannot learn seasonal patterns
+and forecasts will be flat. For daily data with both weekly and annual
+cycles, TBATS auto-detects multiple seasonal periods from the
+\texttt{frequency} attribute.
+
+\subsubsection{Chunk count parity}\label{chunk-count-parity}
+
+When comparing Tasks vs Queue, use chunk counts that give comparable
+total work. The Queue's dynamic feeder means fewer chunks may complete
+within the time budget --- that's by design (time-boxed, not
+work-boxed).
+
+\subsubsection{\texorpdfstring{\texttt{bquote} vs \texttt{quote} for
+parameter
+substitution}{bquote vs quote for parameter substitution}}\label{bquote-vs-quote-for-parameter-substitution}
+
+The worker expression uses \texttt{bquote()} with \texttt{.()} splicing
+to inject parameter values (e.g.~\texttt{.(forecast\_h)},
+\texttt{.(arima\_stepwise)}) at definition time. Using \texttt{quote()}
+would capture the variable \emph{names}, not their \emph{values},
+causing failures when the expression runs in a remote container where
+those variables don't exist.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{forecast\_expr }\OtherTok{\textless{}{-}} \FunctionTok{bquote}\NormalTok{(\{}
+\NormalTok{  model }\OtherTok{\textless{}{-}} \FunctionTok{auto.arima}\NormalTok{(ts\_full, }\AttributeTok{stepwise =}\NormalTok{ .(arima\_stepwise))}
+\NormalTok{  fc    }\OtherTok{\textless{}{-}} \FunctionTok{forecast}\NormalTok{(model, }\AttributeTok{h =}\NormalTok{ .(forecast\_h))}
+  \CommentTok{\# ...}
+\NormalTok{\})}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Further Reading}\label{further-reading}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{\texttt{vignette("parallel-dosnowflake")}}: the low-level
+  \texttt{registerDoSnowflake} API reference (foreach backend, generic
+  SPCS executor, crew/mirai workers).
+\item
+  \textbf{Reference implementation}:
+  \texttt{internal/doSnowflake/demos/parallel\_forecast/} contains the
+  complete runnable demo with configs, deploy scripts, and tests.
+\item
+  \textbf{Function reference}: \texttt{?sfr\_log\_many\_model},
+  \texttt{?sfr\_run\_batch}, \texttt{?sfr\_model\_registry},
+  \texttt{?registerDoSnowflake}.
+\end{itemize}
+
+\end{document}

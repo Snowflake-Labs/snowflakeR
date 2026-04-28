@@ -117,6 +117,14 @@
     packages   = obj$packages,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
   )
+  if (!is.null(opts$data_query)) {
+    manifest$data_query <- opts$data_query
+  }
+  if (isTRUE(opts$save_models)) {
+    manifest$save_models   <- TRUE
+    manifest$model_key_arg <- opts$model_key_arg %||% "unit_id"
+    manifest$model_run_id  <- opts$model_run_id %||% ""
+  }
   manifest_file <- file.path(tmp_dir, "manifest.json")
   writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE),
              manifest_file)

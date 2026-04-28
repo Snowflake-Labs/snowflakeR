@@ -18,6 +18,8 @@ call this module via reticulate.
 import contextlib
 import importlib.metadata
 import io
+import json
+import tempfile
 import uuid
 import textwrap
 from typing import Dict, List, Optional, Any
@@ -1266,19 +1268,141 @@ def registry_list_services(session, model_name, version_name,
 def registry_run_batch(session, model_name, version_name,
                        input_data=None, input_data_path=None,
                        compute_pool=None, function_name="predict",
+                       partition_column=None, output_stage=None,
                        database_name=None, schema_name=None):
-    """Run batch inference via SPCS job."""
-    _, _, mv = _get_model_version(session, model_name, version_name, database_name, schema_name)
+    """Run batch inference via SPCS job.
+
+    Uses the v1.35+ API with OutputSpec / InputSpec / JobSpec.
+    Results are written to ``output_stage`` (Parquet), then read back.
+
+    Ray's shuffle mechanism (hardcoded 200 partitions) can produce 0-byte
+    parquet files for empty partition buckets.  We remove these before
+    reading to avoid Snowflake's parquet parser error on empty files.
+    """
+    from snowflake.ml.model._client.model.batch_inference_specs import (
+        InputSpec, OutputSpec, JobSpec, SaveMode,
+    )
+
+    _, _, mv = _get_model_version(
+        session, model_name, version_name, database_name, schema_name
+    )
+
     if input_data_path is not None:
         input_data = pd.read_csv(input_data_path)
     sp_df = session.create_dataframe(input_data)
-    kwargs: Dict[str, Any] = {"X": sp_df}
-    if compute_pool:
-        kwargs["compute_pool"] = compute_pool
-    if function_name != "predict":
-        kwargs["function_name"] = function_name
-    result = _quiet_call(mv.run_batch, **kwargs)
-    return _to_json_tempfile(result.to_pandas()) if hasattr(result, 'to_pandas') else str(result)
+
+    if not compute_pool:
+        raise ValueError("compute_pool is required for run_batch")
+
+    if not output_stage:
+        db = database_name or session.get_current_database()
+        sc = schema_name or session.get_current_schema()
+        output_stage = f"@{db}.{sc}.BATCH_INFERENCE_OUTPUT/"
+
+    input_spec = None
+    if partition_column:
+        input_spec = InputSpec(partition_column=partition_column)
+
+    output_spec = OutputSpec(
+        stage_location=output_stage,
+        mode=SaveMode.OVERWRITE,
+    )
+    job_spec = JobSpec(function_name=function_name, block=True)
+
+    import sys
+    import time as _time
+
+    job = mv.run_batch(
+        X=sp_df,
+        compute_pool=compute_pool,
+        input_spec=input_spec,
+        output_spec=output_spec,
+        job_spec=job_spec,
+    )
+
+    job_name = getattr(job, 'name', 'unknown')
+    print(f"[sfr_run_batch] Job {job_name} submitted (status={job.status})",
+          file=sys.stderr)
+
+    t0 = _time.time()
+    timeout_s = 600
+    poll_s = 10
+    while True:
+        status = str(job.status).upper()
+        elapsed = _time.time() - t0
+        if status in ("DONE", "READY"):
+            print(f"[sfr_run_batch] Job completed in {elapsed:.0f}s",
+                  file=sys.stderr)
+            break
+        if status == "FAILED":
+            logs = ""
+            try:
+                logs = job.get_logs()[:2000]
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Batch job {job_name} FAILED after {elapsed:.0f}s.\n{logs}"
+            )
+        if elapsed > timeout_s:
+            raise RuntimeError(
+                f"Batch job {job_name} timed out after {timeout_s}s "
+                f"(last status: {status})"
+            )
+        _time.sleep(poll_s)
+
+    pdf = _read_batch_parquet(session, output_stage)
+
+    import math
+    d = {}
+    for col in pdf.columns:
+        vals = pdf[col].tolist()
+        d[col] = [
+            None if (isinstance(v, float) and math.isnan(v)) else v
+            for v in vals
+        ]
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, prefix="sfr_batch_"
+    )
+    json.dump(d, tmp, default=str)
+    tmp.close()
+    return tmp.name
+
+
+def _read_batch_parquet(session, output_stage: str) -> pd.DataFrame:
+    """Read parquet results from a batch inference output stage.
+
+    Removes 0-byte files left by empty Ray shuffle partitions before
+    reading, since Snowflake's parquet parser rejects them.
+    """
+    try:
+        rows = session.sql(f"LIST {output_stage}").collect()
+    except Exception:
+        return pd.DataFrame({"status": ["job_completed"], "output_stage": [output_stage]})
+
+    if not rows:
+        return pd.DataFrame({"status": ["no_output_files"], "output_stage": [output_stage]})
+
+    empty_files = [r[0] for r in rows if int(r[1]) == 0]
+    if empty_files:
+        stage_name = output_stage.split("/")[0]
+        for f in empty_files:
+            rel_path = f.split("/", 1)[1] if "/" in f else f
+            try:
+                session.sql(f"REMOVE {stage_name}/{rel_path}").collect()
+            except Exception:
+                pass
+
+    try:
+        result_df = session.read.parquet(f"{output_stage}")
+        pdf = result_df.to_pandas()
+        pdf.columns = [c.strip('"') for c in pdf.columns]
+        return pdf
+    except Exception as e:
+        return pd.DataFrame({
+            "status": [f"parquet_read_error: {str(e)[:200]}"],
+            "output_stage": [output_stage],
+        })
 
 
 def registry_models(session, database_name=None, schema_name=None):

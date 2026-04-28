@@ -2014,12 +2014,30 @@ sfr_list_services <- function(reg, model_name, version_name) {
 #' @param new_data A data.frame with input data.
 #' @param compute_pool Character. Compute pool for the batch job.
 #' @param function_name Character. Function to call (default: `"predict"`).
+#' @param partition_column Character or NULL. Column name to partition by
+#'   (for `@partitioned_api` TABLE_FUNCTION models).
+#' @param output_stage Character or NULL. Stage path for results (auto-created
+#'   if NULL).
 #'
 #' @returns A data.frame with predictions.
 #' @export
 sfr_run_batch <- function(reg, model_name, version_name, new_data,
-                          compute_pool = NULL, function_name = "predict") {
+                          compute_pool = NULL, function_name = "predict",
+                          partition_column = NULL, output_stage = NULL) {
   ctx <- resolve_registry_context(reg)
+
+  if (!is.null(partition_column)) {
+    n_keys <- length(unique(new_data[[partition_column]]))
+    if (n_keys > 0 && n_keys < 200) {
+      cli::cli_warn(c(
+        "!" = "Only {n_keys} unique values in partition column {.val {partition_column}}.",
+        "i" = "Ray shuffle uses 200 buckets -- fewer unique keys can trigger",
+        " " = "the empty-block bug (SNOW-2193288). Consider bundling or adding",
+        " " = "dummy keys to reach >= 200 partitions."
+      ))
+    }
+  }
+
   bridge <- get_bridge_module("sfr_registry_bridge")
   input_path <- tempfile(fileext = ".csv")
   utils::write.csv(new_data, input_path, row.names = FALSE)
@@ -2031,12 +2049,14 @@ sfr_run_batch <- function(reg, model_name, version_name, new_data,
     input_data_path = input_path,
     compute_pool = compute_pool,
     function_name = function_name,
+    partition_column = partition_column,
+    output_stage = output_stage,
     database_name = ctx$database_name,
     schema_name = ctx$schema_name
   )
   if (is.character(result) && file.exists(result)) {
     on.exit(unlink(result), add = TRUE)
-    .bridge_dict_to_df(jsonlite::fromJSON(result))
+    as.data.frame(jsonlite::fromJSON(result), stringsAsFactors = FALSE)
   } else {
     result
   }
