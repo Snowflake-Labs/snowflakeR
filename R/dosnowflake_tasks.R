@@ -48,15 +48,16 @@
   bridge <- get_bridge_module("sfr_tasks_bridge")
 
   bridge$create_and_run_dag(
-    session         = conn$session,
-    dag_name        = dag_name,
-    job_id          = job_id,
-    n_chunks        = as.integer(job$n_chunks),
-    stage_path      = job$stage_path,
-    compute_pool    = opts$compute_pool,
-    image_uri       = opts$image_uri,
-    warehouse       = opts$warehouse,
-    instance_family = opts$instance_family
+    session              = conn$session,
+    dag_name             = dag_name,
+    job_id               = job_id,
+    n_chunks             = as.integer(job$n_chunks),
+    stage_path           = job$stage_path,
+    compute_pool         = opts$compute_pool,
+    image_uri            = opts$image_uri,
+    warehouse            = opts$warehouse,
+    instance_family      = opts$instance_family,
+    containers_per_node  = as.integer(opts$containers_per_node %||% 1L)
   )
 
   # 3. Poll task graph for completion (use chunk child status — root can flip
@@ -164,7 +165,8 @@
     compute_pool   = compute_pool,
     image_uri      = image_uri,
     warehouse      = warehouse,
-    instance_family = user_opts$instance_family %||% "CPU_X64_S",
+    instance_family     = user_opts$instance_family %||% "CPU_X64_S",
+    containers_per_node = as.integer(user_opts$containers_per_node %||% 1L),
     stage          = user_opts$stage %||% "DOSNOWFLAKE_STAGE",
     timeout_min    = as.numeric(user_opts$timeout_min %||% 30),
     poll_sec       = as.numeric(user_opts$poll_sec %||% 5),

@@ -1,5 +1,13 @@
 # snowflakeR
 
+> **Community Project -- Not Officially Supported**
+> This is a community-developed project from
+> [Snowflake Labs](https://github.com/Snowflake-Labs), not an official
+> Snowflake offering. It is provided **as-is** without warranty or official
+> Snowflake support. Use it for prototyping and experimentation; production
+> use is at your own risk. Feedback, bug reports, and contributions are
+> welcome via [GitHub Issues](https://github.com/Snowflake-Labs/snowflakeR/issues).
+
 R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datasets, and SPCS model serving. Works in **local R environments** (RStudio, VS Code, terminal) and **Snowflake Workspace Notebooks**.
 
 > **Companion package:** For standard DBI-compliant database access (`dbGetQuery`, `dbWriteTable`, `dbplyr`, RStudio Connections Pane, etc.), see [**RSnowflake**](https://github.com/Snowflake-Labs/RSnowflake). `snowflakeR` focuses on ML platform features; `RSnowflake` provides the database connectivity layer.

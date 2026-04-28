@@ -84,6 +84,7 @@ parallel_lab_load_config <- function(config_path = "snowflaker_parallel_spcs_con
   out$demo_queue_n_workers <- as.integer(lab$demo_queue_n_workers %||% defaults$demo_queue_n_workers)
   out$demo_queue_chunks_per_job <- as.integer(lab$demo_queue_chunks_per_job %||% defaults$demo_queue_chunks_per_job)
   out$instance_family <- lab$instance_family %||% "CPU_X64_S"
+  out$containers_per_node <- as.integer(lab$containers_per_node %||% 1L)
   out$clean_room <- if (is.null(lab$clean_room)) TRUE else isTRUE(lab$clean_room)
 
   out$schemas <- list(
@@ -352,6 +353,7 @@ parallel_lab_run_tasks_demo <- function(
     stage = stage,
     chunks_per_job = n_chunks,
     instance_family = cfg$instance_family %||% "CPU_X64_S",
+    containers_per_node = as.integer(cfg$containers_per_node %||% 1L),
     data_query = data_query,
     save_models = save_models,
     model_key_arg = "unit_id",
@@ -539,6 +541,7 @@ parallel_lab_run_queue_demo <- function(
 parallel_lab_run_queue_timeboxed <- function(
     conn, cfg, run = FALSE,
     time_limit_sec,
+    drain_multiplier = 1.5,
     model_run_id = NULL,
     arima_stepwise = TRUE,
     forecast_h = 30L,
@@ -577,6 +580,7 @@ parallel_lab_run_queue_timeboxed <- function(
   pool      <- cfg$compute_pool
   img       <- cfg$image_uri
   inst_fam  <- cfg$instance_family %||% "CPU_X64_S"
+  cpn       <- as.integer(cfg$containers_per_node %||% 1L)
   series_table <- sprintf("%s.%s.SERIES_EVENTS",
                           cfg$database, cfg$schemas$source_data)
 
@@ -732,17 +736,19 @@ parallel_lab_run_queue_timeboxed <- function(
     time_limit_sec, n_workers, n_chunks
   ))
   tb_result <- bridge$run_time_boxed_queue(
-    session         = conn$session,
-    compute_pool    = pool,
-    image_uri       = img,
-    job_id          = job_id,
-    stage_path      = job$stage_path,
-    total_chunks    = n_chunks,
-    n_workers       = n_workers,
-    time_limit_sec  = time_limit_sec,
-    queue_fqn       = queue_fqn,
-    instance_family = inst_fam,
-    skus_per_chunk  = as.integer(units_per_chunk)
+    session              = conn$session,
+    compute_pool         = pool,
+    image_uri            = img,
+    job_id               = job_id,
+    stage_path           = job$stage_path,
+    total_chunks         = n_chunks,
+    n_workers            = n_workers,
+    time_limit_sec       = time_limit_sec,
+    queue_fqn            = queue_fqn,
+    instance_family      = inst_fam,
+    skus_per_chunk       = as.integer(units_per_chunk),
+    containers_per_node  = cpn,
+    drain_multiplier     = as.numeric(drain_multiplier)
   )
 
   chunks_fed  <- as.integer(tb_result$chunks_fed)
@@ -829,6 +835,7 @@ parallel_lab_run_benchmark <- function(conn, cfg, run = FALSE) {
   pool      <- cfg$compute_pool
   img       <- cfg$image_uri
   inst_fam  <- cfg$instance_family %||% "CPU_X64_S"
+  cpn       <- as.integer(cfg$containers_per_node %||% 1L)
   series_table <- sprintf("%s.%s.SERIES_EVENTS", cfg$database, cfg$schemas$source_data)
 
   if (nzchar(cfg$warehouse %||% "")) {
@@ -887,6 +894,7 @@ parallel_lab_run_benchmark <- function(conn, cfg, run = FALSE) {
     stage = stage,
     chunks_per_job = n_tasks_ch,
     instance_family = inst_fam,
+    containers_per_node = cpn,
     data_query = data_query
   )
   if (nzchar(cfg$warehouse %||% "")) reg_args$warehouse <- cfg$warehouse
@@ -945,17 +953,19 @@ parallel_lab_run_benchmark <- function(conn, cfg, run = FALSE) {
 
   message("Starting time-boxed queue feeder...")
   result <- bridge$run_time_boxed_queue(
-    session         = conn$session,
-    compute_pool    = pool,
-    image_uri       = img,
-    job_id          = job_id,
-    stage_path      = job$stage_path,
-    total_chunks    = as.integer(n_queue_ch),
-    n_workers       = as.integer(n_workers),
-    time_limit_sec  = tasks_elapsed,
-    queue_fqn       = queue_fqn,
-    instance_family = inst_fam,
-    skus_per_chunk  = as.integer(units_per_chunk)
+    session              = conn$session,
+    compute_pool         = pool,
+    image_uri            = img,
+    job_id               = job_id,
+    stage_path           = job$stage_path,
+    total_chunks         = as.integer(n_queue_ch),
+    n_workers            = as.integer(n_workers),
+    time_limit_sec       = tasks_elapsed,
+    queue_fqn            = queue_fqn,
+    instance_family      = inst_fam,
+    skus_per_chunk       = as.integer(units_per_chunk),
+    containers_per_node  = cpn,
+    drain_multiplier     = 1.5
   )
 
   queue_done  <- as.integer(result$chunks_done)
@@ -1140,8 +1150,9 @@ parallel_lab_save_metrics <- function(conn, cfg, run_results) {
   df <- do.call(rbind, rows)
 
   .safe <- function(x) {
-    if (is.null(x) || is.na(x)) "NULL"
-    else if (is.numeric(x)) sprintf("%f", x)
+    if (is.null(x) || length(x) == 0) return("NULL")
+    if (is.na(x) || (is.numeric(x) && !is.finite(x))) return("NULL")
+    if (is.numeric(x)) sprintf("%f", x)
     else sprintf("'%s'", gsub("'", "''", as.character(x)))
   }
 
@@ -1217,6 +1228,28 @@ parallel_lab_rank_skus_by_accuracy <- function(
   }
 
   .abort("Provide either run_results or conn + cfg (+ optional model_run_id)")
+}
+
+parallel_lab_flag_high_mape <- function(run_results, threshold = 15,
+                                        metric = "mape") {
+  rows <- Filter(Negate(is.null), lapply(run_results$results, function(r) {
+    if (inherits(r, "error")) return(NULL)
+    val <- r[[metric]] %||% NA_real_
+    if (is.na(val) || !is.finite(val)) return(NULL)
+    if (val <= threshold) return(NULL)
+    data.frame(
+      UNIT_ID = as.character(r$unit_id),
+      MAPE    = round(val, 2),
+      MODEL   = as.character(r$model_label %||% r$arima_order %||% "unknown"),
+      stringsAsFactors = FALSE
+    )
+  }))
+  if (length(rows) == 0) {
+    return(data.frame(UNIT_ID = character(0), MAPE = numeric(0),
+                      MODEL = character(0), stringsAsFactors = FALSE))
+  }
+  df <- do.call(rbind, rows)
+  df[order(-df$MAPE), ]
 }
 
 parallel_lab_plot_accuracy <- function(run_results, metric = "mape", bins = 30) {
@@ -1455,13 +1488,27 @@ parallel_lab_run_inference <- function(
                             cfg$database, cfg$schemas$models)
   }
 
-  # Build input DataFrame: one row per UNIT_ID + dummy SALES column
-  # (the model doesn't use SALES — it loads .rds from stage and re-forecasts)
+  # Build input DataFrame: one row per UNIT_ID + dummy SALES column.
+  # Default to only the SKUs that have trained models on stage (via MODEL_INDEX),
+  # not all SKUs in SERIES_EVENTS (which may be larger if demo_forecast_n_skus
+  # is a subset of the generated data).
   if (is.null(unit_ids)) {
-    unit_ids <- snowflakeR::sfr_query(conn, sprintf(
-      "SELECT DISTINCT UNIT_ID FROM %s ORDER BY UNIT_ID",
-      series_table
-    ))$UNIT_ID
+    model_index_view <- sprintf("%s.%s.MODEL_INDEX",
+                                cfg$database, cfg$schemas$models)
+    unit_ids <- tryCatch(
+      snowflakeR::sfr_query(conn, sprintf(
+        "SELECT DISTINCT PARTITION_KEY AS UNIT_ID FROM %s WHERE RUN_ID = '%s' ORDER BY UNIT_ID",
+        model_index_view, model_run_id
+      ))$UNIT_ID,
+      error = function(e) NULL
+    )
+    if (is.null(unit_ids) || length(unit_ids) == 0) {
+      message("MODEL_INDEX lookup returned 0 rows; falling back to SERIES_EVENTS")
+      unit_ids <- snowflakeR::sfr_query(conn, sprintf(
+        "SELECT DISTINCT UNIT_ID FROM %s ORDER BY UNIT_ID",
+        series_table
+      ))$UNIT_ID
+    }
   }
 
   n_keys <- length(unit_ids)

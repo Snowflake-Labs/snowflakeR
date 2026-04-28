@@ -10,18 +10,29 @@ Called from R via reticulate.
 from typing import Any, Dict, Optional
 
 
-# "packed" profile: see sfr_queue_bridge.py for rationale and node specs.
-# Limits are set to the per-container share (node_cpu / containers_per_node),
-# NOT full node capacity.  Setting limits too high causes detectCores() to
-# return the limit value, which makes mclapply fork far more processes than
-# physical cores available — destroying throughput via context switching.
-INSTANCE_FAMILY_RESOURCES = {
-    "CPU_X64_XS": {"cpu": 1, "memory": "4Gi",  "cpu_lim": 1,  "mem_lim": "6Gi"},
-    "CPU_X64_S":  {"cpu": 2, "memory": "6Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
-    "CPU_X64_M":  {"cpu": 3, "memory": "12Gi", "cpu_lim": 6,  "mem_lim": "14Gi"},
-    "CPU_X64_SL": {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "27Gi"},
-    "CPU_X64_L":  {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "29Gi"},
+# Node capacity (from SHOW COMPUTE POOL INSTANCE FAMILIES).
+# See sfr_queue_bridge.py for the auto-sizing logic.
+NODE_CAPACITY = {
+    "CPU_X64_XS": {"cpu": 1,  "mem_gib": 6},
+    "CPU_X64_S":  {"cpu": 3,  "mem_gib": 13},
+    "CPU_X64_M":  {"cpu": 6,  "mem_gib": 28},
+    "CPU_X64_SL": {"cpu": 14, "mem_gib": 54},
+    "CPU_X64_L":  {"cpu": 28, "mem_gib": 116},
 }
+
+
+def _get_resource_spec(instance_family: str, containers_per_node: int = 1):
+    """Compute container resources from node capacity and packing ratio."""
+    node = NODE_CAPACITY.get(instance_family.upper(), NODE_CAPACITY["CPU_X64_S"])
+    containers_per_node = max(1, containers_per_node)
+    cpu_share = node["cpu"] // containers_per_node
+    mem_share = node["mem_gib"] // containers_per_node
+    return {
+        "cpu_request": max(1, cpu_share - 1),
+        "memory_request": f"{max(2, mem_share - 2)}Gi",
+        "cpu_limit": max(1, cpu_share),
+        "memory_limit": f"{mem_share}Gi",
+    }
 
 
 def create_and_run_dag(
@@ -34,6 +45,7 @@ def create_and_run_dag(
     image_uri: str,
     warehouse: Optional[str] = None,
     instance_family: str = "CPU_X64_S",
+    containers_per_node: int = 1,
 ) -> Dict[str, Any]:
     """Build a Task DAG with one SPCS job per chunk and execute it.
 
@@ -50,6 +62,7 @@ def create_and_run_dag(
         image_uri: Full image URI (e.g. /db/schema/repo/image:tag).
         warehouse: Optional warehouse for non-serverless tasks.
         instance_family: SPCS instance family for container resource sizing.
+        containers_per_node: Workers packed per node (1 = dedicated node).
 
     Returns:
         Dict with dag_name and status.
@@ -72,6 +85,7 @@ def create_and_run_dag(
                 stage_path=stage_path,
                 image_uri=image_uri,
                 instance_family=instance_family,
+                containers_per_node=containers_per_node,
             )
             DAGTask(
                 f"chunk_{chunk_id}",
@@ -260,12 +274,13 @@ def _build_job_spec(
     stage_path: str,
     image_uri: str,
     instance_family: str = "CPU_X64_S",
+    containers_per_node: int = 1,
 ) -> str:
     """Generate a YAML service specification for a worker job container.
 
     The spec passes job metadata via environment variables that worker.R
-    reads on startup.  Container resources are sized from *instance_family*
-    using the same lookup table as the queue bridge.
+    reads on startup.  Container resources are auto-sized from
+    *instance_family* and *containers_per_node*.
 
     Args:
         job_id: UUID for the foreach job.
@@ -273,18 +288,16 @@ def _build_job_spec(
         stage_path: Full stage path to the job directory.
         image_uri: Docker image URI in the Snowflake image repo.
         instance_family: SPCS instance family for resource sizing.
+        containers_per_node: Workers packed per node (1 = dedicated node).
 
     Returns:
         YAML string for the SPCS service specification.
     """
-    res = INSTANCE_FAMILY_RESOURCES.get(
-        instance_family.upper(),
-        INSTANCE_FAMILY_RESOURCES["CPU_X64_S"],
-    )
-    cpu_req = res["cpu"]
-    mem_req = res["memory"]
-    cpu_lim = res["cpu_lim"]
-    mem_lim = res["mem_lim"]
+    res = _get_resource_spec(instance_family, containers_per_node)
+    cpu_req = res["cpu_request"]
+    mem_req = res["memory_request"]
+    cpu_lim = res["cpu_limit"]
+    mem_lim = res["memory_limit"]
 
     stage_base = stage_path.split("/job_")[0]
     job_subdir = "job_" + stage_path.split("/job_")[1]

@@ -34,6 +34,7 @@ POOL_NAME = "SNOWFLAKER_DEMO_POOL"
 QUEUE_FQN = "SNOWFLAKER_DEMO_DB.CONFIG.DOSNOWFLAKE_QUEUE"
 DATABASE = "SNOWFLAKER_DEMO_DB"
 INSTANCE_FAMILY = "CPU_X64_L"
+STAGE_FQN = f"{DATABASE}.SOURCE_DATA.DOSNOWFLAKE_STAGE"
 
 
 def _rerun():
@@ -70,11 +71,44 @@ html, body, [data-testid="stAppViewContainer"],
 [data-testid="stSidebar"] {{
     background-color: {_SF_MID_BLUE};
 }}
-[data-testid="stSidebar"] * {{
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] *,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stMarkdown code,
+[data-testid="stSidebar"] .stMarkdown strong,
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stCheckbox label,
+[data-testid="stSidebar"] .stCheckbox label span,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] p {{
     color: #FFFFFF !important;
 }}
-[data-testid="stSidebar"] .stCheckbox label span {{
+/* Sidebar code/backtick blocks */
+[data-testid="stSidebar"] code {{
+    color: {_SF_STAR_BLUE} !important;
+    background-color: rgba(255, 255, 255, 0.15) !important;
+}}
+/* Selectbox value text (inside the closed dropdown) */
+[data-testid="stSidebar"] [data-baseweb="select"] span {{
     color: #FFFFFF !important;
+}}
+/* Selectbox dropdown arrow */
+[data-testid="stSidebar"] [data-baseweb="select"] svg {{
+    fill: #FFFFFF !important;
+}}
+/* Selectbox input border */
+[data-testid="stSidebar"] [data-baseweb="select"] > div {{
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}}
+/* Open dropdown menu stays readable (dark text on white) */
+[data-baseweb="popover"] li,
+[data-baseweb="menu"] li {{
+    color: {_SF_GRAY} !important;
 }}
 
 /* Typography */
@@ -173,6 +207,21 @@ def _safe_query(sql: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _naive_ts(ts):
+    """Strip timezone from a pandas Timestamp to avoid tz-naive/aware mismatches."""
+    if ts is None or pd.isna(ts):
+        return ts
+    ts = pd.Timestamp(ts)
+    if ts.tz is not None:
+        ts = ts.tz_convert("UTC").tz_localize(None)
+    return ts
+
+
+def _utcnow():
+    """Return current UTC time as a tz-naive Timestamp."""
+    return pd.Timestamp.utcnow().tz_localize(None)
+
+
 def _safe_int(val) -> int:
     try:
         return int(val)
@@ -269,7 +318,8 @@ with tab_tasks:
 
         child_df = _safe_query(f"""
             SELECT NAME, STATE,
-                   SCHEDULED_TIME, COMPLETED_TIME, ERROR_MESSAGE
+                   SCHEDULED_TIME, COMPLETED_TIME, ERROR_MESSAGE,
+                   DATEDIFF('second', SCHEDULED_TIME, COALESCE(COMPLETED_TIME, CURRENT_TIMESTAMP())) AS DURATION_SEC
             FROM TABLE({DATABASE}.INFORMATION_SCHEMA.TASK_HISTORY(
                 RESULT_LIMIT => 200
             ))
@@ -297,32 +347,32 @@ with tab_tasks:
                 st.progress(pct)
                 st.caption(f"{succeeded}/{total} complete ({pct:.0%})")
 
-            first_sched = pd.to_datetime(
-                child_df["SCHEDULED_TIME"].dropna()).min()
-            done = child_df.dropna(
-                subset=["SCHEDULED_TIME", "COMPLETED_TIME"])
-            if len(done) > 0 and len(done) == total:
-                last_done = pd.to_datetime(done["COMPLETED_TIME"]).max()
-                elapsed = (last_done - first_sched).total_seconds()
-                st.caption(f"Elapsed: {elapsed:.0f}s (all chunks done)")
-            elif pd.notna(first_sched) and executing > 0:
-                now = pd.Timestamp.utcnow()
-                elapsed = (now - first_sched).total_seconds()
-                st.caption(
-                    f"Elapsed: {elapsed:.0f}s (in progress, "
-                    f"{succeeded}/{total} done)")
+            elapsed_df = _safe_query(f"""
+                SELECT
+                    DATEDIFF('second',
+                        MIN(SCHEDULED_TIME),
+                        MAX(COALESCE(COMPLETED_TIME, CURRENT_TIMESTAMP()))
+                    ) AS ELAPSED_SEC,
+                    CASE WHEN COUNT_IF(COMPLETED_TIME IS NULL) > 0 THEN TRUE ELSE FALSE END AS STILL_RUNNING
+                FROM TABLE({DATABASE}.INFORMATION_SCHEMA.TASK_HISTORY(
+                    RESULT_LIMIT => 200
+                ))
+                WHERE NAME LIKE '{latest_dag}$%'
+            """)
+            if len(elapsed_df) > 0:
+                elapsed = _safe_int(elapsed_df.iloc[0]["ELAPSED_SEC"])
+                still_running = bool(elapsed_df.iloc[0]["STILL_RUNNING"])
+                if still_running:
+                    st.caption(
+                        f"Elapsed: {elapsed:.0f}s (in progress, "
+                        f"{succeeded}/{total} done)")
+                else:
+                    st.caption(f"Elapsed: {elapsed:.0f}s (all chunks done)")
 
             display_df = child_df.copy()
-            if "SCHEDULED_TIME" in display_df.columns:
-                sched_ts = pd.to_datetime(
-                    display_df["SCHEDULED_TIME"], errors="coerce")
-                comp_ts = pd.to_datetime(
-                    display_df["COMPLETED_TIME"], errors="coerce")
-                now = pd.Timestamp.utcnow()
-                display_df["DURATION"] = comp_ts.fillna(now) - sched_ts
-                display_df["DURATION"] = display_df["DURATION"].apply(
-                    lambda d: f"{d.total_seconds():.0f}s"
-                    if pd.notna(d) else "")
+            if "DURATION_SEC" in display_df.columns:
+                display_df["DURATION"] = display_df["DURATION_SEC"].apply(
+                    lambda s: f"{s:.0f}s" if pd.notna(s) else "")
 
             with st.expander("Chunk detail", expanded=False):
                 st.dataframe(display_df, use_container_width=True)
@@ -330,6 +380,52 @@ with tab_tasks:
             st.info("No child tasks found yet.")
     else:
         st.info("No task DAG runs found. Tasks phase hasn't started.")
+
+    # ── SKU Progress (stage directory) ─────────────────────────────────
+    st.subheader("SKU Progress (Stage)")
+    try:
+        session.sql(f"ALTER STAGE {STAGE_FQN} REFRESH").collect()
+    except Exception:
+        pass
+
+    sku_df = _safe_query(f"""
+        SELECT SPLIT_PART(RELATIVE_PATH, '/', 2) AS RUN_ID,
+               COUNT(*)                           AS N_MODELS
+        FROM DIRECTORY(@{STAGE_FQN})
+        WHERE RELATIVE_PATH LIKE 'models/tasks\\_%/%.rds' ESCAPE '\\\\'
+        GROUP BY RUN_ID
+        ORDER BY MAX(LAST_MODIFIED) DESC
+        LIMIT 5
+    """)
+
+    if len(sku_df) > 0:
+        latest_run = str(sku_df.iloc[0]["RUN_ID"])
+        latest_n = _safe_int(sku_df.iloc[0]["N_MODELS"])
+
+        expected_df = _safe_query(f"""
+            SELECT COUNT(DISTINCT UNIT_ID) AS N
+            FROM {DATABASE}.SOURCE_DATA.SERIES_EVENTS
+        """)
+        expected = _safe_int(
+            expected_df.iloc[0]["N"]) if len(expected_df) > 0 else 0
+
+        cols = st.columns(3)
+        cols[0].metric("Run ID", latest_run)
+        cols[1].metric("Models Written", latest_n)
+        cols[2].metric("Total SKUs", expected if expected > 0 else "?")
+
+        if expected > 0:
+            pct = min(latest_n / expected, 1.0)
+            st.progress(pct)
+            st.caption(f"{latest_n}/{expected} model files on stage "
+                       f"({pct:.0%})")
+        else:
+            st.caption(f"{latest_n} model files on stage for `{latest_run}`")
+
+        with st.expander("All runs on stage", expanded=False):
+            st.dataframe(sku_df, use_container_width=True)
+    else:
+        st.caption("No model files found on stage yet.")
 
 # ━━ Tab 3: Queue Phase ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_queue:
@@ -357,9 +453,7 @@ with tab_queue:
         job_filter = "1=1"
 
     summary_df = _safe_query(f"""
-        SELECT STATUS, COUNT(*) AS N,
-               MIN(CLAIMED_AT) AS FIRST_CLAIM,
-               MAX(COMPLETED_AT) AS LAST_DONE
+        SELECT STATUS, COUNT(*) AS N
         FROM {QUEUE_FQN}
         WHERE {job_filter}
         GROUP BY STATUS
@@ -388,21 +482,27 @@ with tab_queue:
             st.progress(pct)
             st.caption(f"{done}/{total} complete ({pct:.0%})")
 
-        first_claim = summary_df["FIRST_CLAIM"].dropna()
-        last_done_ts = summary_df["LAST_DONE"].dropna()
-        if len(first_claim) > 0:
-            start = pd.to_datetime(first_claim.min())
-            if len(last_done_ts) > 0 and done > 0 and running == 0:
-                end_t = pd.to_datetime(last_done_ts.max())
-                elapsed = (end_t - start).total_seconds()
+        elapsed_df = _safe_query(f"""
+            SELECT
+                DATEDIFF('second', MIN(CLAIMED_AT), CURRENT_TIMESTAMP()) AS ELAPSED_NOW_SEC,
+                DATEDIFF('second', MIN(CLAIMED_AT), MAX(COMPLETED_AT)) AS ELAPSED_DONE_SEC,
+                COUNT_IF(STATUS IN ('RUNNING', 'PENDING')) AS STILL_ACTIVE
+            FROM {QUEUE_FQN}
+            WHERE {job_filter}
+              AND CLAIMED_AT IS NOT NULL
+        """)
+        if len(elapsed_df) > 0 and pd.notna(elapsed_df.iloc[0]["ELAPSED_NOW_SEC"]):
+            still_active = _safe_int(elapsed_df.iloc[0]["STILL_ACTIVE"])
+            if still_active == 0 and done > 0:
+                elapsed = _safe_int(elapsed_df.iloc[0]["ELAPSED_DONE_SEC"])
                 st.caption(
-                    f"Elapsed: {elapsed:.0f}s | "
-                    f"Throughput: {done / elapsed * 60:.0f} chunks/min"
+                    f"Elapsed: {elapsed}s | "
+                    f"Throughput: {done / max(elapsed, 1) * 60:.0f} chunks/min"
                 )
-            elif running > 0:
-                elapsed = (pd.Timestamp.utcnow() - start).total_seconds()
+            else:
+                elapsed = _safe_int(elapsed_df.iloc[0]["ELAPSED_NOW_SEC"])
                 st.caption(
-                    f"Elapsed: {elapsed:.0f}s (in progress, "
+                    f"Elapsed: {elapsed}s (in progress, "
                     f"{done}/{total} done, {running} running)"
                 )
 
@@ -422,7 +522,7 @@ with tab_queue:
             done_chunks = chunk_df.dropna(subset=["COMPLETED_AT"]).copy()
             if len(done_chunks) > 0:
                 done_chunks["COMPLETED_AT"] = pd.to_datetime(
-                    done_chunks["COMPLETED_AT"])
+                    done_chunks["COMPLETED_AT"]).apply(_naive_ts)
                 done_chunks = done_chunks.sort_values("COMPLETED_AT")
                 done_chunks["CUMULATIVE"] = range(1, len(done_chunks) + 1)
                 done_chunks = done_chunks.set_index("COMPLETED_AT")
@@ -455,6 +555,29 @@ with tab_queue:
                     st.dataframe(err_df, use_container_width=True)
     else:
         st.info("No queue rows found. Queue phase hasn't started (or table missing).")
+
+    # ── Queue SKU Progress (stage directory) ───────────────────────────
+    st.subheader("SKU Progress (Stage)")
+    queue_sku_df = _safe_query(f"""
+        SELECT SPLIT_PART(RELATIVE_PATH, '/', 2) AS RUN_ID,
+               COUNT(*)                           AS N_MODELS
+        FROM DIRECTORY(@{STAGE_FQN})
+        WHERE RELATIVE_PATH LIKE 'models/queue\\_%/%.rds' ESCAPE '\\\\'
+        GROUP BY RUN_ID
+        ORDER BY MAX(LAST_MODIFIED) DESC
+        LIMIT 5
+    """)
+    if len(queue_sku_df) > 0:
+        q_run = str(queue_sku_df.iloc[0]["RUN_ID"])
+        q_n = _safe_int(queue_sku_df.iloc[0]["N_MODELS"])
+        cols = st.columns(2)
+        cols[0].metric("Run ID", q_run)
+        cols[1].metric("Models Written", q_n)
+        st.caption(f"{q_n} model files on stage for `{q_run}`")
+        with st.expander("All queue runs on stage", expanded=False):
+            st.dataframe(queue_sku_df, use_container_width=True)
+    else:
+        st.caption("No queue model files found on stage yet.")
 
 if auto_refresh:
     time.sleep(5)

@@ -496,57 +496,43 @@ spec:
     return service_name
 
 
-# Node specs (from SHOW COMPUTE POOL INSTANCE FAMILIES):
-#   CPU_X64_XS:  1 vCPU /   6 GiB   (1 container/node)
-#   CPU_X64_S:   3 vCPU /  13 GiB   (1 container/node)
-#   CPU_X64_M:   6 vCPU /  28 GiB   (2 containers/node)
-#   CPU_X64_SL: 14 vCPU /  54 GiB   (~2 containers/node)
-#   CPU_X64_L:  28 vCPU / 116 GiB   (~4 containers/node)
-#
-# "packed" profile: small requests → multiple containers per node → max
-# concurrency.  Empirically best for embarrassingly parallel R workloads
-# (see benchmarking_and_sizing.md §10).
-#
-# CRITICAL: limits must be set to the per-container share of the node, NOT
-# the full node capacity.  worker.R uses mclapply(mc.cores=detectCores()-1),
-# and detectCores() returns the container's CPU *limit*.  Setting limits to
-# full node values (e.g. 28 on CPU_X64_L) causes 27 mclapply forks fighting
-# for ~7 physical cores, destroying throughput via context switching.
-INSTANCE_FAMILY_RESOURCES = {
-    "CPU_X64_XS": {"cpu": 1, "memory": "4Gi",  "cpu_lim": 1,  "mem_lim": "6Gi"},
-    "CPU_X64_S":  {"cpu": 2, "memory": "6Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
-    "CPU_X64_M":  {"cpu": 3, "memory": "12Gi", "cpu_lim": 6,  "mem_lim": "14Gi"},
-    "CPU_X64_SL": {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "27Gi"},
-    "CPU_X64_L":  {"cpu": 6, "memory": "24Gi", "cpu_lim": 7,  "mem_lim": "29Gi"},
+# Node capacity (from SHOW COMPUTE POOL INSTANCE FAMILIES):
+NODE_CAPACITY = {
+    "CPU_X64_XS": {"cpu": 1,  "mem_gib": 6},
+    "CPU_X64_S":  {"cpu": 3,  "mem_gib": 13},
+    "CPU_X64_M":  {"cpu": 6,  "mem_gib": 28},
+    "CPU_X64_SL": {"cpu": 14, "mem_gib": 54},
+    "CPU_X64_L":  {"cpu": 28, "mem_gib": 116},
 }
 
-# "dedicated" profile (1 container per node, full node resources):
-# INSTANCE_FAMILY_RESOURCES_DEDICATED = {
-#     "CPU_X64_XS": {"cpu": 1,  "memory": "5Gi",   "cpu_lim": 1,  "mem_lim": "6Gi"},
-#     "CPU_X64_S":  {"cpu": 2,  "memory": "11Gi",  "cpu_lim": 3,  "mem_lim": "13Gi"},
-#     "CPU_X64_M":  {"cpu": 5,  "memory": "24Gi",  "cpu_lim": 6,  "mem_lim": "28Gi"},
-#     "CPU_X64_SL": {"cpu": 12, "memory": "46Gi",  "cpu_lim": 14, "mem_lim": "54Gi"},
-#     "CPU_X64_L":  {"cpu": 24, "memory": "100Gi", "cpu_lim": 28, "mem_lim": "116Gi"},
-# }
 
+def _get_resource_spec(
+    instance_family: str,
+    containers_per_node: int = 1,
+) -> Dict[str, Any]:
+    """Compute container cpu/memory request+limit for an instance family.
 
-def _get_resource_spec(instance_family: str) -> Dict[str, Any]:
-    """Return cpu/memory request+limit for an instance family.
+    Divides node capacity by *containers_per_node* so SPCS packs exactly
+    that many containers per node.  With containers_per_node=1 (default),
+    each worker gets a dedicated node — guaranteeing horizontal scaling.
 
-    Uses the "packed" profile by default: small requests that allow SPCS
-    to pack multiple containers per node, maximising concurrency.
-    Limits are set to the per-container share of the node (node_cpu /
-    containers_per_node) to keep detectCores() accurate for mclapply.
+    worker.R uses ``mclapply(mc.cores = detectCores() - 1)`` where
+    ``detectCores()`` returns the container's CPU **limit**.  Setting
+    the limit to the per-container CPU share ensures mclapply forks the
+    right number of processes without user math.
     """
-    resources = INSTANCE_FAMILY_RESOURCES.get(
+    node = NODE_CAPACITY.get(
         instance_family.upper(),
-        INSTANCE_FAMILY_RESOURCES["CPU_X64_S"],
+        NODE_CAPACITY["CPU_X64_S"],
     )
+    containers_per_node = max(1, containers_per_node)
+    cpu_share = node["cpu"] // containers_per_node
+    mem_share = node["mem_gib"] // containers_per_node
     return {
-        "cpu_request": resources["cpu"],
-        "memory_request": resources["memory"],
-        "cpu_limit": resources["cpu_lim"],
-        "memory_limit": resources["mem_lim"],
+        "cpu_request": max(1, cpu_share - 1),
+        "memory_request": f"{max(2, mem_share - 2)}Gi",
+        "cpu_limit": max(1, cpu_share),
+        "memory_limit": f"{mem_share}Gi",
     }
 
 
@@ -560,18 +546,18 @@ def create_ephemeral_workers(
     queue_fqn: str = "CONFIG.DOSNOWFLAKE_QUEUE",
     instance_family: str = "CPU_X64_S",
     warehouse: str = "",
+    containers_per_node: int = 1,
 ) -> str:
     """Launch ephemeral EXECUTE JOB SERVICE workers that pull from queue.
 
-    Resource requests are automatically sized based on instance_family.
-    Each worker claims chunks until the queue is empty, then exits.
-    The container runs ``worker_queue.R`` (generic doSnowflake queue
-    worker) instead of the image's default entrypoint.
+    Resource requests are automatically sized based on instance_family
+    and containers_per_node.  With containers_per_node=1 (default), each
+    worker gets a dedicated node for maximum per-worker throughput.
 
     Returns:
         Job service name.
     """
-    res = _get_resource_spec(instance_family)
+    res = _get_resource_spec(instance_family, containers_per_node)
     stage_root = stage_path.split("/job_")[0] if "/job_" in stage_path else stage_path
 
     if not warehouse:
@@ -746,6 +732,8 @@ def run_time_boxed_queue(
     skus_per_chunk: int = 0,
     poll_sec: int = 3,
     max_empty_polls: int = 30,
+    containers_per_node: int = 1,
+    drain_multiplier: float = 1.5,
 ) -> Dict[str, Any]:
     """Run queue workers with a time-boxed continuous feeder.
 
@@ -757,7 +745,8 @@ def run_time_boxed_queue(
     2. Seeds an initial batch of queue rows.
     3. Continuously feeds more rows whenever PENDING drops below *low_water*,
        until *time_limit_sec* elapses or all chunks are enqueued.
-    4. Waits for workers to drain remaining queue rows.
+    4. Waits for workers to drain remaining queue rows, up to
+       *time_limit_sec * drain_multiplier* total elapsed.
     5. Returns stats: chunks processed, SKUs, elapsed time, throughput.
 
     Args:
@@ -776,6 +765,9 @@ def run_time_boxed_queue(
         skus_per_chunk: SKUs per chunk (for reporting only).
         poll_sec: Seconds between feeder/poll cycles.
         max_empty_polls: MAX_EMPTY_POLLS env var for workers.
+        containers_per_node: Workers packed per node (1 = dedicated node).
+        drain_multiplier: Total elapsed time cap as a multiple of
+            time_limit_sec (default 1.5 = 50% extra for drain).
 
     Returns:
         Dict with chunks_fed, chunks_done, chunks_failed, skus_processed,
@@ -783,7 +775,7 @@ def run_time_boxed_queue(
     """
     import sys
 
-    res = _get_resource_spec(instance_family)
+    res = _get_resource_spec(instance_family, containers_per_node)
     stage_root = stage_path.split("/job_")[0] if "/job_" in stage_path else stage_path
 
     # Resolve warehouse
@@ -880,8 +872,10 @@ spec:
     print("[benchmark] Workers submitted (async)", flush=True)
 
     # --- 3. Feeder loop ---
+    drain_deadline = time_limit_sec * max(1.0, drain_multiplier)
     start = time.time()
     feeder_stopped_at = None
+    drain_timeout_hit = False
 
     while True:
         elapsed = time.time() - start
@@ -905,7 +899,9 @@ spec:
                 print(
                     f"[benchmark] Feeder stopped at {elapsed:.1f}s "
                     f"(limit={time_limit_sec:.0f}s). "
-                    f"Chunks fed: {chunks_fed}, done: {done}",
+                    f"Chunks fed: {chunks_fed}, done: {done}. "
+                    f"Drain deadline: {drain_deadline:.0f}s "
+                    f"({drain_multiplier:.1f}x)",
                     flush=True,
                 )
             elif pending < low_water and chunks_fed < total_chunks:
@@ -931,13 +927,50 @@ spec:
         if feeder_stopped_at is not None and pending == 0 and running == 0:
             break
 
-        if elapsed > time_limit_sec * 2 + 120:
-            print(f"[benchmark] Safety timeout at {elapsed:.1f}s", flush=True)
+        if feeder_stopped_at is not None and elapsed > drain_deadline:
+            drain_timeout_hit = True
+            print(
+                f"[benchmark] Drain timeout at {elapsed:.1f}s "
+                f"(limit={time_limit_sec:.0f}s * {drain_multiplier:.1f}x "
+                f"= {drain_deadline:.0f}s). "
+                f"Stopping — {done} done, {running} in-flight lost.",
+                flush=True,
+            )
             break
 
         time.sleep(poll_sec)
 
     total_elapsed = time.time() - start
+
+    # If drain timed out, attempt to drop the worker service to release
+    # compute nodes.  EJS services have auto-generated names, so we search
+    # SHOW SERVICES for a matching job.
+    if drain_timeout_hit:
+        try:
+            svc_rows = session.sql(
+                f"SHOW SERVICES IN COMPUTE POOL {compute_pool}"
+            ).collect()
+            for row in svc_rows:
+                svc_name = row["name"] if "name" in row.as_dict() else ""
+                if not svc_name:
+                    continue
+                try:
+                    status_json = session.sql(
+                        f"SELECT SYSTEM$GET_SERVICE_STATUS('{svc_name}')"
+                    ).collect()
+                    if job_id in str(status_json):
+                        session.sql(
+                            f"DROP SERVICE IF EXISTS {svc_name}"
+                        ).collect()
+                        print(
+                            f"[benchmark] Dropped worker service {svc_name}",
+                            flush=True,
+                        )
+                        break
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[benchmark] Could not drop workers: {e}", flush=True)
 
     final = poll_job_status(session, job_id, queue_fqn)
     total_done = final.get("done", 0)
@@ -954,6 +987,7 @@ spec:
         "elapsed_sec": round(total_elapsed, 1),
         "feeder_stopped_at": round(feeder_stopped_at, 1) if feeder_stopped_at else None,
         "skus_per_sec": round(skus_per_sec, 1),
+        "drain_timeout": drain_timeout_hit,
     }
     print(f"[benchmark] Queue result: {result}", flush=True)
     return result
