@@ -1,6 +1,4 @@
-# snowflakeR
-
-<img src="man/figures/logo.png" align="right" height="139" />
+# snowflakeR <img src="man/figures/logo.png" align="right" height="139" />
 
 > **Community Project -- Not Officially Supported**
 > This is a community-developed project from
@@ -9,6 +7,8 @@
 > Snowflake support. Use it for prototyping and experimentation; production
 > use is at your own risk. Feedback, bug reports, and contributions are
 > welcome via [GitHub Issues](https://github.com/Snowflake-Labs/snowflakeR/issues).
+
+> **Author:** [Simon Field](https://www.linkedin.com/in/fieldy6961) — SnowCAT
 
 R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datasets, and SPCS model serving. Works in **local R environments** (RStudio, VS Code, terminal) and **Snowflake Workspace Notebooks**.
 
