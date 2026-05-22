@@ -1,5 +1,7 @@
 # snowflakeR
 
+<img src="man/figures/logo.png" align="right" height="139" />
+
 > **Community Project -- Not Officially Supported**
 > This is a community-developed project from
 > [Snowflake Labs](https://github.com/Snowflake-Labs), not an official
