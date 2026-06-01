@@ -1,0 +1,59 @@
+---
+subtitle: "Don't Panic — A practical guide to R on Snowflake"
+---
+
+## Welcome {.unnumbered}
+
+This guide helps R users run statistical modeling, forecasting, and ML workflows **on Snowflake** — from **RStudio, Posit, VS Code**, or **Workspace Notebooks** — using three open-source packages.
+
+::: {.callout-important}
+## Don't Panic
+
+If you are new to Snowflake, start with the [Platform Primer](01_snowflake_platform/index.qmd) and [Glossary](appendices/F_glossary/index.qmd). If you are new to R on Snowflake but know Snowflake already, jump to [Architecture](02_architecture/index.qmd) or [Local R Setup](03_local_r_setup/index.qmd).
+:::
+
+## What You'll Learn {.unnumbered}
+
+::: {.callout-note appearance="simple"}
+## Key Topics Covered
+
+- **Snowflake primer** — Warehouses, containers, ML services (for R users new to the platform)
+- **R from your IDE** — RStudio, Posit Native App, VS Code + Snowflake extension; pip or conda Python
+- **Workspace Notebooks** — UX overview, bootstrap, EAI, `%%R`, CRE, ML Jobs
+- **RSnowflake** — SQL REST API, DBI, dbplyr, Arrow
+- **snowflakeR** — MLOps, Feature Store, Model Registry, Tasks, SPCS, monitoring
+:::
+
+## The Three Packages {.unnumbered}
+
+| Package | Role | Repository |
+|---------|------|------------|
+| **snowflake-notebook-multilang** | Bootstrap R in Workspace | [Snowflake-Labs/snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) |
+| **RSnowflake** | DBI via SQL API | [Snowflake-Labs/RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) |
+| **snowflakeR** | ML platform from R | [Snowflake-Labs/snowflakeR](https://github.com/Snowflake-Labs/snowflakeR) |
+
+## How to Use This Guide {.unnumbered}
+
+| Your Goal | Start Here |
+|-----------|------------|
+| New to Snowflake | [Platform Primer](01_snowflake_platform/index.qmd) |
+| RStudio / Posit / VS Code | [Local R Setup](03_local_r_setup/index.qmd) |
+| Workspace Notebooks | [Workspaces overview](05_workspaces_overview/index.qmd) |
+| Understand SQL API | [RSnowflake SQL API](11_rsnowflake_sql_api/index.qmd) |
+| MLOps on Snowflake | [MLOps chapter](15_mlops_on_snowflake/index.qmd) |
+| Feature Store deep dive | [Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) |
+| Term lookup | [Glossary](appendices/F_glossary/index.qmd) |
+
+## Prerequisites {.unnumbered}
+
+- Snowflake account (Workspace optional depending on path)
+- R 4.2+; Python 3.10+ for snowflakeR locally
+- See [Introduction](00_introduction/index.qmd) for disclaimers
+
+## Revision History {.unnumbered}
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.1 | 2026-05-29 | Initial scaffold |
+| 0.2 | 2026-05-29 | IDE chapters; chapter renumber |
+| 0.3 | 2026-05-29 | Platform primer, glossary, MLOps/SQL API chapters; feedback pass |

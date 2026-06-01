@@ -1,0 +1,141 @@
+---
+title: "RSnowflake: Connect"
+subtitle: "DBI connections, auth, and identifiers"
+---
+
+## Overview
+
+**RSnowflake** is the DBI-native way to talk to Snowflake from R over the [SQL REST API](../11_rsnowflake_sql_api/index.qmd). Use it for dplyr pipelines, the Connections Pane, parameterized SQL, and optional Arrow/ADBC bulk I/O — **without** installing JDBC/ODBC or Python.
+
+## Learning Objectives
+
+- Open connections via `connections.toml`, JWT, PAT, or Workspace token
+- Understand auth modes and when to use RSnowflake vs `sfr_connect()`
+- Configure identifier case for interoperability with other tools
+
+---
+
+## Installation {#sec-install}
+
+```r
+pak::pak("Snowflake-Labs/RSnowflake")
+```
+
+In Workspace, install via pre-built tarball in YAML — see [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd). **Never** compile from source in Workspace.
+
+---
+
+## connections.toml (recommended) {#sec-toml}
+
+Create `~/.snowflake/connections.toml` (shared with Python connector and CLI):
+
+```toml
+[default]
+account   = "xy12345.us-east-1"
+user      = "myuser"
+authenticator = "SNOWFLAKE_JWT"
+private_key_path = "~/.snowflake/rsa_key.p8"
+database  = "MY_DB"
+schema    = "PUBLIC"
+warehouse = "MY_WH"
+
+[dev]
+account   = "xy12345.us-east-1"
+user      = "myuser"
+authenticator = "externalbrowser"
+warehouse = "DEV_WH"
+database  = "DEV_DB"
+schema    = "ANALYTICS"
+```
+
+```r
+library(DBI)
+library(RSnowflake)
+
+con <- dbConnect(Snowflake())              # [default]
+con <- dbConnect(Snowflake(), name = "dev")
+df  <- dbGetQuery(con, "SELECT CURRENT_USER(), CURRENT_ROLE()")
+dbDisconnect(con)
+```
+
+---
+
+## Programmatic Access Token (PAT) {#sec-pat}
+
+Create a PAT in **Snowsight → Admin → Security → Programmatic Access Tokens**. Prefer environment variables over hard-coded tokens:
+
+```r
+con <- dbConnect(
+  Snowflake(),
+  account = "xy12345.us-east-1",
+  token   = Sys.getenv("SNOWFLAKE_PAT")
+)
+```
+
+In **Workspace**, the managed session OAuth is preferred — reserve PATs for external CI or tools that cannot use the notebook session.
+
+---
+
+## Workspace (zero config) {#sec-workspace}
+
+After `setup_notebook(..., packages=["RSnowflake"])`:
+
+```r
+con <- dbConnect(Snowflake())  # auto-detects session token + gateway host
+```
+
+Bootstrap exports variables such as:
+
+- `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_HOST`
+- `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA` (when set)
+
+If `dbConnect()` fails from a `%%R` cell, re-run the Python bootstrap cell and confirm you are not mixing laptop `connections.toml` profiles with the Workspace session.
+
+---
+
+## Auth modes summary {#sec-auth}
+
+| Mode | Use case |
+|------|----------|
+| Workspace OAuth | Notebooks (zero config) |
+| JWT key-pair | Automation, service users |
+| PAT | Personal tokens, CI without key files |
+| `externalbrowser` | Interactive SSO on desktop |
+| `connections.toml` | Local dev parity with Python |
+
+---
+
+## Identifier case {#sec-case}
+
+By default RSnowflake **uppercases** unquoted table/column names in DDL/DML — matching Snowflake and ODBC behaviour:
+
+```r
+dbWriteTable(con, "my_table", data.frame(id = 1, name = "Alice"))
+dbListFields(con, "my_table")   # "ID" "NAME"
+```
+
+Preserve original case (e.g. lowercase for tidyverse-native pipelines):
+
+```r
+options(RSnowflake.identifier_case = "preserve")
+```
+
+`dbQuoteIdentifier()` always quotes exactly what you pass; the option only affects implicit casing in table operations.
+
+---
+
+## RSnowflake vs snowflakeR {#sec-vs}
+
+| Need | Package |
+|------|---------|
+| ML Registry, Feature Store, doSnowflake | snowflakeR |
+| DBI, dbplyr, Connections Pane, SQL-only | RSnowflake |
+| Both in one notebook | `sfr_connect()` then `sfr_dbi_connection(conn)` |
+
+RSnowflake does **not** require Python. snowflakeR always requires Python + `snowflake-ml-python` for ML APIs (RSnowflake may still use reticulate internally for Snowpark bulk writes in Workspace — transparent to the user).
+
+---
+
+## Next steps
+
+[RSnowflake: Query](../13_rsnowflake_query/index.qmd)

@@ -1,0 +1,89 @@
+---
+title: "Appendix A: Setup"
+subtitle: "Account, roles, and first-run checklist"
+---
+
+## Snowflake account prerequisites {#sec-account}
+
+Before R packages can run, Snowflake roles need appropriate grants. Requirements vary by feature:
+
+| Feature | Typical grants |
+|---------|----------------|
+| SQL / RSnowflake | `USAGE` on warehouse, database, schema; `SELECT` on tables |
+| Workspace Notebooks | Notebook execution, compute pool for ML Container Runtime |
+| Feature Store / Registry | ML object privileges per [Snowflake ML RBAC](https://docs.snowflake.com/en/developer-guide/snowflake-ml/feature-store/rbac) |
+| SPCS / doSnowflake | `USAGE` on compute pool; `CREATE SERVICE`; image repository access |
+| EAI bootstrap | `CREATE INTEGRATION` or admin runs printed SQL |
+
+Work with your Snowflake admin to provision a **development role** with ML privileges before production promotion.
+
+---
+
+## Local development setup {#sec-local}
+
+Full detail: [Local R Setup](../../03_local_r_setup/index.qmd), [RStudio, Posit & VS Code](../../04_rstudio_posit_vscode/index.qmd).
+
+```r
+pak::pak(c("Snowflake-Labs/RSnowflake", "Snowflake-Labs/snowflakeR"))
+```
+
+**RSnowflake only** — no Python step required.
+
+**snowflakeR** — configure Python:
+
+```r
+snowflakeR::sfr_install_python_deps()   # or pip/venv per chapter 03
+snowflakeR::sfr_check_environment()
+```
+
+### connections.toml
+
+Create `~/.snowflake/connections.toml` with at least one profile. Shared by CLI, Python, RSnowflake, and snowflakeR — see [authentication options](../../03_local_r_setup/index.qmd#sec-auth-options).
+
+```toml
+[default]
+account = "ORG-ACCOUNT"
+user = "MYUSER"
+authenticator = "externalbrowser"
+warehouse = "DEV_WH"
+database = "DEV_DB"
+schema = "PUBLIC"
+role = "ANALYST"
+```
+
+Verify:
+
+```r
+library(RSnowflake)
+con <- DBI::dbConnect(Snowflake(), name = "default")
+DBI::dbGetQuery(con, "SELECT CURRENT_USER()")
+```
+
+---
+
+## Workspace first run {#sec-workspace}
+
+| Step | Action |
+|------|--------|
+| 1 | Create Workspace project; connect Git repo (optional) |
+| 2 | Add `snowflaker_config.yaml` and reference `sfnb_setup.py` |
+| 3 | Run Python bootstrap cell (`setup_notebook`) |
+| 4 | Enable **External Access** in Snowsight if prompted |
+| 5 | Run `%%R` smoke test (`sfr_connect()`, `dbConnect(Snowflake())`) |
+| 6 | Open `workspace_quickstart.ipynb` as reference |
+
+Notebooks not next to `sfnb_setup.py` need `/filesystem/` path discovery — [Bootstrap §filesystem](../../06_workspace_bootstrap/index.qmd#sec-filesystem).
+
+---
+
+## Optional: Posit Workbench Native App {#sec-posit}
+
+If your account deploys [Posit Workbench as a Native App](https://posit.co/products/enterprise/posit-workbench/), install the same R packages in the Workbench session and use `connections.toml` or inherited Snowflake auth — same APIs as desktop RStudio.
+
+---
+
+## Related appendices
+
+- [B: Configuration Reference](../B_config_reference/index.qmd) — YAML and tarballs
+- [C: Troubleshooting](../C_troubleshooting/index.qmd)
+- [D: Production checklist](../D_production_checklist/index.qmd)

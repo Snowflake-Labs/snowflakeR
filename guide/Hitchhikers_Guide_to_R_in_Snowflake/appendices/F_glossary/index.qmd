@@ -1,0 +1,188 @@
+---
+title: "Glossary"
+subtitle: "Terms and acronyms used in this guide"
+---
+
+Alphabetical reference for readers new to Snowflake or MLOps. See also [Snowflake Platform Primer](../../01_snowflake_platform/index.qmd).
+
+## A
+
+**ADBC (Arrow Database Connectivity)**  
+Columnar database access protocol. RSnowflake can use ADBC for faster bulk reads/writes when the `adbcsnowflake` package is installed.
+
+**Account**  
+Your Snowflake tenant identifier (e.g. `xy12345.us-east-1`). Used in connection strings and `connections.toml`.
+
+**Account URL / Host**  
+HTTPS endpoint for API calls. Workspace may use an internal gateway host — RSnowflake detects this automatically.
+
+## C
+
+**Compute pool**  
+SPCS resource pool that runs containers (inference services, R workers). Distinct from a SQL **warehouse**.
+
+**connections.toml**  
+Standard Snowflake connection profiles file (`~/.snowflake/connections.toml`). Shared by RSnowflake, snowflakeR, Python connector, and CLI.
+
+**CRE (Custom Runtime Image)**  
+Pre-built container image for Workspace/ML Jobs with R and packages baked in — faster than cold bootstrap.
+
+**CustomModel**  
+Python Model Registry wrapper type. snowflakeR registers R models by wrapping them in a `CustomModel` that calls R via rpy2 at inference time.
+
+## D
+
+**Dataset (ML)**  
+Immutable, versioned training snapshot in Snowflake ML — often built from Feature Store views.
+
+**DBI**  
+R standard database interface. RSnowflake implements DBI over the SQL API.
+
+**dbplyr**  
+R package translating dplyr verbs to SQL. Works with RSnowflake connections.
+
+**Dynamic Table (DT)**  
+Snowflake object that incrementally materializes query results — common backing store for Feature Views.
+
+## E
+
+**EAI (External Access Integration)**  
+Snowflake network object allowing outbound HTTPS from notebooks/containers (CRAN, GitHub, conda/pip indexes).
+
+**Entity (Feature Store)**  
+Definition of business keys (e.g. `CUSTOMER_ID`) used to join features for training and serving.
+
+## F
+
+**Feature Store**  
+Snowflake ML service for governed feature definitions, point-in-time joins, and datasets.
+
+**Feature View**  
+Versioned feature definition (often backed by a Dynamic Table or View) registered in Feature Store.
+
+## G
+
+**GET / PUT (SQL)**  
+Client-side stage file commands. **Not supported** by the SQL REST API — use stage volume mounts in SPCS instead.
+
+## I
+
+**IPython / Jupyter magic**  
+Cell prefix like `%%R` that routes cell body to another language via rpy2 in Workspace.
+
+**IRkernel**  
+CRAN package that registers a **native R Jupyter kernel** (common on desktop Jupyter). Workspace Notebooks today use a **Python kernel + `%%R` magic** instead — see [Appendix G](../G_workspace_container_internals/index.qmd#sec-ws-irkernel-vs-magic).
+
+## L
+
+**Lineage (ML)**  
+Traceability from source tables → features → datasets → models → predictions.
+
+## M
+
+**ML Container Runtime**  
+Managed environment for Workspace notebooks and ML Jobs (Python kernel; R added via bootstrap).
+
+**ML Job**  
+Batch execution on container runtime — non-interactive alternative to notebooks.
+
+**micromamba**  
+Fast conda-compatible installer used by `setup_notebook()` to provision R in Workspace.
+
+**Model Registry**  
+Snowflake ML service for versioning, deploying, and serving models.
+
+**ModelVersion**  
+Handle to one registered version of a model (`sfr_log_model()` return value).
+
+## O
+
+**OAuth / Workspace token**  
+In Workspace, the notebook session token authenticates RSnowflake/snowflakeR without storing passwords in code.
+
+## P
+
+**PAT (Programmatic Access Token)**  
+Snowflake token for API access — alternative to key-pair for automation.
+
+**Point-in-time correct**  
+Joining features as they were known at a historical timestamp — prevents training leakage.
+
+**Posit Workbench Native App**  
+Posit/RStudio IDE deployed as a Snowflake Native Application — in-account R development.
+
+## R
+
+**REST / SQL API**  
+HTTPS interface for submitting SQL without JDBC/ODBC. RSnowflake's default transport.
+
+**reticulate**  
+R package bridging to Python. snowflakeR uses it to call `snowflake-ml-python`.
+
+**Role**  
+Snowflake RBAC identity controlling access to warehouses, databases, and integrations.
+
+**rpy2**  
+Python↔R bridge: embeds R in Python process (`%%R` cells) and serves R models in CustomModel.
+
+**RSnowflake**  
+DBI driver for Snowflake using SQL REST API (+ optional ADBC).
+
+## S
+
+**Snowflake ML**  
+Umbrella for Feature Store, Model Registry, experiments, monitoring (Python SDK + snowflakeR).
+
+**Snowpark**  
+Snowflake's programmatic data framework (Python, Java, Scala). Underlies many ML operations.
+
+**Snowsight**  
+Snowflake web UI (SQL worksheets, admin, Workspace).
+
+**Spine**  
+Table of entity keys + event timestamps (+ labels) used to request point-in-time feature values.
+
+**Stage**  
+Internal file storage location in Snowflake (`@db.schema.stage/path`).
+
+**SPCS (Snowpark Container Services)**  
+Run Docker containers inside Snowflake — inference endpoints, custom R servers, parallel workers.
+
+**snowflakeR**  
+R API for Snowflake ML platform (Feature Store, Registry, doSnowflake, …).
+
+**SQL API**  
+Snowflake REST endpoints (`/api/v2/statements`) for executing SQL over HTTPS. See [chapter 11](../../11_rsnowflake_sql_api/index.qmd).
+
+## T
+
+**Task**  
+Scheduled or triggered Snowflake job — often SQL — used in pipelines and doSnowflake backends.
+
+**Tarball (R package)**  
+Pre-built `.tar.gz` R package archive. Required for fast Workspace installs of snowflakeR/RSnowflake.
+
+## W
+
+**Warehouse (virtual warehouse)**  
+Elastic SQL compute cluster. Used for queries, materializations, and warehouse-side inference — not arbitrary R code.
+
+**WebR**  
+R compiled to WebAssembly for browser execution. Can pair with RSnowflake + SQL API where drivers are unavailable.
+
+**Workspace**  
+Snowsight development area with notebooks, files, and Git integration.
+
+**Workspace Notebook**  
+Interactive notebook running on ML Container Runtime inside Snowflake.
+
+**/filesystem/**  
+FUSE mount where Workspace stages git project files; path includes a content hash. See [Appendix G](../G_workspace_container_internals/index.qmd).
+
+## Package names (this guide)
+
+| Name | What it is |
+|------|------------|
+| **snowflake-notebook-multilang** | Bootstrap toolkit (`setup_notebook()`, `sfnb_setup.py`) |
+| **RSnowflake** | DBI driver via SQL API |
+| **snowflakeR** | R API for Snowflake ML platform |

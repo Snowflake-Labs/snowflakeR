@@ -165,9 +165,9 @@ if (nzchar(Sys.getenv("SNOWFLAKER_PATH"))) {
 library(snowflakeR)
 ```
 
-When running from the internal monorepo, `sfnb_setup.py` automatically sets
-`SNOWFLAKER_PATH` to the local package source. From the public repository,
-the `else` branch installs from GitHub via `pak`.
+When your Git project includes a **local snowflakeR checkout**, `sfnb_setup.py`
+may set `SNOWFLAKER_PATH` to that source tree for fast iteration. Otherwise
+the `else` branch installs from GitHub releases via `pak`.
 
 ### Installing additional R packages
 

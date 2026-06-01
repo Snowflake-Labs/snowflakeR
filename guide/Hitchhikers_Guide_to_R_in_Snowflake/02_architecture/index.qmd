@@ -1,0 +1,182 @@
+---
+title: "Architecture"
+subtitle: "Three packages, rpy2 bridge, and zero-config auth"
+---
+
+## Overview
+
+Snowflake's ML platform was built around Python and SQL. This guide's stack adds **R as a first-class citizen in Workspace** through three layers: notebook bootstrap, DBI connectivity, and ML platform APIs — unified by in-process bridges and Workspace OAuth.
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+- Describe the role of each of the three packages
+- Explain how `rpy2` connects R cells to Snowpark without R users writing Python
+- Choose between RSnowflake-first vs snowflakeR-first workflows
+
+---
+
+## The problem {#sec-problem}
+
+R teams could query Snowflake via ODBC/JDBC and dplyr, but **Feature Store, Model Registry, and Snowpark ML** exposed Python-first APIs. That forced duplicate infrastructure, PMML/ONNX conversions, or hand-written Python `CustomModel` wrappers.
+
+## The solution: three packages {#sec-three-packages}
+
+### snowflake-notebook-multilang
+
+**Role:** Bootstrap R (and other languages) inside Workspace via `micromamba`, install packages from YAML, register `%%R` cell magic.
+
+**When you need it:** Every Workspace notebook that runs R cells, before `library(snowflakeR)`.
+
+### RSnowflake
+
+**Role:** DBI-compliant driver (SQL API, ADBC, Workspace OAuth). Powers `dbplyr`, Arrow bulk I/O, Connections Pane.
+
+**When you need it:** SQL-first workflows, lazy dplyr pipelines, or when you want a dedicated driver without the ML Python stack.
+
+### snowflakeR
+
+**Role:** R API over `snowflake-ml-python` — Feature Store, Model Registry, experiments, monitoring, SPCS deployment, `registerDoSnowflake()`.
+
+**When you need it:** End-to-end ML on Snowflake from R.
+
+## Architecture diagram {#sec-diagram}
+
+```{mermaid}
+flowchart TB
+  subgraph ws [Workspace Notebook — Python kernel]
+    PYcell[Python cells]
+    SQLcell[SQL cells]
+    Rcell["Cell with %%R magic"]
+    subgraph ipy [IPython]
+      magic["%%R cell magic"]
+      rpy2bridge[rpy2]
+      rembed[R interpreter embedded in Python]
+    end
+    setup["setup_notebook()"]
+  end
+  subgraph rpkgs [R packages in embedded R]
+    RS[RSnowflake]
+    SFR[snowflakeR]
+  end
+  PYcell --> setup
+  setup --> magic
+  Rcell --> magic --> rpy2bridge --> rembed
+  rembed --> RS
+  rembed --> SFR
+  RS --> WH[(Warehouse)]
+  SFR --> ML[Feature Store / Registry / SPCS]
+  SQLcell --> WH
+```
+
+::: {.callout-note title="What is rpy2?"}
+**[rpy2](https://rpy2.github.io/)** embeds a full R interpreter **inside the Python process**. It is not a subprocess or network call. In Workspace, rpy2 registers the `%%R` **cell magic** so IPython routes cell bodies to R. Data frames and vectors can cross the boundary efficiently. You write R; rpy2 makes it run where only Python kernels exist today.
+:::
+
+::: {.callout-note title="What is reticulate?"}
+**[reticulate](https://rstudio.github.io/reticulate/)** is the R package that calls **Python from R**. snowflakeR uses it to invoke `snowflake-ml-python` (Feature Store, Model Registry, Snowpark ML) without you writing Python. rpy2 gets you *into* R from the notebook kernel; reticulate gets snowflakeR *back out* to Python ML APIs when needed.
+:::
+
+ASCII reference:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│          Workspace Notebook (Python / IPython kernel)       │
+│  Python cells          %%R cells              SQL cells     │
+│       │                     │                      │        │
+│       │    setup_notebook() registers %%R magic    │        │
+│       │                     │                      │        │
+│       │              ┌──────▼──────┐               │        │
+│       │              │    rpy2     │  (Python→R)  │        │
+│       │              │  embedded R │               │        │
+│       │              │ RSnowflake  │──DBI──────────┼──► WH   │
+│       │              │ snowflakeR  │──reticulate──►│  ML API │
+│       └──────────────┴─────────────┘               │        │
+│              Snowpark session (Workspace OAuth)    │        │
+└────────────────────────────────────────────────────┼────────┘
+                                                     │
+              Feature Store · Model Registry · Warehouse SQL
+```
+
+## The bidirectional bridge (rpy2 + reticulate) {#sec-bridge}
+
+Snowflake's compute layer — **Workspace**, **warehouses**, **SPCS** — runs **Python** natively. There is no standalone R kernel in Workspace today. R execution is enabled by embedding a full R interpreter **inside the Python process** via [rpy2](https://rpy2.github.io/).
+
+This is not a subprocess or HTTP hop: R and Python share the same process, with efficient data exchange for common types (data frames, vectors).
+
+```{mermaid}
+flowchart LR
+  subgraph py [Python world]
+    PYK[Jupyter / Snowpark kernel]
+    ML[snowflake-ml-python]
+  end
+  subgraph bridges [Bridges]
+    RPY2[rpy2 Python to R]
+    RET[reticulate R to Python]
+  end
+  subgraph r [R world]
+    RSESS[R session]
+    SFR[snowflakeR]
+    RS[RSnowflake]
+  end
+  PYK -->|%%R cells| RPY2 --> RSESS
+  RSESS --> SFR --> RET --> ML
+  RSESS --> RS
+```
+
+| Direction | Mechanism | Example |
+|-----------|-----------|---------|
+| Python → R | **rpy2** | `%%R` cell magic runs `library(tidymodels)` |
+| R → Python | **reticulate** | `sfr_connect()` calls `snowflake-ml-python` |
+| R → SQL | **RSnowflake** (DBI) or `sfr_query()` | dplyr pipelines, ad hoc SQL |
+
+**Why two bridges?** Snowflake ML APIs (Feature Store, Model Registry, Snowpark session helpers) ship as **Python SDKs**. snowflakeR wraps them from R via reticulate so R users never write Python. rpy2 is the complementary path that lets Workspace run R cells at all.
+
+### What happens when you run a `%%R` cell
+
+1. IPython sees the `%%R` magic and hands the cell body to rpy2.
+2. rpy2 passes the text to the embedded R interpreter.
+3. R code runs; if it calls snowflakeR, reticulate invokes Python ML SDK calls.
+4. Results cross back to the notebook as R or Python objects.
+
+### Serving: CustomModel + rpy2
+
+At inference time, registered R models deploy as Python **CustomModel** handlers that call back into R via rpy2 inside the **SPCS** container. Training stays in R; serving runs on Snowflake's container runtime. See [Model Registry](../18_model_registry/index.qmd).
+
+### Future: R in warehouses (proposed)
+
+Engineering discussions include **r-base + rpy2 on Snowflake's Anaconda channel** for Python UDFs/sprocs — the same bridge pattern, without a notebook kernel. This guide focuses on what works **today** (Workspace + SPCS); warehouse-native R is not assumed.
+
+## Design principles {#sec-principles}
+
+These ideas assume familiarity with [Snowflake basics](../01_snowflake_platform/index.qmd). Terms in **bold** are in the [Glossary](../appendices/F_glossary/index.qmd).
+
+| Principle | What it means |
+|-----------|----------------|
+| **Zero-config auth** | In **Workspace**, `sfr_connect()` and RSnowflake use the session **OAuth token** within the Workspace for seamless authentication — no PATs in notebook cells |
+| **Automatic network setup** | Bootstrap detects/creates **EAI** for CRAN, GitHub, and Python package indexes assuming Role has appropriate privileges |
+| **No Python from the R user** | `snowflakeR` owns the **reticulate** / rpy2 bridge internally |
+| **Snowflake-native objects** | **Feature views**, **datasets**, and registry models created in R appear in Python tooling |
+| **Train in R, serve in Snowflake** | Models wrap as Python **CustomModel** + rpy2 for **SPCS** inference |
+| **ML lineage** | Source table → **Feature View** → **Dataset** → **Model** traceability in Model Registry |
+
+## Choosing your entry point {#sec-entry}
+
+| Goal | Start with |
+|------|------------|
+| New to Snowflake | [Snowflake Platform Primer](../01_snowflake_platform/index.qmd) |
+| RStudio, Posit, or VS Code on your laptop | [Local R Setup](../03_local_r_setup/index.qmd) → [IDE chapter](../04_rstudio_posit_vscode/index.qmd) |
+| Run R in a Workspace notebook | [Workspaces overview](../05_workspaces_overview/index.qmd) → [Bootstrap](../06_workspace_bootstrap/index.qmd) |
+| dplyr/SQL only, no ML SDK | [RSnowflake](../12_rsnowflake_connect/index.qmd) |
+| Feature Store / Registry from R | [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) → [snowflakeR Connect](../16_snowflaker_connect/index.qmd) |
+
+## Interop: `sfr_dbi_connection()` {#sec-dbi-bridge}
+
+Both packages can coexist. `snowflakeR::sfr_dbi_connection(conn)` lazily wraps a snowflakeR session connection as DBI for RSnowflake/dbplyr when you need ML APIs and dplyr in the same notebook.
+
+## Next steps {#sec-next}
+
+- [Snowflake Platform Primer](../01_snowflake_platform/index.qmd) — if Snowflake is new to you  
+- [Local R Setup](../03_local_r_setup/index.qmd) — RStudio, Posit, or VS Code  
+- [Workspaces overview](../05_workspaces_overview/index.qmd) — Snowflake Notebooks

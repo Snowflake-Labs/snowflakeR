@@ -1,0 +1,532 @@
+---
+title: "CRE & ML Jobs"
+subtitle: "Custom runtime images and batch execution beyond notebooks"
+---
+
+## Overview
+
+**Workspace Notebooks** are the default interactive surface for R on Snowflake — but every new session that runs cold `setup_notebook()` pays a **bootstrap tax**: micromamba, R, packages, EAI checks, and `%%R` registration. That is fine for exploration; it is expensive for teams that restart notebooks daily or run **scheduled batch** workloads.
+
+Two extensions address that:
+
+| Extension | What it solves |
+|-----------|----------------|
+| **Custom Runtime Images (CRE)** | Pre-bake R + packages into a governed container — session start in ~seconds |
+| **ML Jobs** | Run the same container runtime **non-interactively** on a schedule or trigger |
+
+This chapter explains when each tier applies, how CRE relates to bootstrap, and why ML Job images are **not** the same as Model Registry inference images.
+
+::: {.callout-warning}
+CRE and ML Jobs are evolving product areas. Verify against [Snowflake ML Container Runtime](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml) and [Custom Runtime Images](https://docs.snowflake.com/en/developer-guide/snowflake-ml/custom-runtime-images) documentation.
+:::
+
+## Learning Objectives
+
+- Explain cold bootstrap cost and what CRE pre-bakes (including `%%R` on kernel start)
+- Build, push, register, and attach a multilang-R CRE image end-to-end
+- Customize the image with extra R/Python packages at build time or runtime
+- Choose Workspace vs CRE vs ML Jobs vs SPCS workers
+- Distinguish notebook CRE from Model Registry inference images
+
+---
+
+## The execution tiers {#sec-tiers}
+
+```{mermaid}
+flowchart TB
+  subgraph interactive [Interactive development]
+    COLD["Workspace + cold bootstrap<br/>~60s typical / restart"]
+    CRE["Workspace + CRE<br/>~2s session start"]
+  end
+
+  subgraph batch [Scheduled / batch]
+    JOB["ML Job + CRE<br/>non-interactive"]
+  end
+
+  subgraph parallel [Massively parallel R]
+    SPCS["SPCS + doSnowflake<br/>custom worker Docker"]
+  end
+
+  subgraph serve [Model serving]
+    INF["Registry inference service<br/>separate image surface"]
+  end
+
+  COLD --> CRE
+  CRE --> JOB
+  JOB -.->|different purpose| INF
+  CRE -.->|different purpose| SPCS
+```
+
+| Tier | Kernel / runtime | R bootstrap | Best for |
+|------|-------------------|-------------|----------|
+| Workspace cold | ML Container Runtime | Full `setup_notebook()` (~60s typical / restart) | Pilot, demos, changing packages often |
+| Workspace + CRE | Same runtime, custom image | Skip install — packages in image | Team notebooks, frequent restarts |
+| ML Job + CRE | ML Container Runtime (batch) | Pre-baked or bootstrap at job start | Nightly retrain, scheduled ETL in R |
+| SPCS doSnowflake | Compute pool workers | Worker Docker image | Thousands of parallel `%dopar%` iterations |
+| Registry deploy | Inference service image | conda-forge + rpy2 serve path | Online REST predict — [Model Registry](../18_model_registry/index.qmd) |
+
+---
+
+## Why cold bootstrap is slow {#sec-cold}
+
+First `setup_notebook()` in a fresh Workspace session typically:
+
+1. Resolves **EAI** (network rules for CRAN, conda, GitHub)
+2. Installs or activates **micromamba** (~2 GB disk for R + tidyverse stack)
+3. Installs CRAN/conda packages from YAML
+4. Installs **snowflakeR / RSnowflake tarballs**
+5. Registers **`%%R`** IPython magic via rpy2
+
+Expect **~60 seconds per compute restart** for a typical snowflakeR + RSnowflake YAML configuration. Additional conda/CRAN packages, ADBC, DuckDB, or multilanguage installs increase that time (several minutes for heavy stacks). **Each idle recycle** starts a new container and re-runs bootstrap unless you use a CRE.
+
+CRE moves steps 2–4 into the **image build** — runtime only verifies versions and registers magic if needed.
+
+---
+
+## Custom Runtime Images (CRE) {#sec-cre}
+
+### What CRE is
+
+A **Custom Runtime Image** is a Docker image you build, push to a Snowflake **image repository**, register as a **Custom Runtime Environment**, and attach to Workspace Notebooks (or ML Jobs). It must **extend** the official [`snowbooks`](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml) ML runtime — you add R and tooling on top; you do **not** replace Snowflake's entrypoint or mandatory Python packages.
+
+CRE answers: *"Why should every session pay 45+ seconds and run bootstrap cells just to get `%%R` and snowflakeR?"* A well-built CRE starts the kernel with R, packages, ADBC, helpers, and `%%R` already wired — including on **container restart**.
+
+Reference implementation: [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) (`docker/Dockerfile.multilang-r`, `docker/install_prebaked_r.sh`).
+
+---
+
+## End-to-end: build a multilang-R CRE (v2) {#sec-cre-e2e}
+
+Validated workflow: local `docker build` → `docker push` → `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` → attach to Workspace → `%%R` on kernel start without a setup cell.
+
+### What you are building
+
+```{mermaid}
+flowchart TB
+  subgraph base [Snowflake base — required]
+    SB["snowbooks:2.5.0<br/>Jupyter + Snowpark + ML runtime"]
+  end
+
+  subgraph bake [Your CRE layer — image build time]
+    MM["micromamba + workspace_env"]
+    RPK["R 4.5.2 + tidyverse / dbplyr / DBI"]
+    SF["snowflakeR + RSnowflake tarballs"]
+    ADBC["ADBC stack"]
+    PY["rpy2 + sfnb-multilang"]
+    HOOK["IPython startup → %%R"]
+    CFG["/opt/sfnb/config/cre_multilang_r.yaml"]
+  end
+
+  subgraph runtime [Workspace session]
+    K["Kernel: [sfnb CRE] %%R ready"]
+    CELLS["%%R + sfr_connect()"]
+  end
+
+  SB --> MM --> RPK --> SF --> ADBC --> PY --> HOOK --> CFG
+  CFG --> K --> CELLS
+```
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| `snowbooks` base | Snowflake image | Kernel, Snowpark, CRE validation |
+| micromamba + `workspace_env` | `~/micromamba`, `~/.workspace_env_prefix` | Same paths as cold bootstrap |
+| snowflakeR / RSnowflake | R library | Tarballs at **build** time |
+| ADBC | R + conda | `adbcdrivermanager`, `adbcsnowflake`, `libadbc-driver-snowflake` |
+| rpy2 + sfnb-multilang | snowbooks Python | `setup_notebook`, `enable_r_cells` |
+| IPython startup | `~/.ipython/profile_default/startup/` | **`%%R` on kernel start/restart** |
+| Preset YAML | `/opt/sfnb/config/cre_multilang_r.yaml` | Optional runtime `setup_notebook()` |
+
+| Env var | Meaning |
+|---------|---------|
+| `SFNB_CUSTOM_RUNTIME=1` | Skip micromamba reinstall in `setup_notebook()` |
+| `SFNB_CRE_VERSION` | Image recipe tag (e.g. `v2`) |
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| Role with CRE + image repo privileges | Often `ACCOUNTADMIN` first; `GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT` to notebook roles |
+| Image repository | e.g. `MYDB.MYSCHEMA.MY_CRE_IMAGES` |
+| Docker + Snowflake CLI | `linux/amd64` build; `snow spcs image-registry login` |
+| Build-time egress | Pull base image, conda, tarballs, r-multiverse (ADBC) |
+
+::: {.callout-note}
+**SPCS Image Builder** (`snow spcs service build-image`, CLI 3.16+ preview) builds in-account. Use `docker/prepare_build_ctx.sh` for a flat context. If the job fails with `no space left on device`, use **local Docker build + push**.
+:::
+
+### Step 1 — Clone toolkit and set registry
+
+```bash
+git clone https://github.com/Snowflake-Labs/snowflake-notebook-multilang.git
+cd snowflake-notebook-multilang
+
+export REGISTRY_URL="<account>.registry.snowflakecomputing.com"
+export IMAGE_REPO_PATH="mydb/myschema/my_cre_images"   # lowercase path
+```
+
+### Step 2 — Build and validate
+
+```bash
+snow spcs image-registry login -c <your_connection>
+export CRE_IMAGE_TAG=v2
+./docker/build_cre.sh
+```
+
+Runs `docker build --platform linux/amd64` and `snow custom-image validate sfnb-multilang-r:v2` (20 checks — must pass).
+
+### Step 3 — Push
+
+```bash
+PUSH=1 ./docker/build_cre.sh
+```
+
+Pushes to `{REGISTRY_URL}/{IMAGE_REPO_PATH}/sfnb-multilang-r:v2`.
+
+### Step 4 — Register CRE
+
+```sql
+USE ROLE ACCOUNTADMIN;
+
+CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r
+    IMAGE_PATH = '/MYDB/MYSCHEMA/MY_CRE_IMAGES/sfnb-multilang-r:v2'
+    BASE_IMAGE_TYPE = CPU;
+
+DESCRIBE CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r;
+-- CRE_STATUS = RESOLVED
+
+GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r TO ROLE <notebook_role>;
+```
+
+### Step 5 — Attach to Workspace
+
+**Snowsight:** Notebook → Advanced settings → select your CRE.
+
+**SQL:**
+
+```sql
+EXECUTE NOTEBOOK PROJECT MYDB.MYSCHEMA.MY_PROJECT
+    MAIN_FILE = 'notebook.ipynb'
+    RUNTIME = 'cre@sfnb_multilang_r'
+    QUERY_WAREHOUSE = 'MY_WH';
+```
+
+An **empty git project** is fine — the image carries R and helpers.
+
+### Step 6 — Verify (no bootstrap cell)
+
+The sfnb CRE startup hook prints a banner when the **Python kernel** starts (not at Docker build time):
+
+```text
+[sfnb CRE] %%R ready — R version 4.5.x ... (magic registered=True)
+```
+
+::: {.callout-warning appearance="minimal"}
+**Where is that line?** Snowflake does not document a fixed kernel stdout file path in Workspace. The message is a normal `print()` from IPython startup — you may **not** see it in the notebook UI even when CRE works. Treat **`%%R` cells succeeding** as the real proof. For logs, use [§sec-cre-logs](#sec-cre-logs) (Terminal, Run history, event table).
+:::
+
+```r
+%%R
+cat(R.version.string, "\n")
+packageVersion("snowflakeR")
+```
+
+```r
+%%R
+requireNamespace("adbcsnowflake", quietly = TRUE)
+library(snowflakeR)
+conn <- sfr_connect()
+conn
+```
+
+Expect `Connected via active Workspace Notebook session`.
+
+::: {.callout-note appearance="minimal"}
+Optional Python cell — EAI checks, YAML context, RSnowflake OAuth only:
+
+```python
+from sfnb_setup import setup_notebook
+setup_notebook(config="/opt/sfnb/config/cre_multilang_r.yaml", packages=["snowflakeR", "RSnowflake"])
+```
+:::
+
+### v1 vs v2 reference image
+
+| Tag | Auto `%%R` | sfnb-multilang | ADBC |
+|-----|------------|----------------|------|
+| v1 | No | No | No |
+| **v2** | **Yes** | **Yes** | **Yes** |
+
+### How kernel auto-registration works
+
+`install_prebaked_r.sh` installs `00-sfnb-enable-r.py` under `~/.ipython/profile_default/startup/`. On every kernel start or restart it:
+
+1. Points R at the pre-baked micromamba env (skips repo **renv** on `/filesystem`)
+2. Calls `setup_r_environment()` from sfnb-multilang
+3. Registers `%%R`
+
+No Git copy of `sfnb_setup.py` required for magic — pip-installed **sfnb-multilang** is in the image.
+
+```{mermaid}
+sequenceDiagram
+  participant User as Analyst
+  participant WS as Workspace kernel
+  participant Hook as IPython startup
+  participant R as R via rpy2
+
+  User->>WS: Open / restart notebook
+  WS->>Hook: 00-sfnb-enable-r.py
+  Hook->>R: setup_r_environment()
+  Hook-->>User: sfnb CRE — R cells ready
+  User->>R: R cell library(snowflakeR); sfr_connect()
+```
+
+---
+
+## Customizing the image {#sec-cre-customize}
+
+### Profile-driven build (recommended for teams)
+
+The [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) repo ships a **one-command** workflow so you do not hand-edit the install script for every extra package.
+
+```bash
+cd snowflake-notebook-multilang
+./docker/create_cre.sh --init my_team          # copies example profile
+# edit configs/my_team.yaml — registry, repo path, extras
+PUSH=1 SNOW_CONNECTION=my_conn ./docker/create_cre.sh configs/my_team.yaml
+```
+
+`configs/cre_profile.example.yaml` lists:
+
+| Field | Purpose |
+|-------|---------|
+| `cre.name` / `cre.tag` | Snowflake CRE name and Docker tag |
+| `snowflake.registry_url` | Account image registry host |
+| `snowflake.image_repo_path` | Lowercase `db/schema/repo` for push |
+| `extras.conda_r` | Extra conda-forge R packages |
+| `extras.cran` | Extra CRAN packages at build time |
+| `extras.pip` | Extra pip packages on the notebook kernel |
+| `tarballs.snowflakeR` / `RSnowflake` | Pin release tarball URLs |
+
+`create_cre.sh` renders `docker/generated/cre_extra_install.sh`, runs `build_cre.sh`, validates with `snow custom-image validate`, optionally pushes, and prints `docker/generated/cre_register.sql`.
+
+### At image build time (advanced)
+
+Edit `docker/install_prebaked_r.sh`, bump tag, rebuild, push, `CREATE OR REPLACE` CRE.
+
+**Extra conda R packages** — extend `CONDA_PACKAGES`:
+
+```bash
+CONDA_PACKAGES=(
+  "r-base=${R_VERSION}"
+  "r-tidyverse"
+  "r-fable"
+  "r-lme4"
+)
+```
+
+**Extra CRAN packages** — add an R block after tarball install:
+
+```bash
+"${R_BIN}" --vanilla -e "install.packages('survival', repos='${CRAN_MIRROR}', quiet=TRUE)"
+```
+
+**Disable ADBC** (smaller image): `SFNB_CRE_ADBC=0 ./docker/build_cre.sh`
+
+**Extra Python packages** — extend pip in the script:
+
+```bash
+"${NOTEBOOK_PY}" -m pip install -q --break-system-packages rpy2 tabulate scikit-learn
+```
+
+**Pin snowflakeR / RSnowflake:**
+
+```bash
+export SNOWFLAKER_TARBALL="https://github.com/Snowflake-Labs/snowflakeR/releases/download/vX.Y.Z/snowflakeR_X.Y.Z.tar.gz"
+```
+
+| Build variable | Default |
+|----------------|---------|
+| `SFNB_R_VERSION` | `4.5.2` |
+| `SFNB_CRE_ADBC` | `1` |
+| `SFNB_CRE_IMAGE_TAG` | `v2` |
+| `SNOWBOOKS_TAG` | `2.5.0` (Docker build arg) |
+
+### At notebook runtime (flexible)
+
+For occasional packages — requires **notebook EAI** if downloading:
+
+```python
+from sfnb_setup import setup_notebook
+setup_notebook(config="/opt/sfnb/config/cre_multilang_r.yaml")
+```
+
+```r
+%%R
+install.packages("pkg", repos = "https://cloud.r-project.org")
+```
+
+| Strategy | Best for |
+|----------|----------|
+| Bake in CRE | Team standard stack — reproducible, fast every session |
+| `setup_notebook()` in project YAML | Project-specific extras with version control |
+| Ad hoc `install.packages` | One-off experiments only |
+
+YAML preset with `custom_runtime.skip_eai_when_prebaked: true` when nothing is downloaded at runtime — see [`configs/cre_multilang_r.yaml`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/configs/cre_multilang_r.yaml).
+
+---
+
+## Inspecting kernel and container logs {#sec-cre-logs}
+
+::: {.callout-note appearance="minimal"}
+**Deep dive:** Process tree, uvenv vs platform Python, `/filesystem` renv, kernel JSON, and **`%%R` vs IRkernel** — [Appendix G: Workspace Container Internals](../appendices/G_workspace_container_internals/index.qmd).
+:::
+
+There is **no documented, stable path** to a Jupyter “kernel stdout file” in Workspace (for example `/tmp/jupyter.log`). Use the paths below by **failure phase**.
+
+### Phase A — CRE registration fails (`CREATE CUSTOM RUNTIME ENVIRONMENT`)
+
+Snowflake validates the image **before** any notebook kernel runs. Fix locally first:
+
+```bash
+snow custom-image validate sfnb-multilang-r:v2
+```
+
+Check SQL output from `DESCRIBE CUSTOM RUNTIME ENVIRONMENT <name>;` — status and error text refer to image contract (entrypoint, `DASHBOARD_PORT`, base image type), not R startup.
+
+### Phase B — Notebook session starts but R / `%%R` fails
+
+| Approach | What you get |
+|----------|----------------|
+| **Functional test** | Run `%%R cat(1)` — if it works, startup succeeded regardless of banner |
+| **Workspace Terminal** | Live shell in the notebook container: `env \| grep SFNB`, `ps -ef \| grep -i jupyter`, inspect `/opt/sfnb/CRE_VERSION` |
+| **Run history → Logs** | Kernel + infra logs for **scheduled** Notebook Project runs; interactive sessions may expose similar views depending on Snowsight version |
+| **Account event table** | Container logs ingested for query (often **3–5 minute delay**); filter by notebook service name |
+
+Find your event table:
+
+```sql
+SHOW PARAMETERS LIKE 'event_table' IN ACCOUNT;
+```
+
+Then (adjust database, schema, table, and service name):
+
+```sql
+SELECT
+  TIMESTAMP,
+  VALUE AS LOG_MESSAGE,
+  RESOURCE_ATTRIBUTES:"snow.service.name"::string AS SERVICE_NAME,
+  RECORD:"severity_text"::string AS SEVERITY
+FROM <db>.<schema>.<event_table>
+WHERE RECORD_TYPE = 'LOG'
+  AND RESOURCE_ATTRIBUTES:"snow.service.name" = '<your_notebook_service_name>'
+  AND TIMESTAMP > DATEADD(hour, -1, CURRENT_TIMESTAMP())
+ORDER BY TIMESTAMP DESC
+LIMIT 100;
+```
+
+Enable **Python `logging`** in notebook code if you need your own messages in the event table for CI or audits.
+
+### Phase C — sfnb CRE-specific checks (Terminal or Python cell)
+
+```bash
+# CRE image stamp (empty if not our image)
+cat /opt/sfnb/CRE_VERSION 2>/dev/null || echo "no CRE_VERSION"
+
+# Startup hook installed at build time?
+ls -la ~/.ipython/profile_default/startup/00-sfnb-enable-r.py 2>/dev/null
+
+# Pre-baked R env marker
+cat ~/.workspace_env_prefix 2>/dev/null
+```
+
+```python
+import os
+print("SFNB_CUSTOM_RUNTIME =", os.environ.get("SFNB_CUSTOM_RUNTIME"))
+print("CRE_VERSION =", open("/opt/sfnb/CRE_VERSION").read().strip()
+      if os.path.exists("/opt/sfnb/CRE_VERSION") else "missing")
+```
+
+Force the startup path manually (diagnostic only):
+
+```python
+import os
+exec(open(os.path.expanduser("~/.ipython/profile_default/startup/00-sfnb-enable-r.py")).read())
+```
+
+Expect `[sfnb CRE] %%R ready` **here** if the hook file exists and `SFNB_CUSTOM_RUNTIME=1`. If this prints but `%%R` still fails, the issue is magic registration or rpy2, not image bake.
+
+### What is *not* Docker build output
+
+`docker build` / Image Builder logs appear only when **building** the image. Workspace does not surface those inside the notebook editor. Early custom-image failures are best caught with **`snow custom-image validate`** plus **event table / Run history** after the session starts.
+
+---
+
+## CRE troubleshooting {#sec-cre-troubleshoot}
+
+| Symptom | Fix |
+|---------|-----|
+| CRE `CREATE` fails | `snow custom-image validate` locally |
+| `exec format error` | Rebuild `--platform linux/amd64` |
+| No `[sfnb CRE] %%R ready` banner | Banner optional — test `%%R`; see [§sec-cre-logs](#sec-cre-logs); use v2+ image; `CREATE OR REPLACE` CRE |
+| `Bootstrapping renv` hang | renv at Git repo root on `/filesystem`; use CRE v2 or a project without renv |
+| Docker push invalid reference | Lowercase `IMAGE_REPO_PATH` |
+| Image Builder disk full | Local Docker build |
+
+**Ops doc:** [custom_runtime_images.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_runtime_images.md)
+
+---
+
+## ML Jobs {#sec-ml-jobs}
+
+**GPU notebooks:** use a **GPU compute pool**, a **GPU** snowbooks base image, and `BASE_IMAGE_TYPE = GPU` on the CRE. R GPU packages (`torch`, etc.) are baked into micromamba like CPU packages — do not use Rocker images as the CRE `FROM`. Details: [Appendix G — GPU notebooks and R packages](../appendices/G_workspace_container_internals/index.qmd#sec-ws-gpu-r).
+
+**ML Jobs** execute workloads on ML Container Runtime **without** the notebook UI — scheduled overnight retrains, batch feature engineering, or GPU-adjacent jobs.
+
+### How R fits ML Jobs today
+
+| Approach | Cold start | Maintenance |
+|----------|------------|-------------|
+| Bootstrap script at job start | Slow (same as cold notebook) | Easy — same YAML as notebooks |
+| **CRE with R pre-baked** | **Fast** | Image rebuild on package change |
+| Exported notebook as job | Python-first spec | R cells via bootstrap in job entry |
+
+A typical pattern: develop in Workspace with CRE → promote the **same image** to ML Job spec → run `main()` R script or notebook export on schedule.
+
+### What ML Jobs are not
+
+ML Jobs are **not** a replacement for:
+
+- **`sfr_deploy_model()`** SPCS inference services (different conda constraints, predict-focused)
+- **doSnowflake** worker pools (custom Docker for massive `%dopar%` scale)
+
+Use the right tier for the workload — see diagram in [§tiers](#sec-tiers).
+
+---
+
+## Decision guide {#sec-decide}
+
+| Question | If yes → |
+|----------|----------|
+| Interactive exploration? | Workspace (cold OK initially) |
+| Same team, daily notebook use? | **CRE** |
+| Scheduled non-interactive run? | **ML Job + CRE** |
+| Thousands of parallel R loops? | [doSnowflake / SPCS](../22_parallel_dosnowflake/index.qmd) |
+| HTTPS model endpoint for apps? | [Model Registry deploy](../18_model_registry/index.qmd) |
+
+---
+
+## Operational notes {#sec-ops}
+
+- **Pin versions** in every CRE tag — R, tarballs, conda, `SNOWBOOKS_TAG` — [Appendix B](../appendices/B_config_reference/index.qmd)
+- **EAI at build time** is separate from notebook EAI (conda/GitHub/r-multiverse during `docker build`)
+- **`CREATE OR REPLACE`** the CRE after each push so notebooks resolve the new digest on restart
+- SPCS worker pools may cache old image layers — suspend/resume pool after image updates ([Appendix C](../appendices/C_troubleshooting/index.qmd))
+- CRE troubleshooting table: [§sec-cre-troubleshoot](#sec-cre-troubleshoot)
+
+---
+
+## Next steps
+
+[Beyond R](../10_multilang_beyond_r/index.qmd) — optional other languages in the same CRE toolkit.
+
+[RSnowflake: Connect](../12_rsnowflake_connect/index.qmd) — data access after bootstrap.

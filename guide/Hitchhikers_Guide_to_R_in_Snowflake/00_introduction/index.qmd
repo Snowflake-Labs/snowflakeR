@@ -1,0 +1,98 @@
+---
+title: "Introduction"
+subtitle: "Prerequisites, disclaimers, and guide overview"
+---
+
+# Introduction {.unnumbered}
+
+*Author: [Simon Field](https://www.linkedin.com/in/fieldy6961/)*
+
+## Overview
+
+This guide is for R users who want to run statistical modeling, forecasting, and ML workflows **on Snowflake** — from **RStudio, Posit, VS Code**, or **Workspace Notebooks** (and optionally ML Jobs and SPCS) — without maintaining a separate R server or rewriting models in Python.
+
+It covers three open-source packages, platform concepts for newcomers to Snowflake, local/IDE setup, notebook bootstrap, DBI connectivity, and the full ML platform (Feature Store, Model Registry, experiments, monitoring, and parallel R).
+
+**New to Snowflake?** Start with [Snowflake Platform Primer](../01_snowflake_platform/index.qmd) and the [Glossary](../appendices/F_glossary/index.qmd).
+
+## What's Covered in This Guide
+
+| Ch | Topic | Description |
+|----|-------|-------------|
+| [**00**](index.qmd) | Introduction | Prerequisites, disclaimers, roadmap |
+| [**01**](../01_snowflake_platform/index.qmd) | Snowflake primer | Platform concepts for R users |
+| [**02**](../02_architecture/index.qmd) | Architecture | Three packages, rpy2, auth |
+| [**03–04**](../03_local_r_setup/index.qmd) | R from your IDE | Local setup, RStudio, Posit, VS Code |
+| [**05–09**](../05_workspaces_overview/index.qmd) | Workspace | Notebooks, bootstrap, EAI, `%%R`, CRE |
+| [**10**](../10_multilang_beyond_r/index.qmd) | Beyond R | Julia, Scala, Java (optional) |
+| [**11–14**](../11_rsnowflake_sql_api/index.qmd) | RSnowflake | SQL API, DBI, dbplyr |
+| [**15–23**](../15_mlops_on_snowflake/index.qmd) | snowflakeR | MLOps, Feature Store, Registry, scale-out |
+| [**F**](../appendices/F_glossary/index.qmd) | Glossary | Terms and acronyms |
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+- Explain who this guide is for and what problems it solves
+- List prerequisites for Workspace and local development
+- Locate the three package repositories and companion notebooks
+
+---
+
+## Important disclaimers {#sec-disclaimers}
+
+::: {.callout-important}
+## snowflakeR community project
+
+The `snowflakeR` package gives R users an idiomatic interface to the `snowflake-ml-python` SDK and Snowflake's server-side ML capabilities. It is **not yet officially supported by Snowflake** but is developed to help customers use R in Workspaces and containers and to gather feedback. APIs may change as the package evolves.
+:::
+
+::: {.callout-note}
+## CRE vs bootstrap
+
+In most enterprises, **platform or IT** first onboards a **Custom Runtime Environment (CRE)** — a pre-built image registered as `cre@<org_name>` so analysts get R and `%%R` without a setup cell ([Workspace Bootstrap ch. 6](../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap), [CRE ch. 9](../09_custom_runtime_and_ml_jobs/index.qmd)).
+
+**`setup_notebook()` bootstrap** is what you use **until that org image exists**, or for your own PoC: one Python cell, no Docker — typically **~60 seconds per compute restart** for a standard package set (longer if you add many R packages or options in YAML). When a CRE is attached, the toolkit detects it (`SFNB_CUSTOM_RUNTIME`) and skips redundant installs.
+:::
+
+::: {.callout-warning}
+## Pre-built package tarballs in Workspace
+
+Configure **pre-built `.tar.gz`** tarballs for `snowflakeR` and `RSnowflake` in your notebook YAML (`languages.r.tarballs`). Installing from source inside Workspace is slow (minutes) and brittle. See [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) and [Appendix B](../appendices/B_config_reference/index.qmd).
+:::
+
+## Prerequisites {#sec-prerequisites}
+
+### Snowflake access
+
+- Snowflake account with [Workspace Notebooks](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks) (or ML Container Runtime for ML Jobs)
+- Role with warehouse usage and notebook execution
+- For automatic EAI creation: `CREATE INTEGRATION` (or an admin-run script from the bootstrap step)
+
+### R and Python (local development)
+
+| Component | Version |
+|-----------|---------|
+| R | 4.2+ |
+| Python | 3.10+ (for `snowflake-ml-python` bridge) |
+| Optional | `connections.toml` or key-pair auth for local connect |
+
+See [Appendix A: Setup](../appendices/A_setup/index.qmd) and [Local R Setup](../03_local_r_setup/index.qmd).
+
+### Skills
+
+- Comfortable writing R and reading SQL
+- Basic familiarity with notebooks (cells, kernels) if using Workspace
+- ML concepts (features, training, inference) for snowflakeR chapters
+
+## Companion artifacts {#sec-companions}
+
+| Artifact | Location |
+|----------|----------|
+| Workspace notebooks | [snowflakeR `inst/notebooks`](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/notebooks) |
+| Multilang smoke test | [sfnb `examples/r_smoke_test`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/tree/main/examples/r_smoke_test) |
+| Feature Store concepts | [Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) |
+
+## Next steps {#sec-next}
+
+[Snowflake Platform Primer](../01_snowflake_platform/index.qmd) if you are new to Snowflake, then [Architecture](../02_architecture/index.qmd).

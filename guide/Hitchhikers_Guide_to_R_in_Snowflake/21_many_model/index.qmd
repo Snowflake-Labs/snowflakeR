@@ -1,0 +1,271 @@
+---
+title: "Many-Model Patterns"
+subtitle: "Partition-keyed forecasting and batch registry"
+---
+
+## Overview
+
+A **many-model** problem is one where you need **many models of the same type**, each fit to a different slice of data — one forecast per SKU, one churn model per region, one anomaly detector per sensor. The modeling **code is identical**; only the **partition key** and **input series** change.
+
+That pattern is everywhere in retail, supply chain, and IoT, but it collides with two practical limits:
+
+1. **Scale** — thousands of `for` loops on a laptop take days
+2. **Governance** — exporting each series to CSV loses Snowflake's access controls and lineage
+
+snowflakeR addresses both by combining **doSnowflake** (parallel R on SPCS), **stage** persistence (`.rds` models in-account), and **Model Registry** batch APIs (`sfr_log_many_model()`, `sfr_run_batch()`). You write one `foreach` loop; Snowflake runs it across a compute pool and registers the result as a **single registry version** that knows how to score every partition.
+
+This chapter explains the end-to-end architecture. Implementation detail for Tasks vs Queue backends is in [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd).
+
+Primary reference: `vignette("many-model-howto", package = "snowflakeR")`.
+
+## Learning Objectives
+
+- Decide when many-model beats one global model
+- Trace data from source table → parallel training → stage → registry → batch inference
+- Choose Tasks vs Queue dispatch and the screen-then-refine pattern
+- Understand the worker return contract and aggregator registration
+
+---
+
+## When many-model applies {#sec-when}
+
+| Pattern | Example partition key | Why not one global model? |
+|---------|----------------------|---------------------------|
+| Per-SKU demand | `UNIT_ID` / `SKU_ID` | Series length, seasonality, and intermittency differ |
+| Per-store sales | `STORE_ID` | Local promotions, regional trends |
+| Per-customer churn | `CUSTOMER_ID` | Sparse events; pooled model washes out signal |
+| Per-asset monitoring | `SENSOR_ID` | Failure signatures are device-specific |
+
+Use a **single global model** when:
+
+- Entities share stable structure and you have enough **pooled** training data
+- A hierarchical or mixed-effects model explicitly shares information across partitions
+- Operational simplicity outweighs per-partition accuracy gains
+
+Use **many-model** when:
+
+- Partitions are **independent** conditional on their own history
+- The same R function fits every partition (`auto.arima`, `lm`, tidymodels workflow)
+- You need **governed** storage and **batch scoring** inside Snowflake
+
+---
+
+## End-to-end architecture {#sec-arch}
+
+The many-model pipeline has **four phases**. Each phase uses different Snowflake surfaces — warehouse SQL for data, SPCS for R training, stage for artifacts, Registry for serving.
+
+```{mermaid}
+flowchart TB
+  subgraph data [1 — Data in Snowflake]
+    SRC["SERIES_EVENTS table<br/>(UNIT_ID, DATE, Y)"]
+  end
+
+  subgraph train [2 — Parallel training]
+    FE["foreach(unit_id = ids) %dopar%"]
+    DS[doSnowflake Tasks or Queue]
+    W[SPCS R workers]
+    FE --> DS --> W
+  end
+
+  subgraph persist [3 — Persist artifacts]
+    STG["@STAGE — one .rds per partition"]
+    IDX[model_index.json]
+    STG --> IDX
+  end
+
+  subgraph serve [4 — Register and score]
+    REG["sfr_log_many_model() — aggregator"]
+    BATCH["sfr_run_batch() — server-side"]
+    OUT[FORECAST_RESULTS table]
+    REG --> BATCH --> OUT
+  end
+
+  SRC --> FE
+  W --> STG
+  IDX --> REG
+  SRC --> BATCH
+```
+
+| Phase | What happens | Snowflake compute |
+|-------|--------------|-------------------|
+| **1. Data** | Source table with partition key + time series (and optional covariates) | Warehouse (SQL ETL, Dynamic Tables) |
+| **2. Train** | `foreach` body fits one model per partition | **SPCS** workers via doSnowflake |
+| **3. Persist** | Each worker writes `.rds` to stage via volume mount | SPCS → stage I/O |
+| **4. Register & infer** | One aggregator version in Registry; batch job scores all partitions | Registry + SPCS batch (`run_batch`) |
+
+### Why registration is O(1) in model count
+
+`sfr_log_many_model()` registers a **single CustomModel aggregator** — not thousands of separate registry entries. The aggregator holds a **`model_index.json`** mapping `partition_key → stage_path`. Registration writes the index (~seconds) regardless of whether you have 200 or 20,000 underlying `.rds` files. Batch inference uses that index to load the right model per row.
+
+---
+
+## Dispatch: Tasks vs Queue {#sec-dispatch}
+
+Both modes run the **same** `%dopar%` loop body. The difference is **how work reaches SPCS workers** — see [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) for full detail.
+
+```{mermaid}
+flowchart LR
+  subgraph tasks [Tasks mode]
+    M1[Master] --> T1[Task 1]
+    M1 --> T2[Task 2]
+    M1 --> T3[Task N]
+    T1 --> S1[SPCS chunk]
+    T2 --> S2[SPCS chunk]
+    T3 --> S3[SPCS chunk]
+  end
+
+  subgraph queue [Queue mode]
+    M2[Master] --> HT[(Hybrid Table rows)]
+    HT --> W1[Worker pulls row]
+    HT --> W2[Worker pulls row]
+    W1 --> S4[SPCS]
+    W2 --> S5[SPCS]
+  end
+```
+
+| | **Tasks** | **Queue** |
+|--|-----------|-----------|
+| **Coordination** | Snowflake Task DAG — fixed upfront | Hybrid Table — one **row per chunk** (pointer to stage payload) |
+| **Dispatch** | All chunks scheduled at start | Workers **claim** rows when ready |
+| **Completion** | Every chunk must finish | Feeder can stop early; workers drain queue |
+| **Best for** | Full pass over all SKUs (screen pass) | Time-boxed refine pass on worst performers |
+
+Remember: queue **rows** reference **chunks** on the stage; **iteration parameters** (e.g. which `unit_id` values) live in `tasks/task_XXX.rds`, not in the Hybrid Table columns themselves.
+
+---
+
+## Screen-then-refine {#sec-screen-refine}
+
+A practical two-pass strategy from the parallel forecast demo:
+
+**Pass 1 — Tasks (fast screen):**
+
+- Run stepwise `auto.arima` (or other cheap model) over **all** partitions via Tasks mode
+- Log accuracy metrics per SKU to a results table
+- Every partition completes — you get a full baseline
+
+**Pass 2 — Queue (expensive refine):**
+
+- Rank SKUs by error; enqueue only the **worst N** (or all below a threshold)
+- Queue mode with a **time budget** — feeder stops adding rows when time expires
+- Run a **model contest** (ARIMA vs ETS vs TBATS with holdout validation) only where it matters
+
+This spends compute on partitions that benefit from a richer model, not on easy series.
+
+```{mermaid}
+flowchart LR
+  ALL[All SKUs] --> P1[Tasks pass — fast ARIMA]
+  P1 --> MET[TRAINING_METRICS table]
+  MET --> RANK[Rank by MAPE]
+  RANK --> P2[Queue pass — model contest]
+  P2 --> STG[Refined .rds on stage]
+```
+
+Runnable walkthrough: [many-model-howto](https://github.com/Snowflake-Labs/snowflakeR/blob/main/vignettes/many-model-howto.Rmd) vignette and `workspace_parallel_spcs_demo.ipynb` in [snowflakeR/inst/notebooks](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/notebooks).
+
+---
+
+## Worker expression contract {#sec-worker}
+
+The R code inside `%dopar%` runs **on SPCS workers**, not in your master session. doSnowflake **injects** partition-specific data:
+
+| Variable | Source |
+|----------|--------|
+| `unit_id` (or your loop variable) | From foreach iteration args in the chunk |
+| `unit_data` | Rows from source table filtered to that partition |
+
+Example worker body:
+
+```r
+suppressPackageStartupMessages(library(forecast))
+
+ts_full <- ts(unit_data$Y, frequency = 7)
+model <- auto.arima(ts_full, stepwise = TRUE)
+fc    <- forecast(model, h = 30L)
+
+list(
+  unit_id   = unit_id,
+  model     = as.character(fc$method),
+  forecast  = as.numeric(fc$mean),
+  accuracy  = forecast::accuracy(model)
+)
+```
+
+**Contract:** return a **list** the aggregator expects. The worker also persists the fitted model object to stage (handled by doSnowflake / worker script). Adapt return fields for **tidymodels**, **fable**, or custom predict logic.
+
+Inside each container, **`parallel::mclapply`** may further parallelize across CPU cores on the node — one SPCS container typically consumes a full compute node.
+
+---
+
+## Bootstrap and configuration {#sec-config}
+
+Environment-specific values live in YAML — compute pool, image URI, stage, queue table, demo sizing:
+
+```yaml
+parallel_lab:
+  compute_pool: MY_COMPUTE_POOL
+  image_uri: "mydb.myschema.myrepo/dosnowflake-worker:latest"
+  dosnowflake_stage_name: DOSNOWFLAKE_STAGE
+  queue_table: DOSNOWFLAKE_QUEUE
+  instance_family: CPU_X64_L
+  demo_forecast_n_skus: 2000
+  demo_tasks_chunks_per_job: 4
+  demo_queue_n_workers: 4
+```
+
+Setup workflow:
+
+```r
+cfg  <- parallel_lab_load_config("snowflaker_parallel_spcs_config.yaml")
+conn <- sfr_connect(name = "my_demo_jwt")
+parallel_lab_setup(conn, cfg, create_series = TRUE, n_units = 2000)
+```
+
+`parallel_lab_setup()` creates schemas, stage (with directory table), Hybrid Table queue, metrics tables, and optionally synthetic `SERIES_EVENTS` data for demos.
+
+---
+
+## Batch inference after registration {#sec-batch}
+
+After `sfr_log_many_model()`:
+
+```r
+sfr_run_batch(
+  reg,
+  model_name  = "MANY_MODEL_FORECAST",
+  version     = "V1",
+  input_table = "MY_DB.MY_SCHEMA.SERIES_EVENTS",
+  output_table = "MY_DB.MY_SCHEMA.FORECAST_RESULTS",
+  partition_col = "UNIT_ID"
+)
+```
+
+Snowflake runs **server-side** scoring: for each partition, load `.rds` from stage via the index, run R predict through rpy2, write results. Your R session does not pull every model locally.
+
+---
+
+## Prerequisites {#sec-prereq}
+
+- SPCS **compute pool** and **image repository** with worker image (`linux/amd64`)
+- **Warehouse** for orchestration SQL and batch jobs
+- Role: `USAGE` on pool, `CREATE SERVICE`, `CREATE TASK` (as required)
+- Hybrid Table entitlement for queue mode
+- [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — modes, queue rows, stage layout
+
+---
+
+## Demos and notebooks {#sec-demos}
+
+| Resource | Description |
+|----------|-------------|
+| `many-model-howto` vignette | Step-by-step with code excerpts |
+| `workspace_parallel_spcs_setup.ipynb` | One-time infrastructure (snowflakeR `inst/notebooks`) |
+| `workspace_parallel_spcs_demo.ipynb` | Runnable forecast demo |
+
+---
+
+## Next steps
+
+[Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — backend mechanics in depth.
+
+[Model Registry](../18_model_registry/index.qmd) — single-model path and `sfr_log_many_model()` detail.

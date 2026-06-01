@@ -1,0 +1,135 @@
+---
+title: "Appendix B: Configuration Reference"
+subtitle: "snowflaker_*.yaml and tarball installs"
+---
+
+## Overview
+
+Workspace bootstrap is driven by a **per-notebook YAML** file — typically `snowflaker_config.yaml` or a project-specific name passed to `setup_notebook(config=...)`.
+
+Full schema: [configuration.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/configuration.md).
+
+---
+
+## Top-level sections {#sec-sections}
+
+| Key | Purpose |
+|-----|---------|
+| `context` | Override warehouse, database, schema, role |
+| `eai` | Managed EAI name, supplementary EAI for auto-create |
+| `languages.r` | R version, conda/CRAN packages, tarballs, addons |
+| `languages.scala` / `julia` | Optional non-R languages |
+| `mirrors` | Corporate CRAN/conda mirrors |
+| `custom_runtime` | CRE / pre-baked image flags |
+| `env_name` | micromamba environment name (default `workspace_env`) |
+
+---
+
+## Example: production notebook config {#sec-example}
+
+```yaml
+context:
+  warehouse: ML_WH
+  database: ML_DB
+  schema: FEATURES
+  role: ML_ROLE
+
+eai:
+  managed: TEAM_NOTEBOOK_EAI
+
+languages:
+  r:
+    enabled: true
+    r_version: "4.3"
+    conda_packages:
+      - r-base
+      - r-tidyverse
+      - r-forecast
+      - r-reticulate>=1.25
+    tarballs:
+      snowflakeR: https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz
+      RSnowflake: https://github.com/Snowflake-Labs/RSnowflake/releases/download/v0.2.0/RSnowflake_0.2.0.tar.gz
+    addons:
+      adbc: false   # set true if Go + EAI available
+
+custom_runtime:
+  prebaked: false
+```
+
+Pass to bootstrap:
+
+```python
+setup_notebook(config="/absolute/path/to/snowflaker_config.yaml",
+               packages=["snowflakeR", "RSnowflake"])
+```
+
+---
+
+## Tarballs (required for snowflakeR / RSnowflake in prod) {#sec-tarballs}
+
+::: {.callout-warning}
+**Never compile snowflakeR or RSnowflake from source in Workspace.** Build tarballs locally (~10 seconds) and reference URLs or committed `.tar.gz` files.
+:::
+
+```bash
+R CMD build --no-build-vignettes --no-manual snowflakeR
+R CMD build --no-build-vignettes --no-manual RSnowflake
+```
+
+Ship via GitHub Release or commit next to config (with `.gitignore` exception).
+
+```yaml
+languages:
+  r:
+    tarballs:
+      snowflakeR: ./snowflakeR_0.1.0.tar.gz   # relative to config or URL
+```
+
+Update URL after each release your notebooks depend on.
+
+---
+
+## EAI keys {#sec-eai}
+
+```yaml
+eai:
+  managed: "EXISTING_TEAM_EAI"      # ALTER this integration if permitted
+  supplementary_name: "MULTILANG_NOTEBOOK_EAI"  # name if auto-created
+```
+
+See [Network & EAI](../../07_network_and_eai/index.qmd).
+
+---
+
+## CRE / pre-baked images {#sec-cre}
+
+```yaml
+custom_runtime:
+  prebaked: true
+  skip_eai_when_prebaked: true
+
+languages:
+  r:
+    enabled: true
+    # packages already in image; tarballs for version pin on upgrade
+```
+
+Preset: `configs/cre_multilang_r.yaml` in snowflake-notebook-multilang repo.
+
+---
+
+## Zero-config bootstrap {#sec-zero}
+
+```python
+from sfnb_setup import setup_notebook
+setup_notebook(packages=["snowflakeR"])
+```
+
+Uses session defaults for context; installs minimal R. Fine for smoke tests — production notebooks should pin YAML.
+
+---
+
+## Related
+
+- [Workspace Bootstrap](../../06_workspace_bootstrap/index.qmd)
+- [Appendix C: Troubleshooting](../C_troubleshooting/index.qmd) — EAI and install failures

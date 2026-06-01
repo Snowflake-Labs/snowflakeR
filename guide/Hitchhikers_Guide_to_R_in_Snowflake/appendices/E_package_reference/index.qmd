@@ -1,0 +1,87 @@
+---
+title: "Appendix E: Package Reference"
+subtitle: "Vignettes, repos, and API documentation"
+---
+
+Package vignettes remain the **API reference of record**. This guide provides narrative context; use `?function` and vignettes for signatures and edge cases.
+
+---
+
+## snowflakeR {#sec-snowflaker}
+
+| Resource | Link |
+|----------|------|
+| GitHub | [Snowflake-Labs/snowflakeR](https://github.com/Snowflake-Labs/snowflakeR) |
+| Issues | [github.com/Snowflake-Labs/snowflakeR/issues](https://github.com/Snowflake-Labs/snowflakeR/issues) |
+| Reference PDF | `system.file("doc/snowflakeR-reference.pdf", package = "snowflakeR")` |
+
+After install: `browseVignettes("snowflakeR")`
+
+| Vignette | Topic | Guide chapter |
+|----------|-------|---------------|
+| `getting-started` | Connect, query, tables | [16](../../16_snowflaker_connect/index.qmd) |
+| `setup` | Local env, Python, auth, IDE | [03](../../03_local_r_setup/index.qmd), [04](../../04_rstudio_posit_vscode/index.qmd) |
+| `workspace-notebooks` | `%%R`, bootstrap, outputs | [06–08](../../06_workspace_bootstrap/index.qmd) |
+| `feature-store` | Entities, views, datasets | [17](../../17_feature_store/index.qmd) |
+| `model-registry` | Log, deploy, serve | [18](../../18_model_registry/index.qmd) |
+| `experiments` | Run tracking, tune | [19](../../19_experiments/index.qmd) |
+| `model-monitoring` | Drift, performance | [20](../../20_model_monitoring/index.qmd) |
+| `many-model-howto` | Partitioned forecasting | [21](../../21_many_model/index.qmd) |
+| `parallel-dosnowflake` | foreach, SPCS, queue | [22](../../22_parallel_dosnowflake/index.qmd) |
+
+### Key notebooks (`inst/notebooks/`)
+
+| Notebook | Purpose |
+|----------|---------|
+| `workspace_quickstart.ipynb` | First Workspace run |
+| `local_quickstart.ipynb` | Desktop R setup |
+| `workspace_feature_store.ipynb` | Feature Store walkthrough |
+| `workspace_model_registry.ipynb` | Registry walkthrough |
+| `workspace_parallel_spcs_setup.ipynb` | SPCS parallel setup |
+| `workspace_parallel_spcs_demo.ipynb` | Parallel demo |
+
+---
+
+## RSnowflake {#sec-rsnowflake}
+
+| Resource | Link |
+|----------|------|
+| GitHub | [Snowflake-Labs/RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) |
+| WORKSPACE_ADBC.md | [Workspace + ADBC engineering note](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md) |
+
+| Vignette | Topic | Guide chapter |
+|----------|-------|---------------|
+| `getting-started` | DBI, auth, dbplyr, Arrow, bulk write | [12–13](../../12_rsnowflake_connect/index.qmd) |
+| `workspace-rsnowflake` | Workspace bootstrap, ADBC, gateway | [14](../../14_rsnowflake_workspace/index.qmd) |
+
+---
+
+## snowflake-notebook-multilang {#sec-multilang}
+
+| Doc | Topic | Guide chapter |
+|-----|-------|---------------|
+| [README](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) | Overview | [06](../../06_workspace_bootstrap/index.qmd) |
+| [quickstart.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/quickstart.md) | Bootstrap | [06](../../06_workspace_bootstrap/index.qmd) |
+| [configuration.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/configuration.md) | YAML | [Appendix B](../B_config_reference/index.qmd) |
+| [network_rules.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md) | EAI | [07](../../07_network_and_eai/index.qmd) |
+| [custom_runtime_images.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_runtime_images.md) | CRE | [09](../../09_custom_runtime_and_ml_jobs/index.qmd) |
+| [adding_a_language.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/adding_a_language.md) | Julia/Scala | [10](../../10_multilang_beyond_r/index.qmd) |
+
+---
+
+## External references {#sec-external}
+
+| Resource | URL |
+|----------|-----|
+| Feature Store Implementation Guide | [snowflake-labs.github.io/snowflake-featurestore-imp-guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) |
+| Snowflake SQL API | [docs.snowflake.com SQL API](https://docs.snowflake.com/en/developer-guide/sql-api/index) |
+| Snowflake ML docs | [Snowpark ML](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index) |
+| connections.toml | [Snowflake CLI connections](https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/configure-connections) |
+
+---
+
+## This guide {#sec-guide}
+
+**The Hitchhiker's Guide to R in Snowflake** — narrative documentation published from `guide/Hitchhikers_Guide_to_R_in_Snowflake/`.
+
+Feedback: open issues on the guide repository when published to Snowflake-Labs.

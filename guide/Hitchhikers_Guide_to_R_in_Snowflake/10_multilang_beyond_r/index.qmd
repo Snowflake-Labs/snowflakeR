@@ -1,0 +1,98 @@
+---
+title: "Beyond R"
+subtitle: "Julia, Scala, and Java in the same notebook toolkit"
+---
+
+## Overview
+
+Part IV is a short bridge: the same **snowflake-notebook-multilang** toolkit that powers `%%R` also supports **Julia**, **Scala**, and **Java** in **Workspace Notebooks** — shared micromamba, JDK, and EAI infrastructure.
+
+You may never need these languages; this chapter exists so polyglot teams know the pattern exists and where to find docs.
+
+::: {.callout-note}
+The blog series title *"Beyond Python"* describes the toolkit's origin. In *this* guide, **"Beyond R"** means stepping outside R briefly before the RSnowflake and snowflakeR chapters.
+:::
+
+## Learning Objectives
+
+- Name the bridge library for each non-R language
+- Enable additional languages in YAML config
+- Point colleagues to sfnb-multilang docs vs this R-focused guide
+
+---
+
+## Language matrix {#sec-matrix}
+
+All languages run on the **Python kernel** via cell magic — same model as `%%R`:
+
+| Language | Cell magic | Bridge | Typical use on Snowflake |
+|----------|------------|--------|--------------------------|
+| **R** | `%%R` | rpy2 | Stats, forecasting, snowflakeR ML — **this guide** |
+| **Scala** | `%%scala` | JPype + Ammonite | Snowpark JVM, Spark Connect |
+| **Java** | `%%java` | JPype | JVM libraries, Snowpark |
+| **Julia** | `%%julia` | JuliaCall | Research prototypes, optimization |
+
+Each magic registers during `setup_notebook()` when the language is enabled in YAML.
+
+---
+
+## Shared bootstrap {#sec-shared}
+
+```python
+from sfnb_setup import setup_notebook
+
+setup_notebook(
+    config="multilang_config.yaml",
+    packages=[],   # languages declared in YAML
+)
+```
+
+Example YAML excerpt:
+
+```yaml
+languages:
+  r:
+    enabled: true
+  scala:
+    enabled: true
+    java_version: "17"
+    snowpark_version: "1.18.0"
+  julia:
+    enabled: true
+    julia_packages:
+      - DataFrames
+      - Plots
+```
+
+EAI must allow download hosts for each enabled language (JVM JARs, Julia packages, etc.). Bootstrap aggregates required domains.
+
+**Further reading:** [adding_a_language.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/adding_a_language.md)
+
+---
+
+## Relationship to this guide {#sec-relationship}
+
+| Resource | Focus |
+|----------|-------|
+| **This guide** | R + RSnowflake + snowflakeR + MLOps on Snowflake |
+| **snowflake-notebook-multilang** | Equal-weight multilanguage bootstrap toolkit |
+| **Blog series `00_multilang_notebooks`** | Narrative for Julia/Scala alongside R |
+
+snowflakeR and RSnowflake are **R-only** packages. Scala/Java/Julia cells do not use them — they use Snowpark JVM or native Julia ODBC patterns as documented in sfnb-multilang.
+
+---
+
+## When to add another language {#sec-when}
+
+| Scenario | Suggestion |
+|----------|------------|
+| Team already standardized on R for ML | Stay with `%%R` + snowflakeR |
+| Spark/Snowpark JVM pipeline in same repo | Enable `%%scala` for shared notebook |
+| Julia prototype alongside R production | Enable Julia in dev notebooks only |
+| Greenfield Snowflake ML | Prefer R or Python consistently for maintainability |
+
+---
+
+## Next steps
+
+[The Snowflake SQL API](../11_rsnowflake_sql_api/index.qmd) — how RSnowflake connects.

@@ -1,0 +1,136 @@
+---
+title: "End-to-End ML Pipeline"
+subtitle: "From features to deployed model in one flow"
+---
+
+## Overview
+
+This chapter ties the guide into a single **reference pipeline** — the path most R teams want on Snowflake: governed features, training in R, registry deployment, monitoring, and optional scale-out. Use it as a map while reviewing individual chapters.
+
+## Learning Objectives
+
+- Map chapters to pipeline stages
+- Choose Workspace vs local IDE entry points
+- Find companion notebooks for copy-paste starting points
+- Complete production checklist before go-live
+
+---
+
+## Reference pipeline {#sec-pipeline}
+
+```{mermaid}
+flowchart TB
+  subgraph ingest [Data]
+    src[Source tables / streams]
+    fv[Feature Views]
+  end
+  subgraph dev [Development]
+    boot[Workspace bootstrap]
+    train[Train in R]
+    exp[Experiments optional]
+  end
+  subgraph govern [Governance]
+    ds[Dataset snapshot]
+    reg[Model Registry]
+  end
+  subgraph prod [Production]
+    dep[Deploy SPCS / SQL]
+    mon[Monitoring]
+    task[Tasks / ML Jobs]
+  end
+  src --> fv --> ds --> train
+  boot --> train
+  train --> exp
+  train --> reg --> dep --> mon
+  dep --> task
+```
+
+---
+
+## Stage-by-stage map {#sec-map}
+
+| Stage | What you do | Guide chapter | Starter artifact |
+|-------|-------------|---------------|------------------|
+| **0. Learn platform** | Warehouses, Workspace, ML services | [01](../01_snowflake_platform/index.qmd), [05](../05_workspaces_overview/index.qmd) | — |
+| **1. Connect** | Auth, TOML, IDE or Workspace | [03](../03_local_r_setup/index.qmd), [04](../04_rstudio_posit_vscode/index.qmd), [16](../16_snowflaker_connect/index.qmd) | `connections.toml` |
+| **2. Bootstrap** | `setup_notebook()`, EAI, YAML | [06](../06_workspace_bootstrap/index.qmd), [07](../07_network_and_eai/index.qmd) | `snowflaker_config.yaml` |
+| **3. Features** | Entities, views, point-in-time data | [17](../17_feature_store/index.qmd) | `workspace_feature_store.ipynb` |
+| **4. Train** | tidymodels / fable / custom | [08](../08_r_cells_and_interop/index.qmd), [19](../19_experiments/index.qmd) | — |
+| **5. Register** | `sfr_log_model()`, deploy | [18](../18_model_registry/index.qmd) | `workspace_model_registry.ipynb` |
+| **6. Monitor** | Inference log + drift | [20](../20_model_monitoring/index.qmd) | monitoring vignette |
+| **7. Scale** | Many-model / parallel | [21](../21_many_model/index.qmd), [22](../22_parallel_dosnowflake/index.qmd) | parallel SPCS notebooks |
+
+[MLOps framing](../15_mlops_on_snowflake/index.qmd) situates these stages in your organization's lifecycle.
+
+---
+
+## Two entry paths {#sec-paths}
+
+### Path A — Workspace-first (recommended for teams on Snowflake)
+
+1. Snowsight → Workspace → Git project
+2. Bootstrap Python cell + `snowflaker_*.yaml`
+3. `%%R` cells for all R work
+4. Promote to ML Job or Task for schedule
+
+### Path B — Local IDE-first
+
+1. Install RSnowflake + snowflakeR locally ([03](../03_local_r_setup/index.qmd))
+2. Develop in RStudio / Posit / VS Code with `connections.toml`
+3. Push notebook + config to Workspace Git for scheduled runs
+
+Both paths use the **same R APIs** once connected — only bootstrap and auth differ.
+
+---
+
+## Marketing / causal demo {#sec-demo}
+
+The [demo overview](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/demo_overview.md) walks **CausalImpact + Robyn**:
+
+- Feature Store for marketing features
+- Model Registry for response curves
+- SQL-served inference for stakeholder dashboards
+
+Good template for **measurement** and **MMM** teams evaluating snowflakeR.
+
+---
+
+## Minimal smoke test {#sec-smoke}
+
+After bootstrap in Workspace, run this sequence before a full pipeline:
+
+```r
+%%R
+library(snowflakeR)
+conn <- sfr_connect()
+conn <- sfr_load_notebook_config(conn)
+sfr_query(conn, "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
+```
+
+```r
+%%R
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake())
+dbGetQuery(con, "SELECT 1 AS ok")
+```
+
+---
+
+## Production handoff {#sec-prod}
+
+Before production cutover:
+
+- [Appendix D: Production checklist](../appendices/D_production_checklist/index.qmd)
+- [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd)
+- Pre-built tarballs in all notebook configs ([Appendix B](../appendices/B_config_reference/index.qmd))
+
+::: {.callout-important}
+Community packages — validate SLAs, support, and compliance with your organization.
+:::
+
+---
+
+## Feedback
+
+Open issues on [snowflakeR](https://github.com/Snowflake-Labs/snowflakeR/issues) (guide source under `guide/`) or package repos linked from the [home page](../index.qmd).

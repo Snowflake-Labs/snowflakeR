@@ -1,0 +1,247 @@
+---
+title: "Snowflake Platform Primer"
+subtitle: "Key concepts for R users new to Snowflake"
+---
+
+## Overview
+
+Many R users come from **duckdb**, **PostgreSQL**, **Spark**, or **local files** — not from a cloud data platform. This chapter explains Snowflake capabilities referenced throughout the guide: storage vs compute, virtual-warehouses vs containers, Workspace, and ML services.
+
+For authoritative product documentation, start at [Snowflake Docs](https://docs.snowflake.com/). Terms in **bold** are defined in [Appendix F: Glossary](../appendices/F_glossary/index.qmd).
+
+## Learning Objectives
+
+- Describe Snowflake's separation of storage and compute
+- Distinguish **warehouse** compute from **container** compute
+- Explain how SQL, Python, and R workloads map to platform services
+- Know where to read more without duplicating Snowflake's full catalog
+
+---
+
+## What Snowflake is {#sec-what}
+
+Snowflake is a **cloud data platform** that combines:
+
+| Layer | What it provides | Typical users |
+|-------|------------------|---------------|
+| **Storage** | Durable tables, stages, governed data | Everyone |
+| **SQL compute** | Virtual-Warehouses — elastic clusters for analytics | Analysts, engineers, R via RSnowflake (SQL, dplyr) |
+| **Container compute** | SPCS — Docker workloads in-account | Inference, custom R, parallel workers |
+| **ML platform** | Feature Store, Model Registry, experiments | Data scientists (Python + R via snowflakeR) |
+| **Apps & BI** | Streamlit, dashboards, partner BI tools | Analysts, business users |
+| **AI** | Cortex (LLM functions, agents) | App builders, analysts |
+
+For R users, the central idea is: **keep data and ML artifacts in Snowflake** and connect from R (laptop, Posit, or Workspace) rather than repeatedly exporting CSVs for local analysis. Strong Data Governance is a key benefit of maintaining and processing data in Snowflake.
+
+```{mermaid}
+flowchart TB
+  subgraph clients [R clients]
+    IDE[RStudio / Posit / VS Code]
+    WS[Workspace Notebooks]
+  end
+  subgraph sf [Snowflake account]
+    WH[Warehouse SQL compute]
+    SPCS[Snowpark Container Services]
+    ML[ML Feature Store / Registry]
+    STG[Stages and tables]
+  end
+  IDE --> WH
+  IDE --> ML
+  WS --> WH
+  WS --> ML
+  WS --> SPCS
+  WH --> STG
+  ML --> STG
+  SPCS --> STG
+```
+
+## Storage vs compute {#sec-storage-compute}
+
+Unlike a traditional database server where storage and compute are tied together, Snowflake **separates** them:
+
+- **Storage** — All tables and micro-partitions live in cloud storage managed by Snowflake. You pay for compressed stored bytes (with time-travel and fail-safe options).
+- **Compute** — **Virtual warehouses** spin up independently, near instantaneously to run SQL based workloads, including Python, Java, Scala & JavaScript via Stored Procedures and User-Defined Functions. Multiple warehouses can read the same data without copying it.
+
+Implications for R:
+
+- `collect()` in dbplyr pulls result sets **to your R session** — minimize data movement for large results; aggregate in SQL first.
+- Feature Store and Model Registry objects **persist in Snowflake** — no separate model server database to maintain.
+
+**Further reading:** [Key concepts & architecture](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
+
+## Core data concepts {#sec-data}
+
+| Concept | Plain language | R relevance |
+|---------|----------------|-------------|
+| **Account** | Tenant identifier (`orgname-accountname`, region in URL) | Auth target for `sfr_connect()` / RSnowflake |
+| **Database / Schema** | Namespace hierarchy (`DB.SCHEMA.TABLE`) | Session context; fully qualify when context unset |
+| **Table / View** | Persistent or logical datasets | `sfr_read_table()`, `dbplyr::tbl()` |
+| **Dynamic Table** | Incrementally maintained query result | Often backs Feature Views |
+| **Stage** | Internal file store (`@stage/path`), or externally referenced cloud-storage (e.g. AWS S3) | Model artifacts, worker file I/O |
+| **Role** | RBAC identity with grants | Controls warehouses, ML objects, integrations |
+| **Warehouse** | SQL compute cluster | Queries, data transformations, data materialization, warehouse inference |
+
+Snowflake stores **unquoted identifiers as uppercase**. R and dbplyr code should account for this — see RSnowflake chapters.
+
+**Further reading:** [Databases, Tables, & Views](https://docs.snowflake.com/en/guides-overview-db)
+
+## Warehouse compute {#sec-warehouse}
+
+A **virtual warehouse** is a cluster of compute nodes that executes **SQL** (and Snowflake-managed operations invoked via SQL).
+
+| Property | Detail |
+|----------|--------|
+| **Sizing** | T-shirt sizes (X-Small → 6X-Large+) : Standard or Snowpark-optimized (> memory to CPU) types |
+| **Lifecycle** | Auto-suspend / auto-resume; you pay while running |
+| **Scaling** | Single cluster or multi-cluster for concurrency |
+| **Use cases** | Analytics, ETL SQL, Feature View refresh, batch scoring via SQL |
+
+R uses warehouses when:
+
+- RSnowflake/dbplyr executes SQL (`collect()`, `dbWriteTable()`)
+- snowflakeR runs `sfr_query()` or registers Feature Store objects that materialize on warehouse
+- **Tasks** run scheduled SQL steps
+
+Warehouses are charged per minute of compute time, with a minimum of 1 minute, corellated to the T-Shirt size. Most workloads scale linearly with the size increase in the warehouse, so 2x the T-Shirt size will result in half the compute time, and cost
+
+Warehouses do **not** execute arbitrary R code — only SQL and platform operations they orchestrate.
+
+::: {.callout-note}
+**Analogy:** Think of a warehouse as a remote, auto-scaling SQL engine. Your R session sends SQL; the warehouse does the heavy lifting close to the data.  The SQL can be generated directly from R dplyr data transformation logic to push processing to the data.
+:::
+
+**Further reading:** [Virtual warehouses](https://docs.snowflake.com/en/user-guide/warehouses)
+
+## Container compute (SPCS) {#sec-spcs}
+
+**Snowpark Container Services (SPCS)** runs **OCI-compatible container images** inside your Snowflake account on **compute pools**.
+
+| Property | Detail |
+|----------|--------|
+| **Unit** | **Compute pool** (not a warehouse) |
+| **Images** | Custom Docker or Snowflake-provided ML images |
+| **Use cases** | Model inference services, GPU training, custom R servers, parallel R workers |
+| **I/O** | Stage **volume mounts** for file access (important for RSnowflake — no SQL `GET`/`PUT`) |
+
+R uses SPCS when:
+
+- **Model Registry** deploys an inference endpoint (R model inside container via rpy2 wrapper)
+- **doSnowflake** runs R in worker containers to distribute and parallelize processing tasks across multiple containers.
+- You host **RStudio Server / Posit Workbench** in a custom image (advanced)
+
+**Further reading:** [Snowpark Container Services overview](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview)
+
+## Workspace & notebooks {#sec-workspace}
+
+**Workspace** is Snowflake's project-oriented development area in **Snowsight** — Jupyter-compatible notebooks with Git integration, files, and in-account compute. **This guide targets Workspace Notebooks only.** Multi-language R support (`%%R`, bootstrap, snowflakeR) requires Workspace; it is not available in older standalone Snowsight notebook experiences.
+
+| Capability | What it provides |
+|------------|------------------|
+| **Project + files** | Notebooks, scripts, configs (`snowflaker_config.yaml`) |
+| **Git integration** | Clone, commit, push — team collaboration |
+| **Notebooks** | Python, SQL, Markdown cells — R added via bootstrap |
+| **ML Container Runtime** | Python kernel on a compute pool; SQL on a warehouse |
+
+At platform level: Workspace provides an **in-account Python kernel** on container runtime; this guide adds R through `snowflake-notebook-multilang`.
+
+::: {.callout-note}
+**Terminology:** "Workspace Notebook" means a notebook running **inside** your Snowflake account — not Jupyter on your laptop. Kernel and data stay in-account.
+:::
+
+**Further reading:** [About Snowflake Notebooks in Workspaces](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces)
+
+## Notebook runtime model {#sec-runtimes}
+
+Workspace notebooks use **ML Container Runtime** — a managed container environment on a **compute pool** (not a warehouse):
+
+| Component | Runs on | Notes |
+|-----------|---------|-------|
+| **Python kernel** | Compute pool / container runtime | Snowpark session, `setup_notebook()`, package installs |
+| **R (`%%R` cells)** | Same Python process via rpy2 | Not a separate R kernel — see [Architecture](../02_architecture/index.qmd) |
+| **SQL cells** | Virtual warehouse | Same SQL engine as worksheets |
+| **Package install** | Container (pip, conda, micromamba) | Requires **EAI** for outbound HTTPS |
+
+Flexible package install (pip/conda/micromamba) is why R bootstrap uses micromamba and External Access Integrations — unlike warehouse-only runtimes with fixed Anaconda channels.
+
+**Further reading:** [ML Container Runtime](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml)
+
+## ML & AI capabilities (used from R) {#sec-ml}
+
+| Service | Purpose | R access |
+|---------|---------|----------|
+| **Feature Store** | Governed features, point-in-time training data, data pipelines to inference datasets | `snowflakeR` |
+| **Model Registry** | Versioned models, deployment, lineage | `snowflakeR` |
+| **Datasets** | Immutable training data snapshots, point-in-time inference datasets | `snowflakeR` |
+| **Experiments** | Run model training and tracking metrics | `snowflakeR` |
+| **Model monitoring** | Model and Data drift and performance | `snowflakeR` |
+| **Snowpark ML** | Python SDK underlying snowflakeR | via `reticulate` in snowflakeR |
+| **Cortex** | LLMs, embeddings, agents in SQL | SQL from R; not wrapped by snowflakeR today |
+
+::: {.callout-tip}
+## Feature Store deep dive
+
+Platform design, temporal correctness, and operations: **[Snowflake Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/)** (Python examples; concepts apply to R).
+:::
+
+**Further reading:** [Snowflake ML overview](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index)
+
+## Data engineering & analytics (context) {#sec-de}
+
+R users often sit alongside teams using:
+
+| Capability | Role |
+|------------|------|
+| **dbt** | Transformations in warehouse — can feed Feature View source tables |
+| **Dynamic Tables & Streams** | Incremental pipelines |
+| **Tasks** | Scheduled SQL / pipeline steps |
+| **Snowpipe / connectors** | Ingest streaming datafrom cloud storage or apps |
+| **Data sharing / Marketplace** | Consume shared datasets |
+
+You do not need to master all of these to use snowflakeR — but Feature Views often sit **downstream** of dbt or Dynamic Table pipelines.
+
+## Orchestration & ops {#sec-ops}
+
+| Feature | Role in ML ops |
+|---------|----------------|
+| **Tasks** | Schedule SQL, notebook runs, pipeline steps; doSnowflake Task backend |
+| **Streams & Dynamic Tables** | Incremental features; CDC patterns |
+| **Git integration** | Notebook and project source control in Workspace |
+| **External Access Integrations (EAI)** | Outbound HTTPS (CRAN, GitHub, pip) from notebooks/containers |
+| **Tags & masking** | Governance on ML and data objects |
+
+**Further reading:** [Tasks introduction](https://docs.snowflake.com/en/user-guide/tasks-intro)
+
+## Security & governance (brief) {#sec-governance}
+
+- **RBAC** — Users assume **roles** with grants on databases, warehouses, integrations
+- **Network policies** — Restrict account access by IP (external clients)
+- **EAI + network rules** — Control outbound destinations from notebooks/containers
+- **Row access / masking policies** — Column-level protection (apply before exporting to R if needed)
+
+R clients use the same role model as other tools — your `connections.toml` profile specifies `role`.
+
+## How this guide maps to the platform {#sec-map}
+
+| Guide part | Platform surface |
+|------------|------------------|
+| R from your IDE | External client → SQL REST API / ML Python APIs |
+| Workspace Notebooks | In-account kernel + R bootstrap |
+| RSnowflake | SQL over **SQL REST API** (+ optional ADBC) |
+| snowflakeR | ML APIs + SPCS deployment + Tasks/queue backends |
+
+## Quickstart pointers {#sec-quickstarts}
+
+| Topic | Snowflake doc |
+|-------|---------------|
+| SQL worksheets | [Getting started with Snowsight](https://docs.snowflake.com/en/user-guide/ui-snowsight) |
+| Snowflake ML | [Snowflake ML quickstart](https://docs.snowflake.com/en/developer-guide/snowpark-ml/overview) |
+| SPCS | [Tutorial: Snowpark Container Services](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview-tutorials) |
+| Feature Store | [Feature Store overview](https://docs.snowflake.com/en/developer-guide/snowflake-ml/feature-store/overview) |
+
+## Next steps {#sec-next}
+
+[Architecture](../02_architecture/index.qmd) — how the three R packages map to this platform.
+
+[Workspaces & Notebooks](../05_workspaces_overview/index.qmd) — Snowsight UX before bootstrap.
+
+[Appendix F: Glossary](../appendices/F_glossary/index.qmd) — acronyms and terms.

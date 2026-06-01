@@ -1,0 +1,296 @@
+---
+title: "snowflakeR: Connect"
+subtitle: "Sessions, queries, tables, Tasks, and containers"
+---
+
+## Overview
+
+**snowflakeR** is your R entry point to the Snowflake **ML platform** — Feature Store, Model Registry, experiments, monitoring, and parallel execution. Under the hood it uses **reticulate** to call `snowflake-ml-python`; you write R, not Python.
+
+This chapter covers **connection**, **session context**, and **data access** — the foundation for every later chapter. It also introduces **operational** platform pieces (Tasks, SPCS, stages) that turn interactive notebooks into production pipelines.
+
+See [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) for lifecycle framing.
+
+::: {.callout-important}
+See [Introduction](../00_introduction/index.qmd#sec-disclaimers) for the community-project disclaimer.
+:::
+
+## Learning Objectives
+
+- Connect locally and in Workspace with the right auth mode
+- Set warehouse/database/schema context reliably
+- Move data with SQL and table helpers
+- Understand how snowflakeR relates to RSnowflake and SPCS operational APIs
+
+---
+
+## What `sfr_connect()` gives you {#sec-what}
+
+A successful connection returns an **`sfr_connection`** object wrapping a Snowpark Python session. That session:
+
+- Authenticates to Snowflake (OAuth in Workspace, TOML/key-pair locally)
+- Holds default **warehouse**, **database**, **schema**, **role**
+- Powers `sfr_query()`, Feature Store, Model Registry, and doSnowflake bridges
+
+```{mermaid}
+flowchart LR
+  R["R: sfr_connect()"]
+  RET[reticulate]
+  PY["snowflake-ml-python / Snowpark"]
+  SF[Snowflake account]
+  R --> RET --> PY --> SF
+```
+
+RSnowflake can share the same credentials via `sfr_dbi_connection()` — one login, two API styles ([RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd)).
+
+---
+
+## Connect {#sec-connect}
+
+### Local — connections.toml (recommended)
+
+```r
+library(snowflakeR)
+conn <- sfr_connect()                       # [default] profile
+conn <- sfr_connect(name = "production")  # named profile
+```
+
+Profiles live in `~/.snowflake/connections.toml` — shared with RSnowflake, Python connector, and CLI. See [Local R Setup](../03_local_r_setup/index.qmd#sec-toml).
+
+### Explicit parameters
+
+Use when you do not use TOML or need to override a profile:
+
+```r
+conn <- sfr_connect(
+  account       = "xy12345.us-east-1",
+  user          = "MYUSER",
+  warehouse     = "COMPUTE_WH",
+  database      = "MY_DB",
+  schema        = "PUBLIC",
+  authenticator = "externalbrowser"
+)
+```
+
+### Key-pair (CI / service users)
+
+```r
+conn <- sfr_connect(
+  account          = "xy12345.us-east-1",
+  user             = "SVC_USER",
+  private_key_file = "~/.snowflake/rsa_key.p8"
+)
+```
+
+Best for scheduled jobs and automation — no browser, no expiring PAT.
+
+### Workspace (zero config)
+
+After bootstrap, the notebook runtime injects session OAuth:
+
+```r
+conn <- sfr_connect()   # no PAT or TOML in cells
+```
+
+Bootstrap exports `SNOWFLAKE_*` environment variables consumed by snowflakeR and RSnowflake.
+
+---
+
+## Session context {#sec-context}
+
+Snowflake objects are addressed as **`DATABASE.SCHEMA.TABLE`**. Your connection carries default context — but **Workspace does not always set database/schema** the way Snowsight worksheets do.
+
+::: {.callout-warning}
+Symptom: `object does not exist` for tables you know are there. Cause: wrong or empty session context. Fix: one of the options below.
+:::
+
+**Option A — YAML config (notebooks):**
+
+```r
+conn <- sfr_load_notebook_config(conn)  # reads snowflaker_*.yaml context section
+```
+
+**Option B — `sfr_use()` (must reassign):**
+
+R passes connections by value — `sfr_use()` returns a **new** connection object:
+
+```r
+conn <- sfr_use(conn,
+  warehouse = "ML_WH",
+  database  = "ML_DB",
+  schema    = "FEATURES"
+)
+```
+
+**Option C — fully qualified names:**
+
+```r
+sfr_fqn(conn, "MY_TABLE")   # "ML_DB.FEATURES.MY_TABLE"
+```
+
+Use FQN helpers in shared notebooks so cells work regardless of session defaults.
+
+---
+
+## Query and table I/O {#sec-tables}
+
+### SQL
+
+```r
+sfr_query(conn, "SELECT CURRENT_WAREHOUSE(), CURRENT_USER(), CURRENT_ROLE()")
+```
+
+Returns a data frame with **lowercase** column names (snowflakeR bridge convention).
+
+### Read / write tables
+
+```r
+df <- sfr_read_table(conn, "MY_DB.MY_SCHEMA.MY_TABLE")
+
+sfr_write_table(conn, df, "MY_DB.MY_SCHEMA.OUT_TABLE", mode = "overwrite")
+```
+
+These use Snowpark table APIs — efficient for moderate-sized frames. For large analytics, prefer **SQL aggregation** or **dbplyr** via RSnowflake rather than pulling everything into R.
+
+### Column naming
+
+| API | Default column case |
+|-----|---------------------|
+| `sfr_query()` / `sfr_read_table()` | lowercase |
+| RSnowflake / dbplyr | UPPERCASE (Snowflake default) |
+
+Pick one convention per pipeline. Mixing causes join bugs.
+
+---
+
+## DBI bridge to RSnowflake {#sec-dbi}
+
+When you need **dplyr** or the Connections Pane alongside ML APIs:
+
+```r
+dbi_con <- sfr_dbi_connection(conn)
+
+library(dplyr)
+tbl(dbi_con, in_schema("ANALYTICS", "ORDERS")) |>
+  filter(ORDER_DATE >= "2024-01-01") |>
+  head(10) |>
+  collect()
+```
+
+`sfr_dbi_connection()` lazily wraps the Snowpark session — no second authentication.
+
+---
+
+## Operational platform (beyond interactive ML) {#sec-ops}
+
+Training in a notebook is step one. Production patterns use additional Snowflake services:
+
+```{mermaid}
+flowchart TB
+  subgraph interactive [Interactive]
+    NB[Workspace notebook]
+    Rtrain[Train in R]
+  end
+
+  subgraph schedule [Schedule]
+    TASK[Snowflake Tasks]
+    MJ[ML Jobs]
+  end
+
+  subgraph scale [Scale]
+    SPCS[SPCS containers]
+    POOL[Compute pool]
+  end
+
+  subgraph artifacts [Artifacts]
+    STG[Internal stage]
+    REG[Model Registry]
+  end
+
+  NB --> Rtrain --> REG
+  Rtrain --> STG
+  TASK --> MJ
+  TASK --> SPCS
+  SPCS --> POOL
+  SPCS --> STG
+```
+
+| Capability | Role in ML ops | snowflakeR entry |
+|------------|----------------|------------------|
+| **Tasks** | Schedule SQL, trigger pipelines, orchestrate doSnowflake chunks | `registerDoSnowflake(..., mode = "tasks")` |
+| **SPCS** | Inference services, parallel R workers | `sfr_deploy_model()`, doSnowflake, executor |
+| **Compute pools** | Capacity for containers | `sfr_dosnowflake_setup()` |
+| **Image repositories** | Store Docker images | `sfr_dosnowflake_build_image()` |
+| **Stages** | Models, worker payloads, results | Volume mounts in SPCS; `sfr_upload_*` |
+| **EAI** | Outbound HTTPS (CRAN, pip) in notebooks | Bootstrap — [Network & EAI](../07_network_and_eai/index.qmd) |
+
+### Prepare SPCS infrastructure
+
+One-time (or per-environment) setup before parallel or executor workloads:
+
+```r
+sfr_dosnowflake_setup(conn,
+  compute_pool = "ML_R_POOL",
+  image_repo   = "ML_DB.ML_SCHEMA.ML_IMAGES"
+)
+```
+
+Creates or validates stage, queue table (for queue mode), and related objects depending on privileges.
+
+### One-off R script on SPCS
+
+When `%dopar%` is not the right shape — single script, fixed pipeline:
+
+```r
+stage_path <- sfr_upload_r_script(conn, "monthly_retrain.R", stage = "ML_STAGE")
+
+job <- sfr_execute_r_script(
+  conn,
+  r_script_stage_path = stage_path,
+  compute_pool        = "ML_R_POOL",
+  image_uri           = "ML_DB.ML_SCHEMA.ML_IMAGES/executor:latest",
+  config              = list(run_id = "2026-05-29"),
+  replicas            = 1L
+)
+
+sfr_executor_status(conn, job$job_name)
+sfr_collect_executor_results(conn, job, stage = "ML_STAGE")
+```
+
+Define `main(config)` in the script. Workers use **stage volume mounts** — not SQL `GET`/`PUT` ([SQL API limits](../11_rsnowflake_sql_api/index.qmd#sec-limits)).
+
+### Tasks in a typical ML lifecycle
+
+1. **Nightly Task** — refresh feature Dynamic Tables or materialized views
+2. **Weekly Task / ML Job** — retrain via executor or exported notebook
+3. **Post-deploy Task** — batch inference SQL against registry model
+4. **doSnowflake Tasks mode** — parallel `%dopar%` chunked into SPCS ([Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd))
+
+---
+
+## Environment check {#sec-check}
+
+Before Feature Store or Registry work:
+
+```r
+sfr_check_environment()
+```
+
+Verifies R packages, Python interpreter, and `snowflake-ml-python` version. Python setup: [Local R Setup](../03_local_r_setup/index.qmd). Workspace: bootstrap or CRE.
+
+---
+
+## Companion material {#sec-companion}
+
+| Resource | Purpose |
+|----------|---------|
+| Vignettes `getting-started`, `setup` | API detail |
+| `workspace_quickstart.ipynb` | First Workspace run |
+| `local_quickstart.ipynb` | Desktop setup |
+| `workspace_parallel_spcs_setup.ipynb` | SPCS infrastructure |
+
+---
+
+## Next steps
+
+[Feature Store](../17_feature_store/index.qmd) — governed features and training datasets.

@@ -9,9 +9,8 @@ Reads the `parallel_lab` (and optional `context`) section from
 - workspace_parallel_spcs_monitor.ipynb
 - streamlit_parallel_demo_monitor.py
 
-Snowflake internal benchmarks under internal/doSnowflake/tests/ still use
-account-specific constants in Python — they are not wired to this file.
-Public/generic demos should use only this YAML.
+All public demos and notebooks in this directory should use only this YAML
+for database, pool, stage, and queue names.
 """
 
 from __future__ import annotations

@@ -1,0 +1,233 @@
+---
+title: "Local R Setup"
+subtitle: "Install packages, Python, and authentication outside Workspace"
+---
+
+## Overview
+
+**RSnowflake** and **snowflakeR** are ordinary R packages. You can use them from **RStudio**, **Posit Workbench / Positron**, **VS Code**, a terminal `R` session, or CI — not only from Snowflake Workspace Notebooks.
+
+This chapter covers what you install once on your machine and how you authenticate. The next chapter covers IDE-specific ergonomics.
+
+## Learning Objectives
+
+- Install RSnowflake and snowflakeR locally
+- Configure Python for snowflakeR using **conda, pip/venv, or automatic install**
+- Connect with `connections.toml`, key-pair, PAT, or browser SSO
+- Choose the right authenticator for interactive vs automated workloads
+- Verify the stack with `sfr_check_environment()`
+
+---
+
+## Install R packages {#sec-install}
+
+```r
+# install.packages("pak")
+pak::pak(c("Snowflake-Labs/RSnowflake", "Snowflake-Labs/snowflakeR"))
+```
+
+| Package | Local role |
+|---------|------------|
+| **RSnowflake** | DBI, dbplyr, Connections Pane — **no Python ML stack required** |
+| **snowflakeR** | Feature Store, Registry, etc. — requires Python + `snowflake-ml-python` |
+
+You can use **RSnowflake alone** for SQL/dplyr workflows. Install **snowflakeR** when you need the ML platform APIs.
+
+## Python environment (snowflakeR only) {#sec-python}
+
+snowflakeR calls the Snowflake ML Python SDK via **reticulate**. Pick one approach below.
+
+::: {.callout-note}
+Many enterprises **prefer pip/venv** over conda for policy or support reasons. All options below are valid — choose what your org standardizes on.
+:::
+
+### Option A — Automatic (conda-based) {#sec-python-auto}
+
+Creates a dedicated conda env `r-snowflakeR` (simplest first run):
+
+```r
+library(snowflakeR)
+sfr_install_python_deps()   # conda env + pip packages inside it
+sfr_check_environment()
+```
+
+### Option B — pip + virtualenv (no conda) {#sec-python-venv}
+
+```bash
+python3.11 -m venv ~/.virtualenvs/r-snowflakeR
+source ~/.virtualenvs/r-snowflakeR/bin/activate   # Windows: Scripts\activate
+pip install --upgrade pip
+pip install snowflake-ml-python snowflake-snowpark-python
+```
+
+Point R at that interpreter **before** the first snowflakeR call:
+
+```r
+# In ~/.Renviron (recommended):
+# RETICULATE_PYTHON=~/.virtualenvs/r-snowflakeR/bin/python
+
+reticulate::use_virtualenv("~/.virtualenvs/r-snowflakeR", required = TRUE)
+library(snowflakeR)
+sfr_check_environment()
+```
+
+### Option C — Manual conda {#sec-python-conda}
+
+```bash
+conda create -n r-snowflakeR python=3.11 -y
+conda activate r-snowflakeR
+pip install snowflake-ml-python snowflake-snowpark-python
+```
+
+```r
+reticulate::use_condaenv("r-snowflakeR", required = TRUE)
+```
+
+### Option D — System / managed Python {#sec-python-system}
+
+If IT provides a approved Python with packages pre-installed:
+
+```bash
+pip install snowflake-ml-python snowflake-snowpark-python
+```
+
+```r
+# Optional: pin explicit path
+Sys.setenv(RETICULATE_PYTHON = "/usr/local/bin/python3.11")
+```
+
+### Option E — uv / pip-tools (advanced) {#sec-python-uv}
+
+For teams using [uv](https://github.com/astral-sh/uv) or lockfiles:
+
+```bash
+uv venv ~/.virtualenvs/r-snowflakeR --python 3.11
+source ~/.virtualenvs/r-snowflakeR/bin/activate
+uv pip install snowflake-ml-python snowflake-snowpark-python
+```
+
+Same `RETICULATE_PYTHON` / `use_virtualenv()` wiring as Option B.
+
+::: {.callout-warning}
+`reticulate` **locks Python on first use** in an R session. Configure the interpreter before calling `sfr_connect()` or other snowflakeR functions.
+:::
+
+## Authentication {#sec-auth}
+
+Snowflake supports several authentication mechanisms. RSnowflake and snowflakeR accept the same options as the Python connector and CLI.
+
+### Authentication options {#sec-auth-options}
+
+| Method | How it works | Best suited for |
+|--------|--------------|-----------------|
+| **Username + password** | Classic login | Rare for automation; some legacy scripts |
+| **External browser (`externalbrowser`)** | Opens SSO/OAuth in your browser | **Interactive desktop** — RStudio, Posit, VS Code, terminal R |
+| **Key-pair (JWT / `SNOWFLAKE_JWT`)** | RSA key pair; private key signs a token | **CI/CD, service accounts, scheduled jobs** — no browser, long-lived |
+| **Programmatic Access Token (PAT)** | Short-lived token from Snowsight | **Automation** when key-pair is not preferred; treat like a password |
+| **OAuth (Workspace session)** | Notebook runtime injects session token | **Workspace Notebooks only** — automatic after bootstrap; no TOML needed |
+| **MFA / Duo** | Often combined with browser or password flows | Enterprise interactive login |
+
+::: {.callout-tip}
+**Rule of thumb:** Interactive development on your laptop → `externalbrowser` in TOML. Pipelines and service users → key-pair JWT. Workspace notebooks → rely on session OAuth (do not paste PATs into cells).
+:::
+
+**Further reading:** [Key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth), [Programmatic access tokens](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
+
+### `connections.toml` — shared connection profiles {#sec-toml}
+
+Snowflake's standard config file lives at **`~/.snowflake/connections.toml`** (Windows: `%USERPROFILE%\.snowflake\connections.toml`).
+
+It stores **named connection profiles** — account, user, authenticator, default warehouse/database/schema/role, and paths to keys. One file is read by:
+
+| Tool | Usage |
+|------|--------|
+| **Snowflake CLI** (`snow`) | `snow connection test --connection default` |
+| **Python connector** | `snowflake.connector.connect(connection_name="default")` |
+| **RSnowflake** | `dbConnect(Snowflake(), name = "default")` |
+| **snowflakeR** | `sfr_connect()` or `sfr_connect(name = "production")` |
+
+This lets R, Python scripts, and CLI share the same profiles without duplicating secrets across config formats.
+
+Example file:
+
+```toml
+[default]
+account = "xy12345.us-east-1"
+user = "MYUSER"
+authenticator = "externalbrowser"
+warehouse = "COMPUTE_WH"
+database = "MY_DB"
+schema = "PUBLIC"
+role = "ANALYST"
+
+[production]
+account = "xy12345.us-east-1"
+user = "SVC_USER"
+authenticator = "SNOWFLAKE_JWT"
+private_key_path = "~/.snowflake/rsa_key.p8"
+warehouse = "PROD_WH"
+database = "PROD_DB"
+schema = "ML"
+role = "ML_ROLE"
+```
+
+**RSnowflake:**
+
+```r
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake(), name = "default")
+```
+
+**snowflakeR:**
+
+```r
+library(snowflakeR)
+conn <- sfr_connect()                      # [default]
+conn <- sfr_connect(name = "production") # named profile
+```
+
+::: {.callout-note}
+Workspace Notebooks typically **do not** use `connections.toml` — the session OAuth token is injected by the runtime. Keep TOML profiles for local IDE and CI workflows.
+:::
+
+### Key-pair setup (automation / CI) {#sec-keypair}
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+```
+
+Register the public key on your Snowflake user (`ALTER USER ... SET RSA_PUBLIC_KEY=...`), then reference `private_key_path` in TOML or pass `private_key_file` to `sfr_connect()`.
+
+### Programmatic Access Token (PAT) {#sec-pat}
+
+Create a PAT in **Snowsight → Admin → Security → Programmatic Access Tokens**. Prefer environment variables:
+
+```r
+conn <- sfr_connect(token = Sys.getenv("SNOWFLAKE_PAT"))
+# RSnowflake: dbConnect(Snowflake(), token = Sys.getenv("SNOWFLAKE_PAT"))
+```
+
+Rotate PATs on the same schedule as passwords. Do not commit tokens to git.
+
+### External browser (SSO) {#sec-browser}
+
+Set `authenticator = "externalbrowser"` in TOML or pass it to `sfr_connect()` for interactive desktop sessions.
+
+## Workspace vs local {#sec-vs-workspace}
+
+| Aspect | Local IDE | Workspace Notebook |
+|--------|-----------|-------------------|
+| Auth | TOML, key-pair, browser | Session token (auto) |
+| snowflakeR Python | You configure reticulate (conda or pip) | Bootstrap / CRE |
+| RSnowflake | Full DBI | Full DBI + gateway host detection |
+| ML platform | Same R APIs | Same R APIs |
+
+Parts on RSnowflake and snowflakeR apply **unchanged** once connected — only bootstrap differs.
+
+## Next steps {#sec-next}
+
+[RStudio, Posit & VS Code](../04_rstudio_posit_vscode/index.qmd) — IDE workflows, extensions, Posit Native App.
+
+Or [Workspaces overview](../05_workspaces_overview/index.qmd) if notebooks are your primary environment.

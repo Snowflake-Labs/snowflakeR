@@ -1,0 +1,467 @@
+---
+title: "Model Registry"
+subtitle: "Log, deploy, and serve R models"
+---
+
+## Overview
+
+Training a model in R is only half the MLOps story. Production needs **versioned artifacts**, **metadata**, **reproducible deployment**, and **governed inference** — the same way application code uses git and CI/CD, not a shared folder of `.rds` files.
+
+The Snowflake **Model Registry** is the in-account system of record for ML models: each **version** stores artifacts, metrics, lineage links, and deployment configuration. Python teams call `snowflake-ml-python` directly; **`snowflakeR`** lets R teams **`sfr_log_model()`** after training with `lm`, tidymodels, forecast, or custom fit objects — without authoring Python serving code.
+
+The architectural constraint: Snowflake's serving runtime is **Python-first**. snowflakeR closes the gap by auto-generating a **CustomModel** wrapper that loads your `.rds` and runs predict via **rpy2** inside **SPCS** containers at inference time.
+
+See [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) for lifecycle context and [Feature Store](../17_feature_store/index.qmd) for training data and lineage inputs.
+
+## Learning Objectives
+
+- Explain registry concepts and the train → log → deploy → infer lifecycle
+- Describe the CustomModel + rpy2 serving path
+- Log models with schema contracts and optional lineage from Feature Store
+- Choose inference patterns (local, in-account, REST, batch, SQL)
+- Avoid deploy failures (conda deps, schema mismatch, version promotion)
+
+---
+
+## The problem the Registry solves {#sec-problem}
+
+| Without registry | With registry |
+|------------------|---------------|
+| `model_v3_final.RData` on a laptop | Immutable **V1, V2, V3** in Snowflake |
+| Unknown which data trained the model | **Lineage** to datasets and feature views |
+| Hand-built Plumber/ Docker per model | **SPCS deployment** from same API |
+| No audit trail of metrics | **Metrics** stored per version |
+| Production points at "whatever was last saved" | **Aliases** (`@champion`) for controlled promotion |
+
+The Registry does not replace **experiment tracking** ([Experiments](../19_experiments/index.qmd)) — it holds **promoted** models ready for serve and monitor.
+
+---
+
+## Core concepts {#sec-concepts}
+
+| Concept | Definition |
+|---------|------------|
+| **Registry** | Schema/database holding models (`sfr_model_registry()`) |
+| **Model name** | Logical identifier (`CHURN_MODEL`) — container for versions |
+| **Version** | Immutable snapshot (`V1`, `V2`, …) — artifacts + metadata |
+| **ModelVersion** | R handle returned by `sfr_log_model()` |
+| **CustomModel** | Python class Snowflake executes in SPCS |
+| **Stage artifacts** | `.rds` model + generated wrapper code |
+| **input_cols / output_cols** | Schema contract for inference validation |
+| **Alias** | Named pointer (`production`, `champion`) to a version |
+| **Deployment** | SPCS **inference service** (HTTPS endpoint) |
+| **Lineage** | Upstream: tables, feature views, datasets; downstream: deployments |
+| **Batch inference** | `sfr_run_batch()` / SQL — score many rows without REST |
+
+---
+
+## Lifecycle overview {#sec-lifecycle}
+
+```{mermaid}
+flowchart LR
+  subgraph dev [Development]
+    TR[Train in R]
+    LOC[sfr_predict_local]
+  end
+
+  subgraph reg [Registry]
+    LOG[sfr_log_model]
+    MET[Metrics lineage]
+    VER[V1 V2 versions]
+  end
+
+  subgraph prod [Production]
+    DEP[sfr_deploy_model]
+    SVC[SPCS service]
+    INF[sfr_predict / REST / SQL]
+    MON[Monitoring]
+  end
+
+  TR --> LOC --> LOG --> MET --> VER
+  VER --> DEP --> SVC --> INF --> MON
+```
+
+| Phase | What you do | Compute |
+|-------|-------------|---------|
+| **Train** | Fit model on Feature Store dataset or table | R in notebook / local |
+| **Validate** | `sfr_predict_local()` — same logic as serve | R only |
+| **Log** | `sfr_log_model()` — upload artifacts + metadata | Snowflake ML API |
+| **Deploy** | `sfr_deploy_model()` — create/update SPCS service | SPCS compute pool |
+| **Infer** | `sfr_predict()`, REST, SQL, batch | SPCS and/or warehouse |
+| **Monitor** | Inference log + drift jobs | Warehouse + registry API |
+
+---
+
+## How logging and serving work {#sec-how-log}
+
+```{mermaid}
+sequenceDiagram
+  participant R as R train session
+  participant SFR as snowflakeR
+  participant ST as Internal stage
+  participant REG as Model Registry
+  participant SPCS as SPCS inference container
+
+  R->>SFR: sfr_log_model(model, input_cols, ...)
+  SFR->>SFR: saveRDS model
+  SFR->>SFR: Generate Python CustomModel + rpy2 handler
+  SFR->>ST: Upload artifacts
+  SFR->>REG: Register ModelVersion V1
+
+  Note over REG,SPCS: sfr_deploy_model()
+  REG->>SPCS: Create inference service
+
+  Note over SPCS: Predict request arrives
+  SPCS->>SPCS: Python CustomModel.load_context()
+  SPCS->>SPCS: rpy2 loads R + readRDS
+  SPCS->>SPCS: predict(model, input_df)
+  SPCS-->>SPCS: Return scores as DataFrame
+```
+
+**At log time (R session):**
+
+1. Serialize model to **`.rds`**
+2. Generate **CustomModel** Python module (you do not write this)
+3. Upload to **stage**; register **ModelVersion** with schema and metadata
+
+**At inference time (SPCS container):**
+
+1. Python handler receives batch of input rows
+2. **rpy2** embeds R, loads `.rds`, calls your **`predict`** path (or custom `predict_body`)
+3. Results return as a columnar structure Snowflake serves to callers
+
+::: {.callout-note title="rpy2 vs reticulate"}
+- **reticulate** (R→Python): `sfr_log_model()` calls Snowflake ML Python SDK from R  
+- **rpy2** (Python→R): SPCS CustomModel calls back into R at predict time  
+
+Same bridges as [Architecture](../02_architecture/index.qmd), reversed at serve time.
+:::
+
+---
+
+## Setup {#sec-setup}
+
+```r
+library(snowflakeR)
+conn <- sfr_connect()
+conn <- sfr_load_notebook_config(conn)
+
+reg <- sfr_model_registry(conn, database = "ML_DB", schema = "MODELS")
+```
+
+Pass **`reg`** or **`conn`** to registry functions. Explicit `sfr_model_registry()` avoids ambiguity when session database/schema differ from where models should live.
+
+---
+
+## Train and validate locally {#sec-train}
+
+**Always** run predict logic locally before registration — catches schema and shape errors without SPCS deploy cycles:
+
+```r
+model <- lm(mpg ~ wt + hp + cyl, data = mtcars)
+
+test_data <- data.frame(
+  wt  = c(2.5, 3.0),
+  hp  = c(110, 150),
+  cyl = c(4, 6)
+)
+
+preds <- sfr_predict_local(model, test_data)
+```
+
+`sfr_predict_local()` executes pure R — no Python bridge. It should match what the CustomModel will call inside the container (modulo package versions on conda-forge).
+
+**tidymodels:** pass the fitted **workflow** object to `sfr_log_model()` — the package extracts the parsnip fit and predict interface.
+
+---
+
+## Log the model {#sec-log}
+
+```r
+mv <- sfr_log_model(
+  reg,
+  model       = model,
+  model_name  = "MTCARS_MPG",
+  input_cols  = list(wt = "double", hp = "double", cyl = "integer"),
+  output_cols = list(prediction = "double"),
+  comment     = "LM predicting MPG"
+)
+```
+
+### Schema contract (`input_cols` / `output_cols`)
+
+Inference validates incoming rows against **`input_cols`** — names and types must match scoring data. Snowflake types map from R:
+
+| Registry type | R column type |
+|---------------|---------------|
+| `"double"` | numeric |
+| `"integer"` | integer |
+| `"string"` | character |
+| `"boolean"` | logical |
+
+Mismatch at deploy or predict time is a common production failure — define columns from the same frame used in `sfr_predict_local()`.
+
+### Serving dependencies
+
+SPCS inference images install R packages from **conda-forge** (plus `r-base`, `rpy2`). Declare packages needed at predict time:
+
+```r
+mv <- sfr_log_model(
+  reg,
+  model        = arima_fit,
+  model_name   = "SALES_FORECAST",
+  predict_pkgs = c("forecast"),
+  conda_deps   = c("r-forecast"),
+  input_cols   = ...,
+  output_cols  = ...
+)
+```
+
+::: {.callout-warning}
+CRAN-only packages with no conda-forge recipe may **fail at deploy**. Options: custom inference image, `conda_deps`, or rewrite predict with base R — see [Appendix C](../appendices/C_troubleshooting/index.qmd).
+:::
+
+### Custom predict bodies {#sec-predict-body}
+
+Standard `predict(model, newdata)` works for many models. **forecast**, **bsts**, and multi-column outputs need custom code:
+
+```r
+my_forecast <- function(model, input) {
+  pred <- forecast::forecast(model, h = nrow(input))
+  data.frame(
+    point_forecast = as.numeric(pred$mean),
+    lower_95       = as.numeric(pred$lower[, 2]),
+    upper_95       = as.numeric(pred$upper[, 2])
+  )
+}
+
+mv <- sfr_log_model(
+  reg,
+  model        = arima_model,
+  model_name   = "SALES_FORECAST",
+  predict_pkgs = c("forecast"),
+  predict_body = sfr_predict_body(my_forecast),
+  input_cols   = list(period = "integer"),
+  output_cols  = list(
+    point_forecast = "double",
+    lower_95       = "double",
+    upper_95       = "double"
+  )
+)
+```
+
+`sfr_predict_body()` converts your R function into the template the container executes — test the R function locally first, then wrap.
+
+---
+
+## Lineage from Feature Store {#sec-lineage}
+
+When training data comes from Feature Store **Datasets**, pass **`training_dataset`** to complete the chain visible in Snowsight:
+
+> **Source table → Feature View → Dataset → Model**
+
+```r
+training <- sfr_generate_dataset(
+  fs,
+  name     = "CHURN_TRAINING",
+  spine    = "SELECT customer_id, label FROM labels",
+  features = list(list(name = "CUSTOMER_FEATURES", version = "v1")),
+  version  = "v1",
+  spine_label_cols = "label"
+)
+
+model <- glm(label ~ ., data = training, family = binomial)
+
+mv <- sfr_log_model(
+  reg,
+  model            = model,
+  model_name       = "CHURN_MODEL",
+  input_cols       = sfr_input_cols(training, exclude = "label"),
+  output_cols      = list(prediction = "double"),
+  training_dataset = training
+)
+```
+
+Inspect lineage after logging:
+
+```r
+sfr_model_lineage(reg, "CHURN_MODEL", "V1", direction = "upstream")
+```
+
+---
+
+## Metrics and version management {#sec-metrics}
+
+```r
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "rmse", 2.45)
+sfr_set_model_metric(reg, "MTCARS_MPG", "V1", "r_squared", 0.87)
+sfr_show_model_metrics(reg, "MTCARS_MPG", "V1")
+
+sfr_show_models(reg)
+sfr_show_model_versions(reg, "MTCARS_MPG")
+```
+
+Log a new version when retraining:
+
+```r
+model_v2 <- lm(mpg ~ wt + hp + cyl + disp, data = mtcars)
+
+mv2 <- sfr_log_model(
+  reg,
+  model        = model_v2,
+  model_name   = "MTCARS_MPG",
+  version_name = "V2",
+  input_cols   = list(wt = "double", hp = "double", cyl = "integer", disp = "double"),
+  output_cols  = list(prediction = "double"),
+  comment      = "V2: added displacement"
+)
+
+sfr_set_default_model_version(reg, "MTCARS_MPG", "V2")
+```
+
+---
+
+## Aliases and promotion {#sec-aliases}
+
+**Aliases** decouple production callers from version numbers:
+
+```r
+sfr_set_model_alias(reg, "MTCARS_MPG", "V2", "production")
+sfr_set_model_alias(reg, "MTCARS_MPG", "V1", "staging")
+
+sfr_unset_model_alias(reg, "MTCARS_MPG", "production")
+```
+
+Downstream SQL inference and REST clients can target **`@production`** while you register **V3** as challenger — promote by moving the alias, not rewriting pipelines.
+
+---
+
+## Deploy to SPCS {#sec-deploy}
+
+Deployment materializes an **inference service** on a **compute pool**:
+
+```r
+sfr_deploy_model(
+  reg,
+  model_name   = "MTCARS_MPG",
+  version_name = "V2",
+  service_name = "mpg_service",
+  compute_pool = "ML_POOL",
+  image_repo   = "ML_DB.MODELS.ML_IMAGES"
+)
+```
+
+```{mermaid}
+flowchart TB
+  REG[Registry ModelVersion]
+  IMG[Inference image conda plus rpy2]
+  POOL[Compute pool]
+  SVC[Inference service HTTPS]
+  APP[Apps Shiny REST clients]
+
+  REG --> SVC
+  IMG --> SVC
+  POOL --> SVC
+  SVC --> APP
+```
+
+**Operational notes:**
+
+- Inference uses **conda-forge** R packages baked into the service image — align with `predict_pkgs`
+- Monitor via `SYSTEM$GET_SERVICE_LOGS` and service status SQL
+- **Cycle compute pool** after image updates ([Production checklist](../appendices/D_production_checklist/index.qmd))
+- Cold starts depend on pool sizing — consider min instances for latency-sensitive apps
+
+List and manage services via registry helpers (`sfr_show_services`, etc. — see vignette).
+
+---
+
+## Inference patterns {#sec-infer}
+
+```{mermaid}
+flowchart TD
+  Q{Who calls predict?}
+  Q -->|Same R session dev| LOC[sfr_predict_local]
+  Q -->|R session in Snowflake| RREG[sfr_predict]
+  Q -->|External app| REST[sfr_predict_rest]
+  Q -->|SQL team| SQL[sfr_predict_sql warehouse models]
+  Q -->|Batch millions| BATCH[sfr_run_batch many-model]
+
+  LOC --> RONLY[R only no deploy]
+  RREG --> SPCS1[SPCS or in-session bridge]
+  REST --> SPCS2[SPCS HTTPS plus PAT]
+  SQL --> WH[Warehouse]
+  BATCH --> SPCS3[SPCS batch job]
+```
+
+| Pattern | API | When |
+|---------|-----|------|
+| **Development** | `sfr_predict_local()` | Before log; no deploy |
+| **In-account R batch** | `sfr_predict(reg, data)` | Scoring via Snowpark DataFrame in Snowflake |
+| **Deployed service** | `sfr_predict(..., service_name=)` | After `sfr_deploy_model()` |
+| **REST (external)** | `sfr_predict_rest()` | Posit Connect Shiny, apps outside Workspace |
+| **Warehouse SQL** | `sfr_predict_sql()` | `target_platforms = "WAREHOUSE"` models |
+| **Many-model batch** | `sfr_run_batch()` | Partition-keyed models — [Many-Model](../21_many_model/index.qmd) |
+
+```r
+new_cars <- sfr_query(conn, "SELECT wt, hp, cyl FROM car_data LIMIT 100")
+scores   <- sfr_predict(reg, "MTCARS_MPG", new_cars)
+```
+
+### Workspace vs REST auth
+
+- **`sfr_predict()`** routes through the Snowpark session — no PAT in notebooks  
+- **`sfr_predict_rest()`** hits SPCS ingress directly — typically requires **PAT** outside Workspace ([R Cells §PAT](../08_r_cells_and_interop/index.qmd#sec-pat))
+
+### Posit Connect
+
+Publish Shiny or Quarto to **Posit Connect**; the app calls **`sfr_predict_rest()`** against the Snowflake endpoint. Registry stays authoritative; Connect is the UI layer ([MLOps](../15_mlops_on_snowflake/index.qmd)).
+
+---
+
+## Many-model registration {#sec-many-model}
+
+Thousands of partition-specific models (one `.rds` per SKU) do not require thousands of registry entries. **`sfr_log_many_model()`** registers one **aggregator** CustomModel with a `model_index.json` mapping partition keys to stage paths — registration time stays ~constant. Batch scoring uses **`sfr_run_batch()`**.
+
+See [Many-Model Patterns](../21_many_model/index.qmd) and [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd).
+
+---
+
+## Experiments and monitoring {#sec-ops}
+
+| Concern | Tool |
+|---------|------|
+| Hyperparameter search, run comparison | [Experiments](../19_experiments/index.qmd) — log before promoting to registry |
+| Production drift / performance | [Model monitoring](../20_model_monitoring/index.qmd) — attach to deployed version |
+| Parallel retrain | doSnowflake + log new version |
+
+Typical flow: many runs in **Experiments** → pick winner → **`sfr_log_model()`** → deploy → **monitor**.
+
+---
+
+## Common pitfalls {#sec-pitfalls}
+
+| Issue | Mitigation |
+|-------|------------|
+| Deploy fails — missing R package | `predict_pkgs`, `conda_deps`, custom image |
+| Column name / type mismatch | Match `input_cols`; test with `sfr_predict_local()` |
+| Wrong output shape | Use `predict_body`; forecast models need data.frame contract |
+| Stale production version | Aliases + `sfr_set_default_model_version()` |
+| REST fails from notebook | Use `sfr_predict()` in Workspace; PAT for external REST |
+| High latency | Warm service; right-size compute pool |
+
+---
+
+## Companion artifacts {#sec-companion}
+
+| Resource | Content |
+|----------|---------|
+| Vignette `model-registry` | Deploy params, SQL predict, export |
+| `workspace_model_registry.ipynb` | Workspace walkthrough |
+| `workspace_forecasting_demo.ipynb` | forecast + `predict_body` example |
+
+---
+
+## Next steps {#sec-next}
+
+[Experiments](../19_experiments/index.qmd) · [Model monitoring](../20_model_monitoring/index.qmd) · [End-to-end pipeline](../23_end_to_end/index.qmd)

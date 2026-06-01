@@ -1,0 +1,95 @@
+---
+title: "Appendix D: Production Checklist"
+subtitle: "SPCS operations, monitoring, and sizing"
+---
+
+Use this checklist before promoting R + snowflakeR workloads from development to production.
+
+---
+
+## Workspace R: org CRE onboarding (platform / IT) {#sec-cre-org}
+
+- [ ] **CRE v2** registered (`cre@sfnb_multilang_r` or org name) — [Bootstrap §CRE vs bootstrap](../../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap)
+- [ ] Image built with `create_cre.sh` / CI; `snow custom-image validate` passed
+- [ ] `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` after each image push; digest communicated to users
+- [ ] `GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT` to notebook roles
+- [ ] Snowsight default or runbook points analysts to CRE (bootstrap only for sandbox)
+- [ ] Separate **GPU** CRE + `BASE_IMAGE_TYPE = GPU` if using R/Python GPU packages
+- [ ] Multilang public docs: [org operating model](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/org_cre_operating_model.md)
+
+---
+
+## Configuration & packaging {#sec-config}
+
+- [ ] Pre-built **R package tarballs** in bootstrap configs and **CRE build** profile ([Appendix B](../B_config_reference/index.qmd))
+- [ ] `snowflaker_*.yaml` pins warehouse, database, schema, role — not session defaults
+- [ ] **CRE image** built and validated for repeat workloads ([CRE chapter](../../09_custom_runtime_and_ml_jobs/index.qmd))
+- [ ] `reticulate>=1.25` and compatible `rpy2` pinned in conda packages
+- [ ] Python `snowflake-ml-python` version meets feature requirements (`sfr_check_environment()`)
+
+---
+
+## Security & network {#sec-security}
+
+- [ ] **EAI** and network rules reviewed by security — hostname allowlists vs open egress
+- [ ] No PATs or private keys committed to Git notebooks
+- [ ] Service users use **key-pair JWT** with least-privilege roles
+- [ ] Row access / masking policies applied on sensitive training data
+
+---
+
+## SPCS & parallel {#sec-spcs}
+
+- [ ] Docker images built with **`--platform linux/amd64`**
+- [ ] Compute pool **cycled** (suspend/resume) after image updates
+- [ ] Stage I/O via **volume mounts** on workers — no SQL `GET`/`PUT` over REST API
+- [ ] Worker images include all R package dependencies for fit **and** predict
+- [ ] `STAGE_MOUNT` env var documented in worker runbooks
+
+---
+
+## Model Registry & serving {#sec-registry}
+
+- [ ] Inference dependencies on **conda-forge** or custom inference image
+- [ ] Column names and types match between training and scoring
+- [ ] R models tested end-to-end: `sfr_log_model()` → deploy → `sfr_predict()` / batch
+- [ ] CustomModel + rpy2 path validated in target SPCS image
+
+---
+
+## Monitoring & operations {#sec-ops}
+
+- [ ] **Inference log** table populated with timestamp, prediction, optional label columns
+- [ ] `sfr_add_monitor()` configured for critical models
+- [ ] Alerting wired to drift/performance metrics (dashboard, email, ticketing)
+- [ ] `SYSTEM$GET_SERVICE_LOGS` and event table access for SPCS fault diagnosis
+- [ ] Warehouse and compute pool **auto-suspend** policies set
+
+---
+
+## Documentation & support {#sec-docs}
+
+- [ ] Runbook for failed bootstrap (EAI toggle, admin SQL)
+- [ ] Runbook for CRE attach / `%%R` unknown (wrong runtime, v1 vs v2, [Appendix G](../G_workspace_container_internals/index.qmd))
+- [ ] Runbook for `exec format error` / job 395030 (wrong CPU arch)
+- [ ] Ownership and escalation for community packages (snowflakeR, RSnowflake)
+- [ ] Compliance sign-off for community-project disclaimer ([Introduction](../../00_introduction/index.qmd))
+
+---
+
+## Sizing (guidance) {#sec-sizing}
+
+| Workload | Starting point |
+|----------|----------------|
+| Interactive notebook | XS–S warehouse; default compute pool |
+| Feature materialization | Size warehouse to refresh SLA |
+| Many-model SPCS | Pool with N workers × `CPU_X64_*` family; benchmark chunk size |
+| Batch inference | Warehouse or `sfr_run_batch()` per registry docs |
+
+Benchmark on representative data before locking pool/warehouse sizes.
+
+---
+
+## Disclaimer
+
+Community packages — validate SLAs, support, and compliance with your organization before production cutover.

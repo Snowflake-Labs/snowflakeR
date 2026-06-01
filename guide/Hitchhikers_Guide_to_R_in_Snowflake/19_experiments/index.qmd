@@ -1,0 +1,138 @@
+---
+title: "Experiments"
+subtitle: "Run tracking, metrics, and tuning integration"
+---
+
+## Overview
+
+**Experiment tracking** on Snowflake captures training exploration — parameters, metrics, artifacts, and optionally logged models — alongside the governed **Model Registry** used for deployment.
+
+snowflakeR exposes experiments via a small R API on top of `snowflake-ml-python`. Use experiments for hyperparameter search and model comparison; promote winners to the Registry with `sfr_log_model()`.
+
+Requires a recent **`snowflake-ml-python`** build (see `?sfr_experiment` for version checks in your session).
+
+## Learning Objectives
+
+- Create experiments and runs from R
+- Log parameters, metrics, and artifacts
+- Integrate with tidymodels **`tune`**
+- List and download artifacts for review
+
+---
+
+## Basic workflow {#sec-basic}
+
+```r
+library(snowflakeR)
+conn <- sfr_connect()
+
+exp <- sfr_experiment(conn, name = "FORECAST_TUNING")
+
+sfr_start_run(exp, name = "arima_001")
+
+sfr_exp_log_params(exp, p = 2L, d = 1L, q = 1L)
+sfr_exp_log_metric(exp, "mape", 0.12, step = 1L)
+sfr_exp_log_metric(exp, "rmse", 1450.3, step = 1L)
+
+# Optional: log files or interim models
+# sfr_exp_log_artifact(exp, "/tmp/forecast_plot.png", "plots/forecast.png")
+# sfr_exp_log_model(exp, fitted_workflow, ...)
+
+sfr_end_run(exp)
+```
+
+Each run appears in Snowflake ML experiment UI alongside Python-logged runs — same experiment namespace.
+
+---
+
+## Multiple runs (grid search pattern) {#sec-grid}
+
+```r
+exp <- sfr_experiment(conn, name = "XGB_GRID")
+
+for (depth in c(3, 6, 9)) {
+  sfr_start_run(exp, name = sprintf("depth_%d", depth))
+  sfr_exp_log_params(exp, max_depth = depth, eta = 0.1)
+  # ... train ...
+  sfr_exp_log_metric(exp, "auc", auc_value)
+  sfr_end_run(exp)
+}
+```
+
+For systematic resampling grids, prefer **`tune`** integration below.
+
+---
+
+## tidymodels `tune` integration {#sec-tune}
+
+Attach an experiment to a tuning workflow:
+
+```r
+exp <- sfr_experiment(conn, "MY_EXPERIMENT")
+
+# After defining workflow + resamples:
+# sfr_experiment_from_tune(exp, <tune_workflow_or_last_fit_object>)
+
+# ... tune::tune_grid() or fit_resamples() ...
+
+# sfr_experiment_log_best(exp, <tune_results>)
+```
+
+Exact signatures depend on your `tune` version — see `?sfr_experiment_from_tune` and `?sfr_experiment_log_best`.
+
+Typical flow:
+
+1. Define tidymodels workflow with tunable parameters.
+2. `sfr_experiment_from_tune()` links the Snowflake experiment to the workflow.
+3. Run tuning; metrics log per candidate.
+4. `sfr_experiment_log_best()` records the winning configuration.
+5. Register final model via [Model Registry](../18_model_registry/index.qmd).
+
+---
+
+## Artifacts {#sec-artifacts}
+
+```r
+sfr_exp_list_artifacts(exp, run_name = "arima_001")
+
+sfr_exp_download_artifact(exp,
+  run_name       = "arima_001",
+  artifact_path  = "plots/forecast.png",
+  target_path    = "forecast.png"
+)
+```
+
+Use artifacts for diagnostic plots, serialized preprocessors, or audit trails — not for production model binaries (use Registry).
+
+---
+
+## Cleanup {#sec-cleanup}
+
+```r
+sfr_delete_run(exp, run_name = "arima_001")
+sfr_delete_experiment(exp, name = "FORECAST_TUNING")
+```
+
+---
+
+## Experiments vs Model Registry {#sec-vs-registry}
+
+| | Experiments | Model Registry |
+|--|-------------|----------------|
+| Purpose | Exploration, comparison | Versioned deployment |
+| Lifecycle | Many ephemeral runs | Promoted model versions |
+| Serving | No | Yes (SPCS / warehouse) |
+| R API | `sfr_experiment()`, `sfr_exp_*` | `sfr_log_model()`, `sfr_deploy_*` |
+
+---
+
+## Companion
+
+- Vignette: `experiments`
+- Related: [Model Registry](../18_model_registry/index.qmd), [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd)
+
+---
+
+## Next steps
+
+[Model Monitoring](../20_model_monitoring/index.qmd)

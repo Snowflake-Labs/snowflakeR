@@ -128,11 +128,11 @@ using Snowpark Container Services (SPCS), persist them to a stage,
 register them in Model Registry as a single model version, and run
 server-side batch inference via \texttt{run\_batch}.
 
-The accompanying \textbf{reference implementation} lives in
-\texttt{internal/doSnowflake/demos/parallel\_forecast/}. The code
-snippets below are extracted from that implementation. Lines marked
-\texttt{\#\#\ ADAPT} are the parts you replace for your own data and
-models.
+The accompanying \textbf{reference notebooks} ship in snowflakeR:
+\texttt{inst/notebooks/workspace\_parallel\_spcs\_setup.ipynb} and
+\texttt{workspace\_parallel\_spcs\_demo.ipynb}. The code snippets below
+follow that pattern. Lines marked \texttt{\#\#\ ADAPT} are the parts you
+replace for your own data and models.
 
 \subsection{1. Architecture Overview}\label{architecture-overview}
 
@@ -802,9 +802,10 @@ those variables don't exist.
   \texttt{registerDoSnowflake} API reference (foreach backend, generic
   SPCS executor, crew/mirai workers).
 \item
-  \textbf{Reference implementation}:
-  \texttt{internal/doSnowflake/demos/parallel\_forecast/} contains the
-  complete runnable demo with configs, deploy scripts, and tests.
+  \textbf{Reference notebooks}:
+  \texttt{inst/notebooks/workspace\_parallel\_spcs\_setup.ipynb},
+  \texttt{workspace\_parallel\_spcs\_demo.ipynb} contains the complete
+  runnable demo with configs, deploy scripts, and tests.
 \item
   \textbf{Function reference}: \texttt{?sfr\_log\_many\_model},
   \texttt{?sfr\_run\_batch}, \texttt{?sfr\_model\_registry},

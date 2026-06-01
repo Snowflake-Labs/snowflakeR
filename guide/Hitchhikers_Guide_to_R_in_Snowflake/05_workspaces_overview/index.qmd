@@ -1,0 +1,202 @@
+---
+title: "Workspaces & Notebooks"
+subtitle: "Snowsight UX, compute, and what Workspace provides for R"
+---
+
+## Overview
+
+Before bootstrapping R, understand **where** you work in Snowflake. **Snowsight** is the web UI. **Workspace** is the project-oriented development area within Snowsight. **Notebooks** are interactive, cell-based environments for Python, SQL, and (with this guide and package) R.
+
+[Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) covers `setup_notebook()` next.
+
+::: {.callout-important}
+**Workspace Notebooks required.** The multi-language R stack in this guide (`setup_notebook()`, `%%R`, snowflakeR) runs only in **Workspace Notebooks** on ML Container Runtime — not in legacy standalone Snowsight notebooks.
+:::
+
+## Learning Objectives
+
+- Navigate Snowsight → Workspace → Notebook
+- Choose and configure compute for a notebook session
+- Use Python, SQL, and Markdown cells — and know where R fits
+- Understand session lifecycle (start, active, restart, end)
+
+---
+
+## Snowsight and Workspace {#sec-snowsight}
+
+**Snowsight** provides:
+
+- SQL worksheets and query history
+- Dashboards and Streamlit apps
+- Admin and governance screens
+- **Workspace** — projects, files, Git repos, notebooks
+
+**Workspace** adds a developer workflow:
+
+| Capability | Benefit |
+|------------|---------|
+| **Project + files** | Organize notebooks, scripts, configs (`snowflaker_config.yaml`) |
+| **Git integration** | Clone, commit, push — team collaboration |
+| **Notebooks** | Cell-based Python/SQL/Markdown (Jupyter-compatible in Workspaces) |
+| **Compute session** | Attached warehouse + container runtime for kernel |
+
+::: {.callout-note}
+**Terminology:** "Workspace Notebook" means a notebook running **inside** your Snowflake account — not Jupyter on your laptop. Kernel and data stay in-account.
+:::
+
+### Screenshot placeholders {#sec-screenshots-snowsight}
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Snowsight navigation
+
+Capture: Left nav with **Projects & Workspace** (or equivalent) highlighted.
+:::
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Workspace landing
+
+Capture: Project list with notebooks and Git repo indicator.
+:::
+
+## Workspace notebooks {#sec-workspace-notebooks}
+
+All R content in this guide assumes **Notebooks in Workspaces** — the Jupyter-compatible experience with Git integration and ML Container Runtime. Create and open notebooks from **Snowsight → Workspace → project**.
+
+## Creating and opening a notebook {#sec-create}
+
+Typical flow:
+
+1. Open **Snowsight** → **Workspace**
+2. Select or create a **project** (optionally connect a Git repository)
+3. **Create notebook** or open existing `.ipynb` / Snowflake notebook file
+4. **Start session** — kernel comes online on container runtime
+5. Set **execution context**: role, warehouse, database, schema ([docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run))
+6. Run a SQL or Python smoke cell (`SELECT CURRENT_USER()`, etc.)
+
+::: {.callout-warning}
+Workspace does **not** auto-set database/schema in all versions — set context explicitly in YAML config or SQL, or fully qualify object names.
+:::
+
+### Screenshot placeholders {#sec-screenshots-create}
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Create notebook
+
+Capture: New notebook dialog / template selection.
+:::
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Notebook editor
+
+Capture: Toolbar + cells (Python, SQL, Markdown) with outputs visible.
+:::
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Compute context
+
+Capture: **Connected → Edit** (or equivalent) showing role, warehouse, database, schema, and EAI toggle.
+:::
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — Session controls
+
+Capture: **Start / Active** session button with restart/end options.
+:::
+
+## Notebook toolbar & session {#sec-toolbar}
+
+Workspace session controls ([reference](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-edit-run)):
+
+| Control | Purpose |
+|---------|---------|
+| **Start / Active** | Start kernel session; view memory/CPU; restart or end |
+| **Run all / Stop** | Execute all cells or cancel |
+| **Package selector** | Install Python packages (Anaconda channel on some runtimes) |
+| **Scheduler** | Run notebook on a schedule via **Tasks** |
+| **Connected / Edit** | Role, warehouse, database, schema, **External Access** |
+| **Export / duplicate** | Share or fork notebooks |
+
+For R: Python bootstrap cell runs first; R packages install via micromamba + YAML tarballs — not the Anaconda package picker alone.
+
+## Cell types {#sec-cells}
+
+| Cell type | Kernel | Use | R in this guide |
+|-----------|--------|-----|-----------------|
+| **Python** | Python (Jupyter/IPython) | Snowpark, pandas, `setup_notebook()` | **Required first** — installs R runtime and `%%R` magic |
+| **SQL** | Warehouse | Queries, DDL, context | Same as any SQL worksheet |
+| **Markdown** | — | Documentation | Explain steps to collaborators |
+| **R (`%%R`)** | **Python** (rpy2 interprets cell as R) | Statistical modeling | After bootstrap — see [Architecture](../02_architecture/index.qmd) |
+
+::: {.callout-note}
+## There is no separate R kernel
+
+An `%%R` cell is still a **Python cell**. The first line `%%R` tells IPython to hand the rest of the cell to **rpy2**, which runs it in an embedded R interpreter inside the Python process. Workspace shows it as an "R cell" in the UI, but the underlying kernel is always Python.
+:::
+
+**Execution model:**
+
+- **SQL cells** run on the **warehouse** you selected in context, or switch to via `USE WAREHOUSE`. The warehouse can be changed at any time, and the context will be updated accordingly. This is useful for running SQL queries in different warehouse sizes.
+- **Python kernel** runs on **ML Container Runtime** (compute pool selected for the notebook session)
+- **R cells** execute **inside the Python process** via rpy2 — not a separate R kernel. Context (R Environment) is maintained across cell execution.
+
+See [R Cells & Interop](../08_r_cells_and_interop/index.qmd) for data exchange patterns. Container internals (nbctl, uvenv kernel, `/filesystem`): [Appendix G](../appendices/G_workspace_container_internals/index.qmd).
+
+## Compute setup {#sec-compute}
+
+Notebooks use **ML Container Runtime** for the interactive kernel ([compute setup docs](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-compute-setup)):
+
+```{mermaid}
+flowchart LR
+  subgraph notebook [Notebook session]
+    PY[Python kernel on compute pool]
+    Rcell["R via rpy2 in same process"]
+  end
+  WH[Virtual warehouse]
+  PY --> Rcell
+  PY -->|SQL / Snowpark| WH
+  SQLcell[SQL cells] --> WH
+```
+
+| Component | Runs on | Pays |
+|-----------|---------|------|
+| Python kernel (+ R via rpy2) | Compute pool / container runtime | Container credits |
+| SQL & Snowpark queries | Virtual warehouse | Warehouse credits |
+| Model training in R that calls Snowflake ML | Mixed — ML API may use warehouse + stages | Both |
+
+**Practical tips:**
+
+- Size warehouse for SQL-heavy notebooks; container pool for ML package install time
+- **Suspend** warehouse when idle; **end session** when done with notebook
+- Enable **EAI** before bootstrap if installing from CRAN/GitHub/pip ([Network & EAI](../07_network_and_eai/index.qmd))
+
+## What Workspace provides for R teams {#sec-value}
+
+- **Data locality** — Query and train without bulk export
+- **Git-backed projects** — Reproducible notebooks and configs
+- **Shared ML objects** — Same Feature Store / Registry as Python colleagues
+- **Governance** — Roles, audit, network rules, tags
+- **Scheduling** — Promote notebook to recurring Task
+
+**Trade-offs vs desktop RStudio:**
+
+- Cold-start bootstrap and EAI setup
+- Notebook UX vs full IDE (Connections Pane, debugger)
+- Container runtime package constraints for **serving** (conda-forge) vs interactive training
+
+## Alternatives in the same account {#sec-alternatives}
+
+| Option | Best for |
+|--------|----------|
+| **Workspace Notebooks** | Mixed Python/R/SQL, team Git repos, ML exploration |
+| **[Posit Workbench Native App](https://posit.co/products/enterprise/posit-workbench/)** | Full RStudio/Posit IDE in Snowflake |
+| **ML Jobs** | Non-interactive batch on container runtime |
+| **Local RStudio + RSnowflake** | Familiar desktop IDE, `connections.toml` auth |
+| **RStudio Server in SPCS** | Custom containerized IDE (you operate the image) |
+
+## Next steps {#sec-next}
+
+[Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) — `setup_notebook()` and YAML.
+
+[Network & EAI](../07_network_and_eai/index.qmd) — outbound access for installs.
+
+[R Cells & Interop](../08_r_cells_and_interop/index.qmd) — `%%R`, outputs, path discovery.

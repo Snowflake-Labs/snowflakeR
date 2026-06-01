@@ -1,0 +1,604 @@
+---
+title: "Parallel doSnowflake"
+subtitle: "foreach, Tasks, queue mode, and SPCS R workers"
+---
+
+## Overview
+
+If you have used R's **`foreach`** package with `%dopar%`, you already know the pattern: express parallel work as a loop, let a backend decide how iterations run. **doSnowflake** is snowflakeR's backend for that interface — it takes the same `foreach` loop you would run on your laptop and dispatches iterations to **Snowflake compute** instead.
+
+That matters because many R workloads — many-model forecasting, hyperparameter grids, per-partition feature engineering — are **embarrassingly parallel**: each iteration is independent, but there may be thousands of them. Running them sequentially in a Workspace notebook or on a desktop does not scale. Copying data out of Snowflake to a separate HPC cluster breaks governance. doSnowflake keeps data and execution **in-account** by running R inside **Snowpark Container Services (SPCS)** containers, coordinated either by **Snowflake Tasks** or a **Hybrid Table queue**.
+
+This chapter explains how the modes differ, what Snowflake objects each mode needs, and how work flows from your R session to workers and back. For a full many-model forecasting walkthrough, see [Many-Model Patterns](../21_many_model/index.qmd).
+
+::: {.callout-note}
+**Prerequisites:** Active `sfr_connect()` session; SPCS **compute pool** and **image repository** for remote modes; **Hybrid Table** entitlement for queue mode; role grants for `CREATE TASK` / `CREATE SERVICE` as required by your account.
+:::
+
+## Learning Objectives
+
+- Explain what doSnowflake does and why it wraps `foreach`
+- Compare **local**, **tasks**, and **queue** modes — compute, coordination, and trade-offs
+- Describe the master → stage → workers → results lifecycle
+- Register a backend, build worker images, and handle stage I/O correctly
+
+---
+
+## The foreach contract {#sec-foreach}
+
+R's parallel ecosystem standardised on **`foreach`** + **`%dopar%`**. You write:
+
+```r
+foreach(i = 1:100, .combine = rbind) %dopar% {
+  data.frame(i = i, val = some_computation(i))
+}
+```
+
+A **backend** registered with `registerDoSnowflake()` intercepts `%dopar%` and decides where each iteration runs. The loop **body stays the same** across modes — only the backend changes. That lets you develop locally, then scale to SPCS without rewriting modeling code.
+
+doSnowflake also handles cross-cutting concerns the raw loop does not:
+
+- **Serialization** — the R expression, iteration arguments, and `.packages` / `.export` variables are packaged and sent to workers
+- **Stage I/O** — payloads and results travel through an internal **stage** (with volume mounts on workers)
+- **Result collection** — worker outputs are gathered and combined according to your `.combine` function
+- **Cleanup** — task graphs, ephemeral services, and stage paths are torn down after the run
+
+Install Suggested packages before first use:
+
+```r
+install.packages(c("foreach", "iterators"))
+```
+
+---
+
+## Architecture: three coordination models {#sec-architecture}
+
+All remote modes share the same **high-level shape**. Your R session (the **master**) lives in Workspace, Posit, or local R. When you call `%dopar%`, the master serializes work, workers on **SPCS** evaluate the R expression per chunk, and results return through the **stage**.
+
+```{mermaid}
+flowchart TB
+  subgraph master [Master R session]
+    FE["foreach ... %dopar%"]
+    REG[registerDoSnowflake]
+    FE --> REG
+  end
+
+  subgraph coord [Coordination layer]
+    direction TB
+    LOCAL["Local: parallel socket cluster"]
+    TASKS["Tasks mode: Snowflake Task DAG"]
+    QUEUE["Queue mode: Hybrid Table"]
+  end
+
+  subgraph compute [Compute — SPCS compute pool]
+    W1[Worker container]
+    W2[Worker container]
+    WN[Worker container ...]
+  end
+
+  subgraph storage [Shared storage]
+    STG["Internal stage — job payload and results"]
+    WH[(Warehouse — orchestration SQL)]
+  end
+
+  REG --> LOCAL
+  REG --> TASKS
+  REG --> QUEUE
+
+  LOCAL -->|"in-process only"| master
+
+  TASKS -->|"1 Task → 1 SPCS job per chunk"| W1
+  TASKS --> W2
+  TASKS --> WN
+  TASKS --> WH
+
+  QUEUE -->|"workers claim rows"| W1
+  QUEUE --> W2
+  QUEUE --> WN
+
+  W1 --> STG
+  W2 --> STG
+  WN --> STG
+  master --> STG
+```
+
+| Layer | Role |
+|-------|------|
+| **Master** | Your interactive R session; runs `registerDoSnowflake()` and `%dopar%` |
+| **Coordination** | How work is scheduled — socket cluster, Task DAG, or Hybrid Table queue |
+| **Compute pool** | SPCS nodes running Docker **worker images** with R + packages |
+| **Stage** | Serialized job definition, per-chunk tasks, and result files |
+| **Warehouse** | SQL for Task orchestration, queue polling, and metadata (not for arbitrary R) |
+
+Workers do **not** use a warehouse to execute R code. The warehouse supports Snowflake's orchestration layer (Tasks, status queries). R runs inside containers on the **compute pool**.
+
+---
+
+## Mode comparison {#sec-modes-compare}
+
+| | **Local** | **Tasks** | **Queue** |
+|--|-----------|-----------|-----------|
+| **Where R runs** | Same process / container as master (socket cluster) | SPCS job per **chunk** | SPCS **worker** pulls **chunks** from queue |
+| **Coordination** | `parallel::makeCluster()` in-session | **Snowflake Task graph** (DAG) | **Hybrid Table** with lease-based claiming |
+| **Dispatch** | Immediate, in-memory | **Fixed batch** — all chunks planned upfront | **Dynamic** — rows inserted; workers pull when ready |
+| **SPCS required?** | No | Yes | Yes |
+| **Hybrid Table?** | No | No | Yes |
+| **Cold start** | None | Per chunk (~30–120 s SPCS job startup) | Workers can stay **warm** (persistent pool) |
+| **Early stop** | N/A | No — all Tasks must finish | Yes — feeder can stop; workers drain queue |
+| **Observability** | R console | Task history in Snowsight | Queue depth + service logs |
+| **Best for** | Dev, smoke tests, small loops | Known workload, batch jobs, scheduled runs | Time-boxed runs, priority queues, elastic worker count |
+
+A reserved **`mode = "spcs"`** (stage-only job dispatch without Tasks) is planned but **not implemented** — selecting it raises an error today.
+
+---
+
+## Local mode {#sec-local}
+
+**Local mode** is the default. It does not touch SPCS. Instead, doSnowflake creates a **socket cluster** (`parallel::makeCluster()`) inside your current R session — the Workspace container or your laptop — and runs iterations across local R worker processes.
+
+Use local mode to:
+
+- Validate that your `%dopar%` body runs without syntax or package errors
+- Develop modeling logic before paying for SPCS
+- Run modest parallelism when data already fits in the notebook container
+
+The cluster is **cached** across successive `%dopar%` calls until you call `stopDoSnowflake()`. Worker count defaults to `"auto"` (detected CPU cores minus one for the master thread).
+
+```r
+library(snowflakeR)
+library(foreach)
+
+conn <- sfr_connect()
+
+registerDoSnowflake(conn, mode = "local", workers = 4L)
+
+out <- foreach(i = 1:20, .combine = c, .packages = "stats") %dopar% {
+  median(rnorm(1000))
+}
+
+stopDoSnowflake()
+```
+
+Local mode does not require `sfr_dosnowflake_setup()`, compute pools, or worker images. It is the right first step in every doSnowflake project.
+
+---
+
+## Remote modes: shared infrastructure {#sec-infra}
+
+Before **tasks** or **queue** mode, provision Snowflake objects once per environment:
+
+```r
+sfr_dosnowflake_setup(conn,
+  compute_pool = "MY_POOL",
+  image_repo   = "MY_REPO"
+)
+```
+
+This validates (and may create) objects your account needs: internal **stage** for job payloads, optional **Hybrid Table** for queue mode, schemas, and grants. Exact behaviour depends on role privileges — see `?sfr_dosnowflake_setup`.
+
+### Worker Docker images
+
+Remote modes run R inside a **custom Docker image** pushed to a Snowflake **image repository**. The image must include R, worker scripts, and packages your `%dopar%` body needs (e.g. `forecast`, `dplyr`).
+
+Build from your machine or a CI host:
+
+```r
+sfr_dosnowflake_build_image(
+  conn,
+  dockerfile = "path/to/Dockerfile.worker",
+  image_name = "my_r_worker"
+)
+```
+
+::: {.callout-warning}
+SPCS runs **linux/amd64** only. On Apple Silicon, build with `--platform linux/amd64`. Wrong architecture produces `exec format error` at container start — often reported as job `395030` with empty logs. After rebuilding, **cycle the compute pool** (suspend/resume) so nodes pull the new image.
+:::
+
+Reference Dockerfiles ship with snowflakeR under [`inst/workers/`](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/workers) (see `?sfr_dosnowflake_build_image`).
+
+---
+
+## Tasks mode {#sec-tasks}
+
+### How it works
+
+**Tasks mode** is Snowflake-native batch orchestration. When you call `%dopar%`, the master:
+
+1. **Serializes** all iterations and the R expression to the **stage** (chunked into `chunks_per_job` groups)
+2. **Creates a Task DAG** — one Snowflake Task per chunk, each Task launching an **SPCS job service** that runs the worker container
+3. **Polls** Task status until every chunk succeeds or fails
+4. **Collects** `result_*.rds` files from the stage and applies your `.combine` function
+5. **Cleans up** the Task graph and temporary stage paths
+
+Snowflake Tasks provide scheduling, retry semantics, and visibility in Snowsight — useful when the workload is a **known batch** that must fully complete.
+
+```{mermaid}
+sequenceDiagram
+  participant M as Master R session
+  participant ST as Internal stage
+  participant WH as Warehouse
+  participant T as Task DAG
+  participant S as SPCS job chunk
+
+  M->>ST: Serialize expr + iterations
+  M->>T: Create Task graph via Python bridge
+  T->>WH: Root task schedules children
+  loop Each chunk
+    T->>S: EXECUTE JOB SERVICE worker image
+    S->>ST: Read chunk payload
+    S->>S: Evaluate R expression
+    S->>ST: Write result_*.rds
+  end
+  M->>T: Poll until all chunks SUCCEEDED
+  M->>ST: Collect and combine results
+  M->>T: Drop Task graph
+```
+
+### When to choose Tasks mode
+
+- Fixed iteration count (e.g. 500 SKUs, all must be modeled)
+- Scheduled or repeatable batch jobs where Task history is audit evidence
+- Simpler mental model: **N chunks → N Tasks → N containers**
+- Workloads where **SPCS cold start per chunk** is acceptable relative to chunk runtime (minutes of R work amortize startup)
+
+### When Tasks mode is a poor fit
+
+- **Time-boxed** runs ("spend 30 minutes on the hardest SKUs") — use queue mode with a feeder
+- Very **short** iterations where cold start dominates total time — consider local mode or fewer, larger chunks
+- Need **dynamic re-prioritization** while workers run — queue mode supports ranked re-feeding ([Many-Model](../21_many_model/index.qmd))
+
+### Key parameters
+
+| Parameter | Purpose |
+|-----------|---------|
+| `compute_pool` | SPCS pool for worker containers |
+| `image_uri` | Worker image in image repository |
+| `warehouse` | Warehouse for **user-managed** Task graph (avoids serverless Task privilege requirements) |
+| `chunks_per_job` | How many SPCS jobs to create (`"auto"` sizes from iteration count) |
+| `stage` | Stage name for payloads and results |
+| `timeout_min` / `poll_sec` | How long the master waits and how often it checks status |
+| `result_sync_wait_sec` | Extra wait for stage writes to appear before collection |
+
+### Example
+
+```r
+registerDoSnowflake(conn, mode = "tasks",
+  compute_pool    = "MY_POOL",
+  image_uri       = "mydb.myschema.myrepo/worker:latest",
+  warehouse       = "MY_WH",
+  stage           = "MY_STAGE",
+  timeout_min     = 60L,
+  poll_sec        = 10L,
+  chunks_per_job  = 5L
+)
+
+result <- foreach(i = 1:100, .combine = rbind, .packages = c("dplyr")) %dopar% {
+  data.frame(i = i, val = mean(rnorm(100)))
+}
+
+stopDoSnowflake()
+```
+
+Inside each SPCS container, the worker typically uses **`parallel::mclapply`** to exploit all CPUs on the node — one container per compute node by default (`containers_per_node = 1`), with cores detected automatically.
+
+---
+
+## Queue mode {#sec-queue}
+
+### How it works
+
+**Queue mode** decouples **work creation** from **work execution** using a **Hybrid Table** as a durable queue.
+
+When you call `%dopar%`, the master:
+
+1. Ensures the **queue table** exists (`queue_fqn`, e.g. `CONFIG.DOSNOWFLAKE_QUEUE`)
+2. **Serializes** iterations to the stage (same as Tasks mode)
+3. **Inserts rows** into the Hybrid Table — one row per chunk, status `PENDING`
+4. **Launches workers** — ephemeral SPCS job services, or relies on an already-running **persistent** worker pool
+5. Each worker **claims** a row (lease-based update to avoid double-processing), reads its chunk from the stage, runs R, writes results, marks the row complete
+6. Master **polls** until all rows for this `job_id` are done, then collects results from the stage
+
+Workers **pull** work when ready rather than receiving a fixed Task assignment upfront. That enables dynamic feeding, priority ordering, and time-boxed "screen then refine" pipelines.
+
+```{mermaid}
+flowchart LR
+  subgraph master [Master]
+    M["foreach %dopar%"]
+  end
+
+  subgraph queue [Hybrid Table queue]
+    P[PENDING rows]
+    R[RUNNING rows]
+    D[DONE rows]
+    P --> R --> D
+  end
+
+  subgraph workers [SPCS workers]
+    W1[Worker 1]
+    W2[Worker 2]
+    W3[Worker N]
+  end
+
+  STG[(Stage)]
+
+  M -->|"enqueue chunks"| P
+  W1 -->|"claim row"| P
+  W2 -->|"claim row"| P
+  W3 -->|"claim row"| P
+  W1 --> STG
+  W2 --> STG
+  W3 --> STG
+  M -->|"poll DONE"| D
+  M -->|"collect results"| STG
+```
+
+### What each queue row represents {#sec-queue-rows}
+
+A common point of confusion: **queue rows are not one row per `foreach` iteration**. Each row is one **chunk** — a batch of iterations that a single worker will process together.
+
+When the master serializes your `%dopar%` call, it:
+
+1. Splits all iterations into **N chunks** (controlled by `chunks_per_job`, or `"auto"`)
+2. Writes the R **expression**, **packages**, and shared **export** variables to the **stage**
+3. Writes one **`task_XXX.rds` file per chunk** on the stage, containing the **iteration arguments** for every iteration in that chunk
+4. Inserts **one Hybrid Table row per chunk** — the row is a *pointer* to that chunk's work
+
+**Hybrid Table row (coordination metadata):**
+
+| Column | Meaning |
+|--------|---------|
+| `QUEUE_ID` | Unique row identifier (primary key) |
+| `JOB_ID` | UUID for this `%dopar%` run — ties all chunks of one job together |
+| `CHUNK_ID` | Chunk index (`001`, `002`, …) — maps to `task_001.rds` on the stage |
+| `STAGE_PATH` | Stage directory for this job (e.g. `@STAGE/job_<uuid>/`) |
+| `STATUS` | `PENDING` → `RUNNING` → `DONE` or `FAILED` |
+| `WORKER_ID` | Which SPCS worker claimed the row |
+| `LEASE_UNTIL` | Expiry — stale claims can be re-queued if a worker crashes |
+| `ATTEMPTS` | Retry count |
+| `ERROR_MSG` | Failure detail if `FAILED` |
+
+**Stage payload (iteration parameters and code):**
+
+```
+@STAGE/job_<uuid>/
+  export.rds          ← shared variables from .export / .packages
+  manifest.json       ← expr text, package list, chunk count
+  tasks/
+    task_001.rds      ← list: chunk_id, args, indices
+    task_002.rds      ← args = list of per-iteration arg lists in this chunk
+  results/
+    result_001.rds    ← worker output (written after chunk completes)
+```
+
+Inside `task_001.rds`, the **`args`** field holds the actual **foreach iteration parameters** — e.g. for `foreach(unit_id = sku_ids)`, each element of `args` is the list of loop variables for one SKU. If `chunks_per_job` groups 50 SKUs per chunk, one queue row points to one file containing 50 iterations' worth of arguments.
+
+```{mermaid}
+flowchart TB
+  subgraph foreach [Your foreach loop]
+    I1["iteration: unit_id = SKU_001"]
+    I2["iteration: unit_id = SKU_002"]
+    IN["... 2000 SKUs"]
+  end
+
+  subgraph master [Master serializes]
+    CH1["chunk 001 — 50 iterations"]
+    CH2["chunk 002 — 50 iterations"]
+  end
+
+  subgraph ht [Hybrid Table — one row per chunk]
+    R1["ROW: JOB_ID, CHUNK_ID=001, STAGE_PATH, PENDING"]
+    R2["ROW: JOB_ID, CHUNK_ID=002, STAGE_PATH, PENDING"]
+  end
+
+  subgraph stage [Stage files — iteration args]
+    T1["tasks/task_001.rds — args for 50 SKUs"]
+    T2["tasks/task_002.rds — args for 50 SKUs"]
+  end
+
+  I1 --> CH1
+  I2 --> CH1
+  IN --> CH2
+  CH1 --> R1 --> T1
+  CH2 --> R2 --> T2
+```
+
+When a worker **claims** a row, it reads `CHUNK_ID` and `STAGE_PATH`, loads `tasks/task_{CHUNK_ID}.rds`, evaluates your `%dopar%` expression once per element in `args`, and writes `results/result_{CHUNK_ID}.rds`. The master never puts full iteration data in the Hybrid Table — only enough metadata for workers to find the payload on the stage.
+
+In **many-model feeder** scenarios (screen-then-refine), additional rows can be **inserted dynamically** while workers run — e.g. only the worst-performing SKUs from a first pass — without rebuilding the entire Task graph. See [Many-Model Patterns](../21_many_model/index.qmd).
+
+### Ephemeral vs persistent workers
+
+| `worker_type` | Behaviour |
+|---------------|-----------|
+| **`ephemeral`** (default) | Master launches N SPCS job services for this run; workers exit when the queue is empty |
+| **`persistent`** | Long-running SPCS **service** already polling the queue; multiple `%dopar%` jobs can share the same pool |
+
+Persistent pools suit teams with **frequent** parallel jobs — workers stay warm and avoid repeated cold start. Ephemeral workers suit **occasional** batch runs without maintaining a always-on service.
+
+### When to choose Queue mode
+
+- **Time-boxed** processing — feed the hardest partitions first, stop when budget expires
+- **Elastic** worker count — scale `n_workers` without pre-declaring every chunk as a Task
+- **Many-model "screen then refine"** — Tasks pass for fast models, queue pass for expensive model contests on worst performers
+- **Multi-tenant** pools where several users share warm workers
+
+### Key parameters
+
+| Parameter | Purpose |
+|-----------|---------|
+| `queue_fqn` | Fully qualified Hybrid Table name |
+| `worker_type` | `"ephemeral"` or `"persistent"` |
+| `n_workers` | Container replicas (ephemeral launch) |
+| `pre_warm` | Wait until all workers are READY before enqueueing (benchmarking) |
+| `instance_family` | SPCS sizing — `CPU_X64_S` through `CPU_X64_XL` |
+| `stale_timeout_sec` | Re-queue chunks whose lease expired (worker crash) |
+
+### Example
+
+```r
+registerDoSnowflake(conn, mode = "queue",
+  compute_pool     = "MY_POOL",
+  image_uri        = "mydb.myschema.myrepo/worker:latest",
+  warehouse        = "MY_WH",
+  n_workers        = 4L,
+  queue_fqn        = "MY_DB.MY_SCHEMA.MY_QUEUE",
+  worker_type      = "persistent",
+  pre_warm         = TRUE,
+  instance_family  = "CPU_X64_S"
+)
+
+result <- foreach(unit_id = sku_ids, .combine = rbind) %dopar% {
+  # runs on whichever worker claims this chunk
+  fit_and_forecast(unit_id)
+}
+
+stopDoSnowflake()
+```
+
+See [Many-Model Patterns](../21_many_model/index.qmd) for the full forecasting pipeline built on queue mode.
+
+---
+
+## Stage I/O and why GET/PUT do not apply {#sec-stage}
+
+All remote modes move **serialized R objects** and **result files** through an internal **stage**. Workers access the stage via **volume mounts** mapped into the container filesystem — not via SQL `GET`/`PUT`.
+
+RSnowflake connects through the **SQL REST API**, which does not support client-side `GET`/`PUT`. SPCS workers therefore **must** use mounted paths:
+
+```yaml
+# Job spec (conceptual)
+volumeMounts:
+  - name: stage-vol
+    mountPath: /data/stage
+volumes:
+  - name: stage-vol
+    source: "@DB.SCHEMA.STAGE"
+```
+
+Worker R code reads `STAGE_MOUNT`:
+
+```r
+stage_mount <- Sys.getenv("STAGE_MOUNT", "")
+payload <- readRDS(file.path(stage_mount, "job_abc", "tasks", "chunk_001.rds"))
+```
+
+Package worker templates (`inst/workers/worker_queue.R`) implement a **dual-path** pattern: prefer volume mount, fall back to `GET`/`PUT` only when a JDBC-capable driver is present (not RSnowflake in SPCS).
+
+The master session collects results by listing and reading the same stage paths after workers finish — with optional `result_sync_wait_sec` because volume writes can lag Task status flips.
+
+---
+
+## Generic R executor (without foreach) {#sec-executor}
+
+Not every batch job fits the `%dopar%` loop shape. For **single scripts** or fixed pipelines, snowflakeR provides a lighter **executor** path:
+
+1. Upload an R script to a stage (`sfr_upload_r_script()`)
+2. Launch an SPCS job service that runs the script (`sfr_execute_r_script()`)
+3. Poll status and collect outputs (`sfr_executor_status()`, `sfr_collect_executor_results()`)
+
+The script defines an entry function (default `main(config)`). Configuration passes as a named list — useful for parameterized reports or one-off ETL.
+
+```r
+stage_path <- sfr_upload_r_script(conn, "monthly_retrain.R", stage = "MY_STAGE")
+
+job <- sfr_execute_r_script(
+  conn,
+  r_script_stage_path = stage_path,
+  compute_pool        = "MY_POOL",
+  image_uri           = "mydb.myschema.myrepo/executor:latest",
+  config              = list(run_id = "2026-05-29", horizon = 30L),
+  replicas            = 2L
+)
+
+sfr_executor_status(conn, job$job_name)
+sfr_collect_executor_results(conn, job, stage = "MY_STAGE")
+```
+
+Use **foreach/doSnowflake** when iterations share structure and you want `.combine` semantics. Use the **executor** when you have one monolithic script or need replicas of the same script with different configs.
+
+---
+
+## crew + mirai (advanced) {#sec-crew}
+
+For teams already using the [**crew**](https://github.com/A2Ai/crew) orchestration ecosystem, snowflakeR exposes **`crew_controller_spcs()`** — a long-lived controller that launches SPCS workers speaking **mirai** over the network.
+
+This path suits **DAG-shaped** workflows, custom task queues, and controllers that outlive a single `%dopar%` call. It requires suggested packages **crew** and **mirai**, plus **EAI/network rules** so workers can reach the controller.
+
+```r
+library(crew)
+library(snowflakeR)
+
+conn <- sfr_connect()
+ctl <- crew_controller_spcs(
+  conn,
+  compute_pool = "MY_POOL",
+  image        = "mydb.myschema.myrepo/r_crew:latest",
+  workers      = 4L
+)
+ctl$start()
+# push / pop tasks ...
+ctl$terminate()
+```
+
+doSnowflake's Tasks and Queue modes are the **recommended default** for standard `foreach` loops. crew/mirai is for advanced orchestration — see `?sfr_crew_controller_service` and `?sfr_crew_launch_workers`.
+
+---
+
+## Choosing a pattern {#sec-choose}
+
+| Your situation | Recommended approach |
+|----------------|---------------------|
+| Developing or debugging loop body | `mode = "local"` |
+| Fixed batch, full completion, Task audit trail | `mode = "tasks"` |
+| Time-boxed, priority queue, warm worker pool | `mode = "queue"` |
+| Thousands of partition models + registry | [Many-Model](../21_many_model/index.qmd) on queue or tasks |
+| Single ad hoc R script on SPCS | `sfr_execute_r_script()` |
+| Custom DAG / long-lived controller | `crew_controller_spcs()` |
+
+Decision flow:
+
+```{mermaid}
+flowchart TD
+  START[Parallel R workload] --> Q1{Iterations share<br/>foreach shape?}
+  Q1 -->|No| EXEC[sfr_execute_r_script]
+  Q1 -->|Yes| Q2{SPCS available?}
+  Q2 -->|No| LOCAL[mode = local]
+  Q2 -->|Yes| Q3{Fixed batch<br/>must complete?}
+  Q3 -->|Yes| TASKS[mode = tasks]
+  Q3 -->|No| Q4{Need warm pool<br/>or time-box?}
+  Q4 -->|Yes| QUEUE[mode = queue]
+  Q4 -->|No| TASKS
+```
+
+---
+
+## Monitoring and troubleshooting {#sec-monitor}
+
+| Signal | Where to look |
+|--------|---------------|
+| Task chunk status | Snowsight → Tasks → graph for `DOSNOWFLAKE_*` DAG |
+| SPCS job logs | `SYSTEM$GET_SERVICE_LOGS` |
+| Queue depth | SQL on Hybrid Table — `PENDING` / `RUNNING` / `DONE` counts |
+| Master progress | R console messages from doSnowflake (job ID, chunk count) |
+| Empty SPCS logs + job 395030 | Wrong Docker CPU arch — rebuild `linux/amd64` |
+
+Runnable monitors: `workspace_parallel_spcs_demo.ipynb` and `streamlit_parallel_demo_monitor.py` in [snowflakeR/inst/notebooks](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/notebooks). See [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd).
+
+---
+
+## Companion material {#sec-companion}
+
+| Resource | Description |
+|----------|-------------|
+| Vignette `parallel-dosnowflake` | API reference and concise examples |
+| Vignette `many-model-howto` | End-to-end forecasting with Tasks vs Queue |
+| `workspace_parallel_spcs_setup.ipynb` | One-time infrastructure setup |
+| `workspace_parallel_spcs_demo.ipynb` | Runnable demo loop |
+| `snowflaker_parallel_spcs_config.yaml` | Environment config template |
+| `many-model-howto` vignette | End-to-end many-model walkthrough |
+
+---
+
+## Next steps
+
+[End-to-End Pipeline](../23_end_to_end/index.qmd) — where parallel training fits in the full ML lifecycle.

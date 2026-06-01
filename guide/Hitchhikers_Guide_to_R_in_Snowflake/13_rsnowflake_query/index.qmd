@@ -1,0 +1,206 @@
+---
+title: "RSnowflake: Query"
+subtitle: "DBI, dbplyr, bulk I/O, and Arrow"
+---
+
+## Overview
+
+Once connected ([Connect chapter](../12_rsnowflake_connect/index.qmd)), RSnowflake gives you three layers of data access:
+
+1. **DBI** — standard R database interface (`dbGetQuery`, `dbWriteTable`, …)
+2. **dbplyr** — dplyr verbs translated to SQL and executed **in Snowflake**
+3. **Bulk I/O** — optimized paths for large reads/writes (Snowpark, ADBC, or literal SQL)
+
+The design goal is **push computation to the data**. Your R session sends SQL; the **warehouse** aggregates, filters, and joins close to storage. You `collect()` only what you need for modeling or visualization.
+
+## Learning Objectives
+
+- Run queries, DDL, and table operations with DBI
+- Build lazy dplyr pipelines that execute on the warehouse
+- Understand how RSnowflake chooses bulk write/read backends
+- Know SQL API limits that affect stage I/O
+
+---
+
+## Query execution model {#sec-model}
+
+```{mermaid}
+flowchart LR
+  R[R session RSnowflake]
+  API[SQL REST API or ADBC]
+  WH[Warehouse]
+  STG[(Tables / stages)]
+  R --> API --> WH --> STG
+```
+
+| Step | Where it runs |
+|------|---------------|
+| dplyr pipeline before `collect()` | SQL built in R; **not executed** yet |
+| `collect()`, `dbGetQuery()` | **Warehouse** executes SQL |
+| Result transfer | JSON (SQL API) or Arrow (ADBC) to R |
+
+In Workspace, bulk **writes** may route through **Snowpark** `write_pandas` (Python via reticulate) on an internal network path — still orchestrated by RSnowflake from R, transparent to you.
+
+---
+
+## DBI basics {#sec-dbi}
+
+### Reads and parameterized queries
+
+```r
+df <- dbGetQuery(con, "SELECT * FROM MY_DB.MY_SCHEMA.MY_TABLE LIMIT 100")
+
+df <- dbGetQuery(con,
+  "SELECT * FROM users WHERE age > ?",
+  params = list(21L)
+)
+```
+
+Parameterized queries avoid SQL injection and help the optimizer reuse plans.
+
+### DDL and DML
+
+```r
+dbExecute(con, "CREATE TABLE test_tbl (id INT, name VARCHAR)")
+dbExecute(con, "INSERT INTO test_tbl VALUES (1, 'Alice')")
+```
+
+`dbExecute()` returns rows affected; use for statements without result sets.
+
+### Table round-trip
+
+```r
+dbWriteTable(con, "iris_copy", iris, overwrite = TRUE)
+iris_back <- dbReadTable(con, "iris_copy")
+dbAppendTable(con, "iris_copy", iris[1:10, ])
+dbRemoveTable(con, "iris_copy")
+```
+
+::: {.callout-note}
+Use **fully qualified** names when Workspace session context is unset. RSnowflake uppercases unquoted identifiers by default — see [Connect §case](../12_rsnowflake_connect/index.qmd#sec-case).
+:::
+
+---
+
+## dbplyr: lazy SQL from dplyr {#sec-dbplyr}
+
+**dbplyr** turns dplyr into a SQL compiler. Tables become lazy; verbs append to a query plan until you **`collect()`**:
+
+```r
+library(dplyr)
+
+tbl(con, in_schema("MY_SCHEMA", "ORDERS")) |>
+  filter(STATUS == "OPEN", ORDER_DATE >= "2024-01-01") |>
+  group_by(REGION) |>
+  summarise(
+    n       = n(),
+    revenue = sum(AMOUNT, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(revenue)) |>
+  collect()   # single SQL round trip
+```
+
+**Why lazy matters:** `filter()` and `summarise()` do not pull data to R. A 10-billion-row table stays in Snowflake until the final aggregation is computed on the warehouse.
+
+Snowflake-specific translations include `VARIANT` access, `ARRAY_AGG`, `FLATTEN`, and approximate aggregates — see RSnowflake `getting-started` vignette.
+
+::: {.callout-warning}
+dbplyr keeps Snowflake's **UPPERCASE** column names. snowflakeR's `sfr_query()` lowercases — do not mix blindly in joins between APIs.
+:::
+
+---
+
+## Bulk write routing {#sec-bulk}
+
+Small tables can use literal `INSERT` statements. Large writes use faster paths selected by **`RSnowflake.upload_method`**:
+
+```{mermaid}
+flowchart TD
+  WT[dbWriteTable / dbAppendTable]
+  AUTO{upload_method auto?}
+  SIZE{rows x cols > threshold?}
+  SP[Snowpark write_pandas]
+  ADBC[ADBC PUT + COPY INTO]
+  LIT[Literal INSERT]
+  WT --> AUTO
+  AUTO -->|Workspace large| SP
+  AUTO -->|Local + ADBC| SIZE
+  SIZE -->|yes| ADBC
+  SIZE -->|no| LIT
+  AUTO -->|small| LIT
+```
+
+| Method | Mechanism | Typical environment |
+|--------|-----------|---------------------|
+| `"auto"` (default) | Picks best available | Most users |
+| `"snowpark"` | Python `write_pandas` via reticulate | **Workspace** bulk writes |
+| `"adbc"` | Arrow file + `COPY INTO` | **Local** / Posit with `adbcsnowflake` |
+| `"literal"` | Row-by-row or batched INSERT | Small data, max compatibility |
+
+```r
+options(RSnowflake.upload_method = "snowpark")
+dbWriteTable(con, "big_table", large_df)
+
+options(RSnowflake.bulk_write_threshold = 100000L)  # rows × cols
+```
+
+In Workspace benchmarks, Snowpark routing is often **~10× faster** than literal INSERT for tens of thousands of rows. Locally, ADBC wins for wide tables when installed.
+
+**Reads** follow a similar `"auto"` / `"adbc"` backend via `RSnowflake.backend`.
+
+---
+
+## Arrow and ADBC {#sec-arrow}
+
+**ADBC** (Arrow Database Connectivity) uses the Go Snowflake driver for columnar bulk transfer:
+
+```r
+requireNamespace("adbcsnowflake", quietly = TRUE)
+
+options(RSnowflake.backend = "adbc")
+df <- dbGetQuery(con, "SELECT * FROM big_table")
+options(RSnowflake.backend = "auto")
+```
+
+**Workspace considerations:**
+
+- Installing `adbcsnowflake` may require **Go compiler** and **EAI** for module downloads (~2 min cold bootstrap)
+- ADBC can use internal **`SNOWFLAKE_HOST`** gateway with OAuth — no public URL required
+- Bulk writes may still prefer Snowpark in `"auto"` even when ADBC is installed
+
+Bake ADBC into a [CRE](../09_custom_runtime_and_ml_jobs/index.qmd) to avoid repeat installs. Deep dive: [WORKSPACE_ADBC.md](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md).
+
+**`dbGetQueryArrow()`** provides DBI Arrow compatibility via `nanoarrow`. SQL API v2 returns JSON today — native server-side Arrow is on the roadmap; for large reads, `dbGetQuery()` with ADBC backend is the practical path.
+
+---
+
+## SQL API limitations {#sec-rest}
+
+RSnowflake uses the [SQL REST API](../11_rsnowflake_sql_api/index.qmd). These affect **how** you I/O, not **whether** you can query:
+
+| Unsupported | Implication |
+|-------------|-------------|
+| `GET` / `PUT` | No client-side stage transfer over REST |
+| `USE DATABASE` / `SCHEMA` | Set context in connection or qualify names |
+| `ALTER SESSION` | Set params via supported alternatives |
+
+**SPCS workers** with RSnowflake must use **stage volume mounts** for file I/O — see [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd#sec-stage) and [Troubleshooting](../appendices/C_troubleshooting/index.qmd).
+
+---
+
+## Choosing an access pattern {#sec-choose}
+
+| Goal | Pattern |
+|------|---------|
+| Ad hoc SQL | `dbGetQuery()` |
+| ETL-style transforms | dbplyr pipeline + `collect()` at end |
+| Large local export | ADBC backend + aggregate in SQL first |
+| Workspace notebook write | `"auto"` or `"snowpark"` |
+| ML platform objects | snowflakeR `sfr_*` APIs (may share DBI via `sfr_dbi_connection()`) |
+
+---
+
+## Next steps
+
+[RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd) — bootstrap order, gateway, ADBC in notebooks.

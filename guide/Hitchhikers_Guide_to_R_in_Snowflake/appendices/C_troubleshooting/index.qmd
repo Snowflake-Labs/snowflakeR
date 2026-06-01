@@ -1,0 +1,102 @@
+---
+title: "Appendix C: Troubleshooting"
+subtitle: "Common gotchas for R on Snowflake"
+---
+
+Curated from production Workspace notebooks and common support patterns. See also [Glossary](../F_glossary/index.qmd).
+
+---
+
+## Bootstrap & install {#sec-bootstrap}
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| EAI missing | CRAN/GitHub timeout | Re-run bootstrap; verify EAI attached to notebook runtime ([Network & EAI](../../07_network_and_eai/index.qmd)) |
+| Source compile | 5+ min `R CMD INSTALL` | Use pre-built `.tar.gz` in YAML `tarballs:` ([Appendix B](../B_config_reference/index.qmd)) |
+| reticulate + rpy2 crash | Segfault on `library(snowflakeR)` | Require **reticulate ≥ 1.25** in config |
+| Low disk | Cryptic install failure | R + tidyverse needs ~2 GB; clean cache or use CRE |
+| First bootstrap slow | ~60s+ per compute restart | Typical for standard config; longer with extra packages — use CRE to avoid repeat installs |
+
+---
+
+## Workspace notebooks {#sec-workspace}
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| `sfnb_setup` not found | ImportError | Add `/filesystem/<hash>/snowflakeR/inst/notebooks` to `sys.path` ([Bootstrap](../../06_workspace_bootstrap/index.qmd)) |
+| Object does not exist | Table "missing" | Set context: `sfr_load_notebook_config()` or `sfr_use()` — **reassign** return value |
+| `%%R` unknown | Cell fails | Re-run bootstrap; restart kernel |
+| renv hang (Terminal `R`) | Bootstrapping renv under `/filesystem` | Use `%%R`; bare `R` only outside repo path — [Appendix G](../G_workspace_container_internals/index.qmd#sec-ws-filesystem) |
+| Extra line breaks in R output | Unreadable tables | Use `rprint()`, `rview()`, `rglimpse()` from snowflakeR |
+| ggplot not showing | Blank cell | `%%R -w 700 -h 450` and **`print(p)`** on ggplot object |
+| Narrow output | Truncated columns | Bootstrap sets `options(width = 200)`; adjust via `set_r_console_width()` |
+
+---
+
+## Connection & auth {#sec-auth}
+
+| Issue | Fix |
+|-------|-----|
+| Mixed local/Workspace profiles | Use `dbConnect(Snowflake())` without `name=` in Workspace |
+| PAT in notebook | Unnecessary — session OAuth is automatic after bootstrap |
+| Wrong warehouse | Set in YAML config or `sfr_use(conn, warehouse = "...")` |
+
+---
+
+## Data & column names {#sec-data}
+
+| Issue | Fix |
+|-------|-----|
+| UPPER vs lower columns | `sfr_query()` lowercases; dbplyr keeps UPPER — be consistent |
+| Case-sensitive joins | Quote identifiers or align casing in dplyr |
+
+---
+
+## RSnowflake / SQL API {#sec-sql-api}
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| `GET`/`PUT` error 391911 | HTTP 422 | Use stage volume mounts in SPCS; not supported on REST API |
+| `USE` fails | Context error | Fully qualify names or set context in connection params |
+| Slow bulk write in Workspace | Minutes for INSERT | Set `RSnowflake.upload_method = "snowpark"` or use `"auto"` |
+
+---
+
+## SPCS & parallel {#sec-spcs}
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Wrong CPU arch | `exec format error`, job `395030` | Rebuild with `--platform linux/amd64`; cycle compute pool |
+| Stale image on pool | Old code runs | `ALTER COMPUTE POOL ... SUSPEND` then `RESUME` |
+| Worker cannot read stage | File not found | Mount stage as volume; set `STAGE_MOUNT` env var |
+| Empty SPCS logs | Silent failure | Check architecture first; then `SYSTEM$GET_SERVICE_LOGS` |
+
+---
+
+## Model Registry & serving {#sec-registry}
+
+| Issue | Fix |
+|-------|-----|
+| Deploy fails missing conda package | Use conda-forge in inference image or custom CRE |
+| Column case at predict time | Match training schema; quote identifiers |
+| R model not found at inference | Verify CustomModel + rpy2 path in container image |
+
+---
+
+## Python / reticulate {#sec-python}
+
+| Issue | Fix |
+|-------|-----|
+| Wrong Python env | Set `RETICULATE_PYTHON` in `~/.Renviron` **before** first snowflakeR call |
+| Locked interpreter | Restart R session after changing venv |
+| `snowflake-ml-python` too old | `pip install -U snowflake-ml-python`; run `sfr_check_environment()` |
+
+---
+
+## Where to get help {#sec-help}
+
+| Resource | Link |
+|----------|------|
+| Package issues | [snowflakeR](https://github.com/Snowflake-Labs/snowflakeR/issues), [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake/issues) |
+| Snowflake docs | [SQL API](https://docs.snowflake.com/en/developer-guide/sql-api/index), [Workspace](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks) |
+| This guide | [Production checklist](../D_production_checklist/index.qmd) |

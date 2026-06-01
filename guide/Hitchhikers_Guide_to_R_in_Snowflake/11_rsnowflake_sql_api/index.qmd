@@ -1,0 +1,107 @@
+---
+title: "The Snowflake SQL API"
+subtitle: "Driverless REST access — how RSnowflake connects"
+---
+
+## Overview
+
+**RSnowflake** does not use JDBC or ODBC. It speaks to Snowflake through the **SQL API** — HTTPS REST endpoints that submit SQL and return results as JSON (or Arrow with ADBC).
+
+Understanding the SQL API explains RSnowflake's strengths, limits, and why patterns like **WebR-in-the-browser** are possible without a native driver install.
+
+## Learning Objectives
+
+- Explain what the SQL API is and how it differs from classic drivers
+- List supported vs unsupported command classes
+- Compare SQL API vs installed drivers (pros/cons)
+- See how Arrow/ADBC improves bulk reads
+
+Terms: [Glossary](../appendices/F_glossary/index.qmd).
+
+---
+
+## What is the SQL API? {#sec-what}
+
+The [Snowflake SQL API](https://docs.snowflake.com/en/developer-guide/sql-api/index) lets any HTTP client:
+
+1. Authenticate (JWT, OAuth, PAT, etc.)
+2. `POST` a SQL statement to `/api/v2/statements`
+3. Poll for completion and fetch result sets
+
+**No driver binary** — only TLS and JSON. RSnowflake implements DBI on top of this stack.
+
+```{mermaid}
+sequenceDiagram
+  participant R as R RSnowflake
+  participant API as SQL REST API
+  participant SF as Snowflake engine
+  R->>API: POST statement plus auth
+  API->>SF: Execute SQL
+  SF-->>API: Result partitions
+  API-->>R: JSON or Arrow rows
+```
+
+## What it supports {#sec-supports}
+
+Typical **server-side SQL** works:
+
+- `SELECT`, `INSERT`, `MERGE`, DDL (`CREATE TABLE`, etc.)
+- Most DML/DDL you would run from a SQL worksheet
+- Parameter binding (with RSnowflake's DBI interface)
+- Multi-statement batches (within API limits)
+
+## What it does not support {#sec-limits}
+
+Client-side or session-protocol commands are **not** available over the SQL API:
+
+| Unsupported | Implication |
+|-------------|-------------|
+| `GET` / `PUT` | No stage file transfer via SQL — use **stage volume mounts** in SPCS or Snowflake's file API elsewhere |
+| `USE DATABASE` / `USE SCHEMA` | Set context in connection params or fully qualify names |
+| `ALTER SESSION` | Set session parameters via supported alternatives or JDBC-only paths |
+| Some legacy commands | See Snowflake SQL API docs for current list |
+
+::: {.callout-warning}
+SPCS workers using RSnowflake **must** use volume-mounted stages for file I/O — not `GET`/`PUT` SQL. See [Troubleshooting](../appendices/C_troubleshooting/index.qmd).
+:::
+
+## Pros and cons {#sec-pros-cons}
+
+| | SQL API (RSnowflake) | JDBC/ODBC driver |
+|--|----------------------|------------------|
+| **Install footprint** | R package only | JVM/ODBC stack, admin burden |
+| **Serverless / browser** | Possible (HTTPS) | Impractical |
+| **DBI + dbplyr** | Yes | Yes (other drivers) |
+| **Stage file I/O** | No `GET`/`PUT` | Often yes |
+| **Ecosystem maturity** | Newer | Decades of tooling |
+
+### Why WebR + SQL API matters {#sec-webr}
+
+[WebR](https://docs.r-wasm.org/webr/latest/) runs R in the browser (WASM). Without a native Snowflake driver, **RSnowflake + SQL API** is a viable path to query Snowflake from client-only R — useful for demos, internal tools, or constrained desktops. Production patterns still favor full RStudio/Posit or Workspace for ML workflows.
+
+## Arrow and ADBC {#sec-arrow}
+
+Default SQL API results deserialize through JSON — fine for moderate row counts.
+
+For **large bulk reads**, RSnowflake optionally uses **ADBC** (Arrow Database Connectivity):
+
+- Columnar Arrow streams with less overhead
+- Automatic fallback to SQL API if ADBC unavailable
+- Workspace bootstrap may need extra install time for ADBC (Go driver compile)
+
+See [RSnowflake: Query](../13_rsnowflake_query/index.qmd#sec-arrow).
+
+## Relationship to snowflakeR {#sec-snowflaker}
+
+| Package | Transport |
+|---------|-----------|
+| **RSnowflake** | SQL API (+ optional ADBC) |
+| **snowflakeR** | Python `snowflake-ml-python` / Snowpark session (different stack) |
+
+Use `sfr_dbi_connection()` when you need both in one R session.
+
+## Next steps {#sec-next}
+
+[RSnowflake: Connect](../12_rsnowflake_connect/index.qmd) — auth and `dbConnect()`.
+
+[RSnowflake: Query](../13_rsnowflake_query/index.qmd) — dbplyr and bulk I/O.

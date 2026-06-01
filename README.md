@@ -8,11 +8,15 @@
 > use is at your own risk. Feedback, bug reports, and contributions are
 > welcome via [GitHub Issues](https://github.com/Snowflake-Labs/snowflakeR/issues).
 
-> **Author:** [Simon Field](https://www.linkedin.com/in/fieldy6961) — SnowCAT
-
 R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datasets, and SPCS model serving. Works in **local R environments** (RStudio, VS Code, terminal) and **Snowflake Workspace Notebooks**.
 
 > **Companion package:** For standard DBI-compliant database access (`dbGetQuery`, `dbWriteTable`, `dbplyr`, RStudio Connections Pane, etc.), see [**RSnowflake**](https://github.com/Snowflake-Labs/RSnowflake). `snowflakeR` focuses on ML platform features; `RSnowflake` provides the database connectivity layer.
+
+## Implementation guide
+
+**[The Hitchhiker's Guide to R in Snowflake](https://snowflake-labs.github.io/snowflakeR/)** (*Don't Panic*) — end-to-end documentation for Workspace Notebooks, RSnowflake, and snowflakeR. Source: [`guide/Hitchhikers_Guide_to_R_in_Snowflake`](https://github.com/Snowflake-Labs/snowflakeR/tree/main/guide/Hitchhikers_Guide_to_R_in_Snowflake).
+
+Companion packages link here from their READMEs: [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake), [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang).
 
 ## Overview
 
@@ -186,6 +190,7 @@ context automatically. No separate config copy step is needed -- edit the
 | `vignette("parallel-dosnowflake")` | Parallel `foreach`, SPCS executor, `crew` / `mirai` workers |
 | `vignette("experiments")` | Experiment runs, params, metrics, artifacts, `tune` hooks |
 | `vignette("model-monitoring")` | Drift, performance, and statistics for deployed models |
+| `vignette("many-model-howto")` | Many-model / partition-keyed forecasting patterns |
 
 ## Requirements
 

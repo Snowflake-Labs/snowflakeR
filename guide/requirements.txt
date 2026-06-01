@@ -1,0 +1,3 @@
+# Minimal dependencies for Quarto book CI (no Snowflake execution in CI)
+jupyter
+nbformat

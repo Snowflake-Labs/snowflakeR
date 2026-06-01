@@ -347,11 +347,12 @@ models in parallel using Snowpark Container Services (SPCS), persist
 them to a stage, register them in Model Registry as a single model
 version, and run server-side batch inference via
 <code>run_batch</code>.</p>
-<p>The accompanying <strong>reference implementation</strong> lives in
-<code>internal/doSnowflake/demos/parallel_forecast/</code>. The code
-snippets below are extracted from that implementation. Lines marked
-<code>## ADAPT</code> are the parts you replace for your own data and
-models.</p>
+<p>The accompanying <strong>reference notebooks</strong> ship in
+snowflakeR:
+<code>inst/notebooks/workspace_parallel_spcs_setup.ipynb</code> and
+<code>workspace_parallel_spcs_demo.ipynb</code>. The code snippets below
+follow that pattern. Lines marked <code>## ADAPT</code> are the parts
+you replace for your own data and models.</p>
 <div id="architecture-overview" class="section level2">
 <h2>1. Architecture Overview</h2>
 <p>The many-model workflow has four phases:</p>
@@ -865,9 +866,10 @@ exist.</p>
 <li><strong><code>vignette(&quot;parallel-dosnowflake&quot;)</code></strong>: the
 low-level <code>registerDoSnowflake</code> API reference (foreach
 backend, generic SPCS executor, crew/mirai workers).</li>
-<li><strong>Reference implementation</strong>:
-<code>internal/doSnowflake/demos/parallel_forecast/</code> contains the
-complete runnable demo with configs, deploy scripts, and tests.</li>
+<li><strong>Reference notebooks</strong>:
+<code>inst/notebooks/workspace_parallel_spcs_setup.ipynb</code>,
+<code>workspace_parallel_spcs_demo.ipynb</code> contains the complete
+runnable demo with configs, deploy scripts, and tests.</li>
 <li><strong>Function reference</strong>:
 <code>?sfr_log_many_model</code>, <code>?sfr_run_batch</code>,
 <code>?sfr_model_registry</code>,

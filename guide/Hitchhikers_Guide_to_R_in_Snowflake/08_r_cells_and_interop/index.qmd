@@ -1,0 +1,443 @@
+---
+title: "R Cells & Interop"
+subtitle: "%%R magic, outputs, and Python↔R data exchange"
+---
+
+## Overview
+
+Workspace Notebooks expose a **Python kernel** — there is no separate R kernel in the notebook UI. R users work through **`%%R` cells**: IPython cell magic that hands the cell body to **rpy2**, which runs it in an embedded R interpreter inside the same Python process.
+
+That design choice is fundamental. It means:
+
+- Bootstrap runs once in **Python** (`setup_notebook()`)
+- All subsequent ML and stats work can live in **`%%R` cells**
+- **SQL cells** still run on the warehouse (unchanged)
+- **snowflakeR** and **RSnowflake** both run inside the embedded R session
+
+This chapter explains how that feels in practice: session persistence, passing data across the bridge, readable output, plotting, and mixing R with Python and SQL in one notebook. For the three-package stack, see [Architecture](../02_architecture/index.qmd). For bootstrap detail, see [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd).
+
+## Learning Objectives
+
+- Explain why `%%R` cells are Python cells under the hood
+- Use `-i` / `-o` magic flags and know when to avoid cross-bridge data transfer
+- Configure output and plots for Workspace rendering
+- Structure multi-language notebooks and resolve `/filesystem/` paths
+
+---
+
+## There is no R kernel {#sec-no-r-kernel}
+
+Snowflake Workspace follows the broader Jupyter model: one **active kernel** per notebook session. Today that kernel is **Python** (Snowpark + IPython).
+
+| What you see in UI | What actually runs |
+|--------------------|-------------------|
+| Python cell | Python / Snowpark |
+| SQL cell | SQL on selected **warehouse** |
+| "R cell" (`%%R`) | **Python kernel** → rpy2 → embedded **R** |
+
+You never select "R" as a kernel. After bootstrap registers the magic, you prefix R code with `%%R` and write normal R syntax below it. Variables, loaded packages, and `conn` objects **persist across `%%R` cells** within the same session — analogous to running cells top-to-bottom in RStudio.
+
+::: {.callout-note title="What is rpy2?"}
+**[rpy2](https://rpy2.github.io/)** embeds a full R interpreter in the Python process (not a subprocess). It registers **`%%R`** so IPython routes cell text to R and returns stdout, values, and plots to the notebook display.
+:::
+
+::: {.callout-note title="What is reticulate?"}
+**[reticulate](https://rstudio.github.io/reticulate/)** is the R→Python bridge. When you call `sfr_connect()` or Feature Store APIs, snowflakeR uses reticulate to invoke **`snowflake-ml-python`**. You do not write that Python yourself — but it explains why snowflakeR needs a compatible Python env alongside rpy2.
+:::
+
+::: {.callout-tip appearance="minimal" title="Why not a native R kernel (IRkernel)?"}
+Jupyter supports a standalone **R kernel** ([IRkernel](https://github.com/IRkernel/IRkernel)) on desktop or self-hosted Hub. Workspace today exposes **one Python kernel** per session; we use **`%%R`** instead. CRE can bake IRkernel on disk, but without platform kernel selection you still would not get a Snowsight “R kernel” UX — and you would lose a single shared session with SQL cells and snowflakeR’s Snowpark bridge. See [Appendix G](../appendices/G_workspace_container_internals/index.qmd#sec-ws-irkernel-vs-magic).
+:::
+
+---
+
+## Architecture in a mixed notebook {#sec-architecture}
+
+```{mermaid}
+flowchart TB
+  subgraph notebook [Workspace Notebook]
+    PY[Python cells bootstrap Snowpark]
+    SQL[SQL cells]
+    Rcell["%%R cells"]
+  end
+
+  subgraph ipy [Python / IPython kernel]
+    rpy2[rpy2 embeds R]
+    reticulate[reticulate inside R]
+  end
+
+  subgraph rlayer [Embedded R session]
+    SFR[snowflakeR]
+    RS[RSnowflake optional]
+  end
+
+  subgraph pyml [Python ML stack]
+    ML[snowflake-ml-python]
+    SP[Snowpark session]
+  end
+
+  subgraph sf [Snowflake]
+    WH[(Warehouse)]
+    MLAPI[Feature Store / Registry / SPCS]
+  end
+
+  PY --> SP
+  Rcell --> rpy2 --> SFR
+  SFR --> reticulate --> ML --> MLAPI
+  SFR --> RS
+  RS --> WH
+  SQL --> WH
+  ML --> SP
+```
+
+**Typical roles:**
+
+| Component | Use in notebook |
+|-----------|-----------------|
+| **snowflakeR** | ML platform — Feature Store, Registry, experiments, doSnowflake |
+| **RSnowflake** | DBI/dbplyr, Connections-style SQL, optional bulk write paths |
+| **Snowpark (Python)** | ETL, `session.table()`, passing small frames to R with `-i` |
+| **SQL cells** | DDL, context, warehouse-side transforms |
+
+Both R packages can coexist. Prefer **one connection story**: `sfr_connect()` then `sfr_dbi_connection()` if you need dplyr ([RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd)).
+
+---
+
+## Session lifecycle {#sec-lifecycle}
+
+```{mermaid}
+sequenceDiagram
+  participant U as You
+  participant PY as Python kernel
+  participant BOOT as setup_notebook
+  participant R as Embedded R via rpy2
+
+  U->>PY: Run bootstrap cell
+  PY->>BOOT: micromamba, EAI, %%R magic
+  U->>PY: Run %%R cell — library(snowflakeR)
+  PY->>R: Execute R code
+  R-->>PY: Output / plots
+  PY-->>U: Display in notebook
+  Note over R: conn, data, packages persist
+  U->>PY: Next %%R cell
+  PY->>R: Same R session continues
+```
+
+| Event | What happens |
+|-------|----------------|
+| **Start session** | Empty Python kernel; R not installed until bootstrap |
+| **After bootstrap** | R available; `%%R` magic registered |
+| **First `%%R` cell** | Loads packages, creates `conn` |
+| **Later `%%R` cells** | Reuse same R workspace — no need to `library()` every cell unless you prefer explicitness |
+| **Restart session** | R state lost — re-run bootstrap (fast if cached/CRE) |
+| **End session** | Container recycled; interactive installs may need YAML/CRE |
+
+---
+
+## First R cells {#sec-first-r}
+
+**Required order:**
+
+1. **Python:** `setup_notebook(...)` — see [Bootstrap](../06_workspace_bootstrap/index.qmd)
+2. **R (`%%R`):** connect and smoke test
+
+```r
+%%R
+library(snowflakeR)
+conn <- sfr_connect()
+conn <- sfr_load_notebook_config(conn)   # warehouse / db / schema from YAML
+sfr_query(conn, "SELECT CURRENT_USER(), CURRENT_ROLE()")
+```
+
+RSnowflake-only path (no ML Python stack beyond what bootstrap installed):
+
+```r
+%%R
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake())
+dbGetQuery(con, "SELECT CURRENT_USER()")
+```
+
+In Workspace, both paths use **session OAuth** — no PAT in cells. Bootstrap exports `SNOWFLAKE_*` env vars RSnowflake reads automatically.
+
+---
+
+## The `%%R` magic line {#sec-magic}
+
+The first line of an R cell is **not R code** — it is an IPython directive:
+
+```r
+%%R
+# Everything below this line is R
+x <- 1 + 1
+```
+
+Optional flags on the magic line:
+
+| Flag | Meaning | Example |
+|------|---------|---------|
+| **`-i var`** | Import Python variable into R | `%%R -i py_df` |
+| **`-o var`** | Export R object to Python | `%%R -o r_df` |
+| **`-w` / `-h`** | Plot width / height (pixels) | `%%R -w 700 -h 450` |
+
+Combine flags: `%%R -i py_df -o r_summary -w 600 -h 400`.
+
+### Passing Python → R (`-i`)
+
+Use for **small** objects created in Python (config dicts, sampled DataFrames):
+
+```python
+# Python cell
+import pandas as pd
+py_data = pd.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+```
+
+```r
+%%R -i py_data
+str(py_data)      # R data.frame
+summary(py_data)
+```
+
+rpy2 converts common types: pandas DataFrame → R data.frame, scalars → R vectors.
+
+### Passing R → Python (`-o`)
+
+```r
+%%R -o r_result
+r_result <- sfr_query(conn, "SELECT * FROM my_table LIMIT 100")
+```
+
+```python
+# Python cell
+r_result.head()   # pandas DataFrame in Python
+```
+
+The bundled **`r_helpers.py`** (from `sfnb_setup`) also wires richer conversions for notebook displays — lazy dbplyr tables can execute SQL via Snowpark and land as pandas grids without manual `-o` in some workflows.
+
+### When **not** to use `-i` / `-o`
+
+| Anti-pattern | Better approach |
+|--------------|-----------------|
+| Passing million-row DataFrames | `sfr_write_table()` / SQL materialization; read in R with `sfr_read_table()` |
+| Shuttling training data every cell | One table in Snowflake; both languages query it |
+| Round-tripping large objects for ETL | Python Snowpark **or** R/dbplyr — pick one pipeline per step |
+
+**Rule of thumb:** cross the bridge for **prototypes and small samples**; use **Snowflake tables** as the system of record for ML datasets.
+
+---
+
+## Output helpers {#sec-outputs}
+
+Workspace's HTML renderer can insert **extra line breaks** between lines of R `print()` output — tables look stretched and hard to read. snowflakeR provides helpers that emit output in a single clean pass:
+
+| Function | Replaces | Use for |
+|----------|----------|---------|
+| `rprint(x)` | `print(x)` | Models, lists, data frames |
+| `rview(df, n = 10)` | `head(df)` | Quick row preview |
+| `rglimpse(df)` | `glimpse()` / `str()` | Column types and sample values |
+| `rcat(...)` | `cat()` | Messages without double spacing |
+
+```r
+%%R
+df <- sfr_query(conn, "SELECT * FROM orders LIMIT 50")
+rview(df, n = 8)
+rglimpse(df)
+```
+
+Bootstrap sets **`options(width = 200)`** and **`options(tibble.width = Inf)`** so wide tibbles do not wrap aggressively. Adjust from Python if needed:
+
+```python
+from sfnb_setup import set_r_console_width
+set_r_console_width(150)
+```
+
+---
+
+## Plotting {#sec-plots}
+
+Workspace does not use RStudio's plot pane. **ggplot2** and base graphics need:
+
+1. **Explicit dimensions** on the magic line
+2. **`print(p)`** on ggplot objects — the grid is not auto-printed
+
+```r
+%%R -w 700 -h 450
+library(ggplot2)
+p <- ggplot(mtcars, aes(wt, mpg)) + geom_point() + theme_minimal()
+print(p)
+```
+
+Without `print(p)`, the cell may run successfully but show a blank output area. Tune `-w` / `-h` for slide exports vs inline notebook viewing.
+
+---
+
+## Session context in R {#sec-context}
+
+Workspace often **does not** set database/schema the way Snowsight worksheets do. Set context before unqualified table names:
+
+```r
+%%R
+conn <- sfr_connect()
+conn <- sfr_load_notebook_config(conn)   # from snowflaker_*.yaml
+```
+
+Or explicitly (must **reassign** — `sfr_use()` returns a new object):
+
+```r
+%%R
+conn <- sfr_use(conn, warehouse = "ML_WH", database = "ML_DB", schema = "FEATURES")
+sfr_fqn(conn, "TRAINING_DATA")   # "ML_DB.FEATURES.TRAINING_DATA"
+```
+
+SQL cells can run `USE WAREHOUSE` / `USE SCHEMA` for warehouse context; R session context is separate — YAML + `sfr_load_notebook_config()` keeps R and your config aligned.
+
+---
+
+## Filesystem layout in Workspace {#sec-filesystem}
+
+Git-connected projects mount the repo under **`/filesystem/<session-hash>/`**. The hash **changes per session** — never hard-code it.
+
+### Why path discovery matters
+
+| Problem | Cause |
+|---------|--------|
+| `ModuleNotFoundError: sfnb_setup` | Notebook not in same folder as `sfnb_setup.py` |
+| Wrong config loaded | Relative `config=` resolved from unreliable cwd |
+| Broken imports after restart | Different mount hash — discovery pattern still works |
+
+| Notebook location | Bootstrap pattern |
+|-------------------|-------------------|
+| `snowflakeR/inst/notebooks/*.ipynb` | `from sfnb_setup import setup_notebook` directly |
+| Anywhere else in the repo tree | Scan `/filesystem/`, add `snowflakeR/inst/notebooks` to `sys.path` (see below) |
+
+```python
+import sys, os
+
+_repo_root = None
+for _h in os.listdir("/filesystem"):
+    _p = os.path.join("/filesystem", _h, "snowflakeR", "inst", "notebooks")
+    if os.path.isdir(_p):
+        _repo_root = os.path.join("/filesystem", _h)
+        sys.path.insert(0, _p)
+        break
+
+if _repo_root is None:
+    raise RuntimeError("Could not find snowflakeR/inst/notebooks under /filesystem/")
+
+from sfnb_setup import setup_notebook
+
+setup_notebook(
+    config=os.path.join(_repo_root, "internal", "my_project", "snowflaker_config.yaml"),
+    packages=["snowflakeR", "RSnowflake"],
+)
+```
+
+Keep **one copy** of `sfnb_setup.py` in the repo (usually `snowflakeR/inst/notebooks/`) instead of duplicating it per folder. Full walkthrough: [Bootstrap §filesystem](../06_workspace_bootstrap/index.qmd#sec-filesystem).
+
+---
+
+## Structuring a multi-language notebook {#sec-mixed}
+
+A productive layout separates **setup**, **data**, **modeling**, and **operational** steps:
+
+```{mermaid}
+flowchart TD
+  C1["1 Python — setup_notebook"]
+  C2["2 SQL — DDL, USE context, seed tables"]
+  C3["3 R — connect, features, train"]
+  C4["4 Python — Snowpark ETL optional"]
+  C5["5 R — log model, registry"]
+  C6["6 SQL — verify scores / grants"]
+  C1 --> C2 --> C3 --> C4 --> C5 --> C6
+```
+
+| Cell | Language | Runs on | Example |
+|------|----------|---------|---------|
+| Bootstrap | Python | Container kernel | `setup_notebook()` |
+| Context / DDL | SQL | **Warehouse** | `CREATE TABLE`, `USE WAREHOUSE` |
+| Explore / model | R (`%%R`) | Embedded R | `sfr_connect()`, tidymodels |
+| Heavy ETL | Python | Snowpark on warehouse | `session.write_pandas()` |
+| ML platform | R (`%%R`) | Embedded R | `sfr_log_model()` |
+| Validation | SQL | **Warehouse** | `SELECT COUNT(*) FROM scores` |
+
+**Compute reminder:** SQL uses **warehouse credits**; R/Python kernel work uses **container runtime credits**; Snowflake ML API calls may touch both depending on operation.
+
+---
+
+## Installing extra R packages in-session {#sec-packages}
+
+Bootstrap installs packages from YAML. For ad hoc additions in a session:
+
+```r
+%%R
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+install.packages("forecast", quiet = TRUE)
+suppressPackageStartupMessages(library(forecast))
+```
+
+Workspace has **no interactive stdin** — always set `repos`, use `quiet = TRUE`, and suppress startup messages. Packages with **system libraries** (e.g. `sf` → GDAL) may fail with plain `install.packages()`; add **conda-forge** equivalents (`r-sf`) to YAML instead.
+
+Interactive installs **do not survive** container recycle — add recurring packages to `snowflaker_*.yaml` or bake into a [CRE](../09_custom_runtime_and_ml_jobs/index.qmd).
+
+::: {.callout-warning}
+Pin **`r-reticulate>=1.25`** in config. Older reticulate versions can **segfault** when loaded with rpy2 in the same process.
+:::
+
+---
+
+## Workspace vs local RStudio {#sec-local-vs-ws}
+
+| Aspect | Local RStudio / Posit | Workspace `%%R` |
+|--------|----------------------|----------------|
+| Kernel | Native R | Python + rpy2 |
+| Auth | `connections.toml`, key-pair, browser | Session OAuth auto |
+| `sfr_connect()` | Reads TOML / params | Wraps active Snowpark session |
+| Plots | Plot pane | `%%R -w … -h …` + `print(p)` |
+| Output | Standard | Prefer `rprint()` / `rview()` |
+| Setup | Once per machine | Bootstrap per session (CRE reduces cost) |
+| Python interop | reticulate (optional) | rpy2 + reticulate (required for snowflakeR) |
+| Kernel picker | Native R (RStudio / IRkernel locally) | Python only; R via `%%R` — [Appendix G](../appendices/G_workspace_container_internals/index.qmd) |
+
+**Design goal:** the same **`snowflakeR` R code** runs in both environments — only setup and display differ ([Local R Setup](../03_local_r_setup/index.qmd)).
+
+---
+
+## REST inference and PATs {#sec-pat}
+
+Most notebook workflows use **`sfr_predict()`** through the Snowpark session — no extra token.
+
+**`sfr_predict_rest()`** calls deployed SPCS endpoints over HTTPS; the Workspace session token is **not** valid for that ingress path. For REST predict from a notebook testing external apps, set a **PAT** via `Sys.setenv(SNOWFLAKE_PAT = "...")` — prefer not to hard-code in committed notebooks.
+
+---
+
+## Common pitfalls {#sec-pitfalls}
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `%%R` unknown command | Bootstrap not run or kernel restarted | Re-run Python bootstrap cell |
+| Segfault on `library(snowflakeR)` | Old reticulate | `r-reticulate>=1.25` in YAML |
+| Table not found | Missing DB/schema context | `sfr_load_notebook_config()` |
+| Blank ggplot cell | Missing `print(p)` or size flags | `%%R -w 700 -h 450` + `print(p)` |
+| Huge data frame slow across `-i` | Bridge transfer | Query from Snowflake in R instead |
+| `sfr_use()` ignored | No reassignment | `conn <- sfr_use(conn, ...)` |
+
+More: [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd).
+
+---
+
+## Companion material {#sec-companion}
+
+| Resource | Content |
+|----------|---------|
+| [`workspace_quickstart.ipynb`](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/workspace_quickstart.ipynb) | Runnable end-to-end |
+| Vignette `workspace-notebooks` | Full patterns and bulk-write notes |
+| `r_helpers.py` | Output helpers, PAT/key helpers, display bridges |
+
+---
+
+## Next steps
+
+[CRE & ML Jobs](../09_custom_runtime_and_ml_jobs/index.qmd) — skip repeat bootstrap with pre-baked images.
+
+[snowflakeR: Connect](../16_snowflaker_connect/index.qmd) — session and operational APIs.

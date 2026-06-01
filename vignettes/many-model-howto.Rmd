@@ -21,10 +21,11 @@ Snowpark Container Services (SPCS), persist them to a stage, register them in
 Model Registry as a single model version, and run server-side batch inference
 via `run_batch`.
 
-The accompanying **reference implementation** lives in
-`internal/doSnowflake/demos/parallel_forecast/`. The code snippets below are
-extracted from that implementation. Lines marked `## ADAPT` are the parts you
-replace for your own data and models.
+The accompanying **reference notebooks** ship in snowflakeR:
+`inst/notebooks/workspace_parallel_spcs_setup.ipynb` and
+`workspace_parallel_spcs_demo.ipynb`. The code snippets below follow that
+pattern. Lines marked `## ADAPT` are the parts you replace for your own data
+and models.
 
 ## 1. Architecture Overview
 
@@ -523,7 +524,7 @@ forecast_expr <- bquote({
 
 - **`vignette("parallel-dosnowflake")`**: the low-level `registerDoSnowflake`
   API reference (foreach backend, generic SPCS executor, crew/mirai workers).
-- **Reference implementation**: `internal/doSnowflake/demos/parallel_forecast/`
+- **Reference notebooks**: `inst/notebooks/workspace_parallel_spcs_setup.ipynb`, `workspace_parallel_spcs_demo.ipynb`
   contains the complete runnable demo with configs, deploy scripts, and tests.
 - **Function reference**: `?sfr_log_many_model`, `?sfr_run_batch`,
   `?sfr_model_registry`, `?registerDoSnowflake`.

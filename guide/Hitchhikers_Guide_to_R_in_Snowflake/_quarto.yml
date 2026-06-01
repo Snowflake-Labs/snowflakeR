@@ -1,0 +1,101 @@
+project:
+  type: book
+  output-dir: _site
+
+website:
+  site-url: https://snowflake-labs.github.io/snowflakeR/
+
+book:
+  title: "The Hitchhiker's Guide to R in Snowflake"
+  subtitle: "Don't Panic"
+  author:
+    - name: "Simon Field"
+      url: "https://www.linkedin.com/in/fieldy6961/"
+  date: "2026-05-29"
+  search: true
+  repo-url: https://github.com/Snowflake-Labs/snowflakeR
+  repo-subdir: guide/Hitchhikers_Guide_to_R_in_Snowflake
+  repo-actions: [edit, issue]
+
+  sidebar:
+    style: docked
+    search: true
+
+  chapters:
+    - index.qmd
+    - part: "Getting Started"
+      chapters:
+        - 00_introduction/index.qmd
+        - 01_snowflake_platform/index.qmd
+        - 02_architecture/index.qmd
+    - part: "R from Your IDE"
+      chapters:
+        - 03_local_r_setup/index.qmd
+        - 04_rstudio_posit_vscode/index.qmd
+    - part: "Workspace Notebooks with R"
+      chapters:
+        - 05_workspaces_overview/index.qmd
+        - 06_workspace_bootstrap/index.qmd
+        - 07_network_and_eai/index.qmd
+        - 08_r_cells_and_interop/index.qmd
+        - 09_custom_runtime_and_ml_jobs/index.qmd
+    - part: "Beyond R"
+      chapters:
+        - 10_multilang_beyond_r/index.qmd
+    - part: "RSnowflake"
+      chapters:
+        - 11_rsnowflake_sql_api/index.qmd
+        - 12_rsnowflake_connect/index.qmd
+        - 13_rsnowflake_query/index.qmd
+        - 14_rsnowflake_workspace/index.qmd
+    - part: "snowflakeR"
+      chapters:
+        - 15_mlops_on_snowflake/index.qmd
+        - 16_snowflaker_connect/index.qmd
+        - 17_feature_store/index.qmd
+        - 18_model_registry/index.qmd
+        - 19_experiments/index.qmd
+        - 20_model_monitoring/index.qmd
+        - 21_many_model/index.qmd
+        - 22_parallel_dosnowflake/index.qmd
+        - 23_end_to_end/index.qmd
+
+  appendices:
+    - appendices/A_setup/index.qmd
+    - appendices/B_config_reference/index.qmd
+    - appendices/C_troubleshooting/index.qmd
+    - appendices/D_production_checklist/index.qmd
+    - appendices/E_package_reference/index.qmd
+    - appendices/F_glossary/index.qmd
+    - appendices/G_workspace_container_internals/index.qmd
+
+format:
+  html:
+    theme:
+      light: [cosmo, _theme/snowflake-light.scss]
+      dark:  [darkly, _theme/snowflake-dark.scss]
+    include-after-body:
+      - file: _theme/sidebar-toggle-include.html
+    code-fold: false
+    code-tools: true
+    code-copy: true
+    code-line-numbers: true
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    highlight-style: github
+    open-graph:
+      title: "The Hitchhiker's Guide to R in Snowflake"
+      description: "Practical guide to R on Snowflake — platform primer, RStudio, Posit, VS Code, Workspace, RSnowflake, and snowflakeR."
+      site-name: "Snowflake-Labs"
+    description: "End-to-end guide for R users — Snowflake platform basics, desktop IDEs, Workspace Notebooks, DBI connectivity, and the snowflakeR ML platform."
+
+execute:
+  freeze: auto
+  error: false
+  warning: false
+
+jupyter: python3
+
+metadata:
+  keywords: [snowflake, R, RStudio, Posit, VS Code, workspace notebooks, snowflakeR, RSnowflake, mlops]

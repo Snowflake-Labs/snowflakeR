@@ -1,0 +1,134 @@
+---
+title: "RSnowflake in Workspace"
+subtitle: "Bootstrap order, EAI, ADBC, and sfr_dbi_connection()"
+---
+
+## Overview
+
+RSnowflake in Workspace follows the same **Python kernel + `%%R`** model as snowflakeR. This chapter covers bootstrap order, optional **ADBC** acceleration, the internal **SPCS gateway**, and bridging to snowflakeR via `sfr_dbi_connection()`.
+
+Prerequisites: [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd), [Network & EAI](../07_network_and_eai/index.qmd).
+
+## Learning Objectives
+
+- Run the correct bootstrap → R cell order
+- Understand ADBC install constraints in Workspace
+- Use `sfr_dbi_connection()` for dplyr alongside ML APIs
+- Know when bulk writes route via Snowpark vs ADBC
+
+---
+
+## Execution model {#sec-model}
+
+1. **Python kernel** holds the Snowpark session Workspace creates.
+2. **`%%R` cells** run R via rpy2; RSnowflake in R speaks HTTPS to Snowflake (SQL API).
+3. **`dbConnect(Snowflake())`** succeeds when bootstrap exports `SNOWFLAKE_*` env vars.
+
+::: {.callout-note title="What is rpy2?"}
+RSnowflake runs **inside** the embedded R session that rpy2 creates in the Python process. There is no separate RSnowflake "Workspace mode" — it is the same DBI driver with Workspace OAuth from environment variables.
+:::
+
+---
+
+## Bootstrap order {#sec-order}
+
+| Step | Cell | Action |
+|------|------|--------|
+| 1 | Python | `setup_notebook(config=..., packages=["RSnowflake", "snowflakeR"])` |
+| 2 | Python (optional) | Verify EAI enabled in Snowsight |
+| 3 | R (`%%R`) | `library(RSnowflake)` or `library(snowflakeR)` |
+| 4 | R (`%%R`) | `dbConnect(Snowflake())` or `sfr_connect()` |
+
+```python
+from sfnb_setup import setup_notebook
+setup_notebook(config="snowflaker_config.yaml", packages=["RSnowflake", "snowflakeR"])
+```
+
+```r
+%%R
+library(DBI)
+library(RSnowflake)
+con <- dbConnect(Snowflake())
+dbGetQuery(con, "SELECT CURRENT_USER(), CURRENT_WAREHOUSE()")
+```
+
+If `dbConnect()` fails: re-run Python bootstrap; confirm External Access is toggled on; do not pass a laptop `connections.toml` profile name in Workspace.
+
+---
+
+## Internal gateway (`SNOWFLAKE_HOST`) {#sec-host}
+
+Workspace containers route Snowflake API traffic through an **internal SPCS gateway** — not always the public `*.snowflakecomputing.com` URL.
+
+RSnowflake detects `SNOWFLAKE_HOST` and uses the container **OAuth token** automatically. Same behaviour for optional ADBC when installed.
+
+---
+
+## Optional ADBC in Workspace {#sec-adbc}
+
+**ADBC** (`adbcsnowflake`) enables Arrow-native bulk reads/writes. In Workspace:
+
+| Topic | Detail |
+|-------|--------|
+| Install | Enable `languages.r.addons.adbc: true` in YAML or bootstrap preset |
+| Build time | Requires **Go compiler** + EAI for module downloads (~2 min cold) |
+| Bulk writes | `upload_method = "auto"` may prefer **Snowpark** `write_pandas` in Workspace (~10× faster than literal INSERT for medium tables) |
+| Reads | ADBC can use internal gateway with OAuth |
+
+```r
+%%R
+options(RSnowflake.upload_method = "auto")
+options(RSnowflake.bulk_write_threshold = 50000L)
+dbWriteTable(con, "BIG_COPY", large_df)
+```
+
+Engineering deep dive: [WORKSPACE_ADBC.md](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md)
+
+---
+
+## Interop with snowflakeR {#sec-interop}
+
+Use one Snowpark session for ML APIs and dplyr:
+
+```r
+%%R
+library(snowflakeR)
+conn <- sfr_connect()
+dbi <- sfr_dbi_connection(conn)
+
+library(dplyr)
+tbl(dbi, in_schema("ANALYTICS", "ORDERS")) |>
+  filter(ORDER_DATE >= "2024-01-01") |>
+  head(10) |>
+  collect()
+```
+
+`sfr_dbi_connection()` lazily wraps the snowflakeR session — no second login.
+
+---
+
+## RSnowflake-only vs snowflakeR-only {#sec-choose}
+
+| Need | Package |
+|------|---------|
+| SQL, dbplyr, Connections Pane (local IDE) | RSnowflake alone |
+| Feature Store, Registry, doSnowflake | snowflakeR |
+| Mixed notebook | Both via bootstrap `packages=` |
+
+RSnowflake does not require Python ML stack. snowflakeR does — bootstrap installs both when listed.
+
+---
+
+## Companion artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Test notebook | `RSnowflake/inst/notebooks/workspace_rsnowflake_test.ipynb` |
+| Vignette | `workspace-rsnowflake` |
+| ML notebook patterns | `snowflakeR` vignette `workspace-notebooks` |
+
+---
+
+## Next steps
+
+[MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) → [snowflakeR: Connect](../16_snowflaker_connect/index.qmd)

@@ -114,7 +114,7 @@ sfr_dosnowflake_setup <- function(conn,
 #'   * `pip` -- character vector of pip package names
 #' @param docker_context Character. Path to the directory containing the
 #'   Dockerfiles and worker.R. If `NULL`, uses the built-in templates
-#'   from `internal/doSnowflake/docker/`.
+#'   from `inst/workers/` in the installed package.
 #'
 #' @returns The full image URI (invisibly).
 #'

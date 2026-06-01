@@ -1,0 +1,178 @@
+---
+title: "RStudio, Posit & VS Code"
+subtitle: "Use RSnowflake and snowflakeR from desktop R tooling"
+---
+
+## Overview
+
+Most R users work in **RStudio**, **Posit Workbench**, **Positron**, or **VS Code**. Both packages support that workflow: RSnowflake integrates with the **Connections Pane** and **dbplyr**; snowflakeR runs the same ML APIs as in Workspace once Python is configured ([Local R Setup](../03_local_r_setup/index.qmd)).
+
+You do **not** need Workspace Notebooks to use Snowflake from R.
+
+## Learning Objectives
+
+- Configure Python/reticulate (conda **or** pip/venv)
+- Set up VS Code for an RStudio-like experience
+- Use the **Snowflake VS Code extension** for SQL and object browsing
+- Know **Posit Workbench Native App** and container-hosted RStudio options
+
+---
+
+## RStudio & Posit Workbench {#sec-rstudio}
+
+### Python for snowflakeR
+
+1. Complete [Local R Setup](../03_local_r_setup/index.qmd) — choose conda, venv, or `sfr_install_python_deps()`.
+2. Set the interpreter — pick one:
+   - **`~/.Renviron`:** `RETICULATE_PYTHON=/path/to/python` (restart R)
+   - **Tools → Global Options → Python** — select your venv or conda env
+   - **Per session:** `reticulate::use_virtualenv(...)` or `use_condaenv(...)` before `library(snowflakeR)`
+
+### RSnowflake Connections Pane
+
+With RSnowflake installed, open **Connections** in RStudio (or Posit Workbench):
+
+1. **New Connection → Snowflake** (or `dbConnect(Snowflake(), name = "...")`).
+2. Browse databases, schemas, tables, and preview data.
+3. Use **dbplyr** in scripts or R Markdown.
+
+```r
+library(DBI)
+library(RSnowflake)
+library(dplyr)
+
+con <- dbConnect(Snowflake(), name = "default")
+orders <- tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
+  filter(order_date >= "2024-01-01") |>
+  collect()
+```
+
+### snowflakeR in RStudio projects
+
+```
+my-ml-project/
+├── .Renviron              # RETICULATE_PYTHON=...
+├── R/
+│   ├── 00_connect.R
+│   ├── 01_features.R
+│   └── 02_train.R
+└── my-ml-project.Rproj
+```
+
+### Positron
+
+[Positron](https://posit.co/products/positron/) uses the same R + Python model. Configure `RETICULATE_PYTHON` in `.Renviron`; Connections Pane behavior matches RStudio when enabled.
+
+---
+
+## Posit Workbench Native App on Snowflake {#sec-posit-native}
+
+**Posit Workbench** is available as a **[Native App on Snowflake](https://docs.posit.co/)** — a full RStudio/Posit IDE **inside your Snowflake account**, with data locality and in-account auth.
+
+| Aspect | Local RStudio | Posit Native App |
+|--------|---------------|------------------|
+| Location | Your laptop | Snowflake account |
+| Auth | `connections.toml` / SSO | Inherited Snowflake session |
+| Packages | Install RSnowflake + snowflakeR | Same — install in Workbench session |
+| Best for | Day-to-day dev | Teams requiring in-account IDE |
+
+snowflakeR and RSnowflake work the same way: install R packages in the Workbench session, configure Python for snowflakeR, connect with standard APIs.
+
+::: {.callout-note}
+Deploying and licensing Posit Native App is a separate product process — this guide only covers R package usage once Workbench is available.
+:::
+
+---
+
+## RStudio / Posit Server in a Snowflake container {#sec-rstudio-spcs}
+
+Advanced pattern: run **RStudio Server** or **Posit Workbench** in a custom **SPCS** container image (R + packages pre-baked in Docker).
+
+- Pros: full IDE, custom R versions, packages in image
+- Cons: you operate the container image, compute pool, and scaling
+
+Related: [CRE & ML Jobs](../09_custom_runtime_and_ml_jobs/index.qmd), [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) for SPCS patterns.
+
+---
+
+## VS Code {#sec-vscode}
+
+### Core R extensions
+
+| Extension | Purpose |
+|-----------|---------|
+| [**R**](https://marketplace.visualstudio.com/items?itemName=REditorSupport.r) | R terminal, run selection/chunk, help |
+| [**R Debugger**](https://marketplace.visualstudio.com/items?itemName=RDebugger.r-debugger) | Breakpoints, step debugging (optional) |
+| [**Quarto**](https://marketplace.visualstudio.com/items?itemName=quarto.quarto) | `.qmd` authoring if you use Quarto |
+| [**R Syntax**](https://marketplace.visualstudio.com/items?itemName=REditorSupport.r-syntax) | Syntax highlighting (often bundled) |
+
+Install **languageserver** in R for linting/hover (optional but improves IDE feel):
+
+```r
+install.packages("languageserver")
+```
+
+VS Code R extension settings (example):
+
+```json
+{
+  "r.rterm.option": ["--no-save", "--no-restore"],
+  "r.lsp.enabled": true,
+  "python.defaultInterpreterPath": "${env:HOME}/.virtualenvs/r-snowflakeR/bin/python",
+  "[r]": {
+    "editor.formatOnSave": false
+  }
+}
+```
+
+Use **pip/venv** or conda path in `python.defaultInterpreterPath` — see [Local R Setup](../03_local_r_setup/index.qmd#sec-python-venv).
+
+### Snowflake extension
+
+Install the [**Snowflake Extension for VS Code**](https://docs.snowflake.com/en/user-guide/vscode-ext):
+
+- Account explorer (databases, schemas, tables)
+- SQL worksheets against Snowflake
+- Complements RSnowflake in R scripts — browse in sidebar, analyze in R
+
+Workflow: Snowflake extension for exploration and ad hoc SQL; RSnowflake/dbplyr in `.R` files for reproducible pipelines; snowflakeR for ML APIs.
+
+### Local Jupyter with R (optional)
+
+`IRkernel::installspec()` for notebook UI locally — distinct from Snowflake Workspace.
+
+---
+
+## Terminal R {#sec-terminal}
+
+```bash
+Rscript batch_score.R
+```
+
+Ideal for CI/CD with key-pair auth in TOML.
+
+---
+
+## Choosing local IDE vs Workspace {#sec-choose}
+
+| Prefer local IDE / Posit App when… | Prefer Workspace when… |
+|-----------------------------------|-------------------------|
+| Team uses RStudio/Posit daily | Notebook-first, in-account Git |
+| Posit Native App deployed | Mixed Python+R cells with Snowpark |
+| Heavy Connections Pane / Rmd | Strict no-credential-on-laptop policy |
+
+Many teams use **both**: develop in RStudio or Posit Native App, schedule via Tasks/SPCS.
+
+---
+
+## Same packages, same objects {#sec-same}
+
+Feature views, registry models, and tables written from R are visible to Python users — regardless of IDE.
+
+## Next steps {#sec-next}
+
+[Workspaces overview](../05_workspaces_overview/index.qmd) — Snowflake Notebooks.
+
+[SQL API](../11_rsnowflake_sql_api/index.qmd) → [RSnowflake: Connect](../12_rsnowflake_connect/index.qmd).
+
+[MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) → [snowflakeR: Connect](../16_snowflaker_connect/index.qmd).

@@ -1,0 +1,392 @@
+---
+title: "Appendix G: Workspace Container Internals"
+subtitle: "Need-to-know anatomy, debugging, and %%R vs native R kernels"
+---
+
+::: {.callout-important appearance="minimal"}
+**Audience:** Platform engineers, CRE authors, and anyone debugging kernel startup — **not** required for day-to-day `%%R` notebooks. Start with [R Cells & Interop](../../08_r_cells_and_interop/index.qmd) and [CRE & ML Jobs](../../09_custom_runtime_and_ml_jobs/index.qmd).
+:::
+
+This appendix documents what a live **Workspace Notebook container** looks like inside (validated on snowbooks + sfnb CRE v2, May 2026). Names and paths may shift slightly by Snowflake release; the **shape** (nbctl → jupyter-server → uvenv ipykernel → FUSE `/filesystem`) is the stable mental model.
+
+---
+
+## Process and service layout {#sec-ws-processes}
+
+```{mermaid}
+flowchart TB
+  subgraph pod [Notebook pod]
+    NBCTL["start_nbctl.sh / nbctl"]
+    JS["jupyter-server :9888\nroot_dir=/filesystem"]
+    UK["ipykernel\n/venv/uuid-uvenv/bin/python"]
+    RAY["Ray / Grafana / Prometheus\n(snowbooks ML runtime)"]
+  end
+  FUSE["/filesystem/hash/\n.git + .Rprofile + .ipynb"]
+  MM["/home/jupyter/micromamba/envs/workspace_env"]
+  OPT["/opt/python/... + /opt/sfnb/ CRE layer"]
+  NBCTL --> JS
+  JS -->|"kernel-*.json ZMQ"| UK
+  FUSE --> JS
+  OPT --> UK
+  MM --> UK
+  JS -.-> RAY
+```
+
+| Process | Typical role |
+|---------|----------------|
+| `start_nbctl.sh` (PID 1) | Container entry; orchestrates notebook service |
+| `nbctl` | Control plane between Snowflake proxy and Jupyter |
+| `jupyter-server` | HTTP on **9888**; `root_dir` = `/filesystem` |
+| `ipykernel_launcher` | **Executes your cells** — one per active kernel session |
+| Ray stack | snowbooks distributed ML sidecar (normal; unrelated to `%%R`) |
+
+Example `jpserver-*.json` (abbreviated):
+
+```json
+{
+  "pid": 690,
+  "port": 9888,
+  "root_dir": "/filesystem",
+  "url": "http://statefulset-0:9888/",
+  "version": "2.17.0",
+  "token": ""
+}
+```
+
+---
+
+## Three runtimes in one container {#sec-ws-three-runtimes}
+
+| Layer | Path | Runs |
+|-------|------|------|
+| **Session uvenv** | `/venv/<uuid>-uvenv/bin/python` | ipykernel — **cell execution** |
+| **Platform Python** | `/opt/python/cpython-3.10.*/` | jupyter-server; CRE pip installs (`rpy2`, `sfnb_multilang`) |
+| **Micromamba R** | `/home/jupyter/micromamba/envs/workspace_env` | Embedded R for `%%R` (via `~/.workspace_env_prefix`) |
+
+Kernel Python cell check:
+
+```python
+import sys, pathlib
+print(sys.executable)   # → /venv/...-uvenv/bin/python
+print(pathlib.Path.home())  # → /root (common)
+print(open(pathlib.Path.home() / ".workspace_env_prefix").read().strip())
+```
+
+The uvenv carries the **large snowbooks ML stack** (Snowpark, Ray clients, boto, …). CRE packages (`rpy2`, `sfnb_multilang`) are often installed under **`/opt/python/.../site-packages`** and linked into the kernel via Snowflake’s **`snowflake-system.pth`** in the uvenv:
+
+```bash
+cat /venv/<your-uuid>-uvenv/lib/python3.10/site-packages/snowflake-system.pth
+```
+
+Confirm in a Python cell:
+
+```python
+import rpy2, sfnb_multilang
+print(rpy2.__file__)
+```
+
+---
+
+## FUSE workspace mount and renv {#sec-ws-filesystem}
+
+Git-connected projects appear under:
+
+```text
+/filesystem/<content-hash>/
+├── .Rprofile          ← often sources renv/activate.R
+├── renv.lock
+└── USER$.PUBLIC.<project>.<notebook>.ipynb
+```
+
+`jupyter_session` in `kernel-*.json` points at that `.ipynb` path.
+
+| Context | renv risk |
+|---------|-----------|
+| Terminal: `R` with cwd under `/filesystem/...` | **High** — may bootstrap renv and hang |
+| `%%R` cells | **Low** — `setup_r_environment()` clears workspace renv and pins micromamba R |
+| Empty git repo + CRE | **Low** — no project `.Rprofile` on mount |
+
+Safe shell R test:
+
+```bash
+cd /tmp
+$(cat ~/.workspace_env_prefix)/bin/R --vanilla -q -e 'packageVersion("snowflakeR")'
+```
+
+---
+
+## Kernel connection files {#sec-ws-kernel-json}
+
+Under `/venv/runtime/`:
+
+| File | Purpose |
+|------|---------|
+| `kernel-<id>.json` | ZMQ ports (`shell_port`, `iopub_port`, …) for ipykernel |
+| `jpserver-<pid>.json` | Server URL, `root_dir`, port |
+| `jupyter_cookie_secret` | Session signing |
+
+Example `kernel-*.json` fields:
+
+```json
+{
+  "kernel_name": "29eee35e-6749-4afa-ac3e-a6956ac79827",
+  "jupyter_session": "/filesystem/<hash>/USER$.PUBLIC.<project>.Untitled.ipynb",
+  "ip": "127.0.0.1",
+  "shell_port": 58357,
+  "iopub_port": 55757
+}
+```
+
+- `kernel_name` matches the **uvenv folder** (`/venv/<kernel_name>-uvenv/`).
+- The kernel file UUID (`kernel-98abecb2-...`) is **not** the same as `kernel_name`.
+
+**Stdout:** Cell output travels over **iopub** (ZMQ), not a documented `/var/log/jupyter-kernel.log`. Interactive UI may not show IPython **startup** `print()` output even when `%%R` works.
+
+---
+
+## sfnb CRE markers {#sec-ws-cre-markers}
+
+| Check | Healthy CRE v2 |
+|-------|----------------|
+| `/opt/sfnb/CRE_VERSION` | e.g. `v2` |
+| `SFNB_CUSTOM_RUNTIME` | `1` |
+| `~/.ipython/profile_default/startup/00-sfnb-enable-r.py` | Present (often under `/root`) |
+| `~/.workspace_env_prefix` | Points to micromamba `workspace_env` |
+| `/opt/sfnb/config/cre_multilang_r.yaml` | Baked preset |
+
+Startup banner (`[sfnb CRE] %%R ready`) runs in the **ipykernel** process. To force it into visible cell output:
+
+```python
+import os
+exec(open(os.path.expanduser("~/.ipython/profile_default/startup/00-sfnb-enable-r.py")).read())
+```
+
+---
+
+## Where to look for logs {#sec-ws-logs}
+
+| Source | Use when |
+|--------|----------|
+| `%%R cat(1)` | Fast functional test — ignore missing banner |
+| Workspace **Terminal** | Live `ps`, `env`, `/opt/sfnb`, `/venv/runtime` |
+| **Run history → Logs** | Strongest for scheduled Notebook Project runs |
+| **Account event table** | Container logs via Snowflake Trail; **~3–5 min delay** |
+| `/tmp/ray/session_*/logs/` | snowbooks Ray infra — not Jupyter kernel logs |
+
+CRE **build** logs (`docker build`, Image Builder) never appear in the notebook editor — use `snow custom-image validate` at register time.
+
+Quick event-table pattern (adjust names):
+
+```sql
+SHOW PARAMETERS LIKE 'event_table' IN ACCOUNT;
+
+SELECT TIMESTAMP, VALUE AS LOG_MESSAGE
+FROM <db>.<schema>.<event_table>
+WHERE RECORD_TYPE = 'LOG'
+  AND RESOURCE_ATTRIBUTES:"snow.service.name"::string = '<notebook_service_name>'
+  AND TIMESTAMP > DATEADD(hour, -1, CURRENT_TIMESTAMP())
+ORDER BY TIMESTAMP DESC
+LIMIT 100;
+```
+
+See also [CRE troubleshooting in ch. 9](../../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-troubleshoot).
+
+---
+
+## `%%R` magic vs a native R Jupyter kernel {#sec-ws-irkernel-vs-magic}
+
+### What Workspace offers today
+
+Snowflake Workspace exposes **one active kernel per notebook session** in the UI — a **Python** ipykernel in a per-session **uvenv**. There is no supported **“Switch kernel → R”** selector like local Jupyter with [IRkernel](https://github.com/IRkernel/IRkernel).
+
+Our stack uses **IPython cell magic** (`%%R` via **rpy2**): R runs **embedded inside the Python process**, not as a separate Jupyter kernel child.
+
+### Could CRE ship IRkernel anyway?
+
+**Technically partial, product-wise incomplete.**
+
+You could extend a CRE Dockerfile roughly like:
+
+```dockerfile
+# Illustrative only — not a supported Snowflake-Labs recipe today
+RUN /home/jupyter/micromamba/envs/workspace_env/bin/R -e \
+  "install.packages('IRkernel'); IRkernel::installspec(user = FALSE)"
+```
+
+That registers a **kernelspec** on disk. For it to matter, **all** of the following would still be required:
+
+1. **nbctl / jupyter-server** must **list and launch** non-default kernels (not only the uvenv Python spec).
+2. Snowsight would need a **kernel picker** wired to that discovery path.
+3. A **second kernel** means a **second R process** — no shared session with Python/SQL cells or snowflakeR’s reticulate bridge to the active Snowpark session in the Python kernel.
+
+Snowflake Labs community docs describe **Jupyter kernel registration** as a desirable future extension point (see [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) README and issue discussions) — medium effort on Snowflake’s side, high value for partners.
+
+### Why `%%R` remains the right default for this guide
+
+| Factor | `%%R` + rpy2 (current) | Native IRkernel (hypothetical) |
+|--------|-------------------------|--------------------------------|
+| **snowflakeR session** | reticulate → active Snowpark session in **same** Python kernel | Separate R process — must re-auth or bridge manually |
+| **SQL cells** | Same notebook — warehouse SQL unchanged | Still need Python kernel for SQL/Snowpark or duplicate workflows |
+| **Multi-language** | One kernel + magics (`%%R`, `%%scala`, …) | Multiple kernels — context switching, no shared variables |
+| **CRE bootstrap** | IPython `startup/` hook (what v2 does) | kernelspec install + UI integration |
+| **Workspace UI today** | Supported path | Not exposed |
+| **Rocker / Posit analogy** | Different product surface (full JupyterHub / RStudio) | Matches classic Jupyter-R |
+
+### What we *are* using from Jupyter extensibility
+
+CRE v2 already exploits the same hooks Jupyter extensions use:
+
+- **`~/.ipython/profile_default/startup/`** — auto-register `%%R` on kernel start
+- **Custom image layers** — micromamba R, tarballs, ADBC, `sfnb_multilang`
+- **`snowflake-system.pth`** — bridge platform site-packages into the uvenv kernel
+
+That is the practical “custom container” win **without** waiting for a kernel selector.
+
+### Where a native R kernel *does* make sense
+
+| Environment | Native R kernel |
+|-------------|-----------------|
+| **Local Jupyter / RStudio** | IRkernel, RStudio’s own R session |
+| **Posit Workbench / JupyterHub on SPCS** | Full control of kernelspecs and UI — self-hosted JupyterHub on SPCS, not Workspace Snowsight |
+| **Future Workspace** | If Snowflake documents `jupyter kernelspec` discovery + UI |
+
+For **Snowflake ML + snowflakeR + mixed SQL/Python/R notebooks**, stay on **`%%R`** until the platform ships first-class kernel registration.
+
+### Practical experiments (advanced)
+
+If you control the entire image **and** a Jupyter front-end that lists kernels (not standard Workspace Snowsight today):
+
+1. Bake IRkernel into CRE as above.
+2. Verify `jupyter kernelspec list` inside the container.
+3. Confirm whether nbctl overrides kernel choice to the uvenv Python spec.
+
+Even then, plan separate notebooks or accept that **snowflakeR’s in-notebook OAuth path** is validated on the Python-kernel + `%%R` model.
+
+---
+
+## Diagnostic cheat sheet {#sec-ws-cheat-sheet}
+
+```bash
+# Identity
+whoami; echo "HOME=$HOME SFNB_CUSTOM_RUNTIME=$SFNB_CUSTOM_RUNTIME"
+cat /opt/sfnb/CRE_VERSION 2>/dev/null
+
+# Processes
+ps auxww | grep -E 'ipykernel|jupyter-server' | grep -v grep
+
+# Jupyter wiring
+ls -la /venv/runtime/
+cat /venv/runtime/kernel-*.json
+cat /venv/runtime/jpserver-*.json
+
+# CRE / R
+cat ~/.workspace_env_prefix
+ls ~/.ipython/profile_default/startup/00-sfnb-enable-r.py
+cat /venv/*-uvenv/lib/python*/site-packages/snowflake-system.pth
+
+# Repo / renv
+ls /filesystem/
+find /filesystem -maxdepth 2 -name '.Rprofile' -o -name 'renv.lock' 2>/dev/null | head
+```
+
+---
+
+## GPU notebooks and R packages {#sec-ws-gpu-r}
+
+Workspace notebooks can run on **GPU compute pools** (`SYSTEM_COMPUTE_POOL_GPU` or a custom GPU pool). GPU access is **not** automatic from a CPU CRE or CPU runtime — three choices must align:
+
+| Layer | Requirement |
+|-------|-------------|
+| **Compute pool** | GPU instance family (e.g. `GPU_L40S`, `GPU_R6K` on AWS) |
+| **Container runtime** | Snowflake **GPU** Container Runtime version (e.g. 2.5) — see [GPU release notes](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime/releases/gpu/2_5) |
+| **Custom image (optional)** | `FROM` a **GPU** snowbooks base; register CRE with `BASE_IMAGE_TYPE = GPU` |
+
+Snowflake’s GPU runtime 2.5 already ships **CUDA 12.8**-era Python stacks (`cuda-toolkit`, `nvidia-cuda-runtime-cu12`, PyTorch, etc.). Your CRE layer adds **R** the same way as CPU — `%%R` still runs in the Python uvenv; GPU R libraries live in **micromamba `workspace_env`**.
+
+### Do not use Rocker CUDA images as the CRE base
+
+[Rocker](https://rocker-project.org/) (`rocker/cuda`, `rocker/cuda-devel`, etc.) is the right mental model for **what to install**, but **not** a valid `FROM` for Snowflake CRE. Custom images must extend Snowflake’s **snowbooks** ML base and keep `/usr/local/bin/entrypoint.sh`, `DASHBOARD_PORT=12003`, and mandatory Jupyter/Snowpark packages ([Custom Runtime Images](https://docs.snowflake.com/en/developer-guide/snowflake-ml/custom-runtime-images)).
+
+Use Rocker recipes as inspiration for **conda/CRAN package names**, then bake those into a **GPU snowbooks-derived** Dockerfile (same pattern as `docker/install_prebaked_r.sh`).
+
+### What to add for GPU R (e.g. `torch`)
+
+Most GPU R packages need **CUDA-aligned binaries at image build time**, not only a GPU visible during `docker build` (build machines are often CPU-only).
+
+**R [`torch`](https://torch.mlverse.org/docs/articles/installation.html)** (common case):
+
+- Prefer **pre-built GPU binaries** (`cu128` matches Snowflake GPU runtime ~CUDA 12.8) or the **`cuda12.8`** R package from mlverse, then `install.packages("torch")`.
+- Run `torch::install_torch()` / `torch::cuda_is_available()` in a **validation cell on a live GPU session** after deploy — some installs defer downloading Lantern libs until first use (may need EAI if not fully baked).
+
+Example **build-time** snippet (illustrative — pin versions in production):
+
+```dockerfile
+# After install_prebaked_r.sh / in cre_extra_install.sh
+RUN /home/jupyter/micromamba/envs/workspace_env/bin/R --vanilla -e '
+options(timeout = 600)
+install.packages("cuda12.8", repos = c("https://mlverse.r-universe.dev", "https://cloud.r-project.org"))
+install.packages("torch", repos = c("https://mlverse.r-universe.dev", "https://cloud.r-project.org"))
+'
+```
+
+**Other R GPU stacks:** `tensorflow`, `xgboost` (GPU build), `gpuR` — each has its own CUDA/cuDNN matrix; conda-forge may offer `cuda-*` variants. Pin versions and validate on GPU hardware.
+
+**Profile-driven extras:** add to `configs/cre_profile.yaml` under `extras.cran` / `extras.conda_r`, then `./docker/create_cre.sh` — same workflow as CPU CRE.
+
+### Register and run
+
+```sql
+CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r_gpu
+    IMAGE_PATH = '/mydb/myschema/my_repo/sfnb-multilang-r-gpu:v1'
+    BASE_IMAGE_TYPE = GPU;
+```
+
+Notebook / project execution must use a **GPU compute pool** and this CRE (or the managed GPU runtime without CRE). Mismatch (CPU image on GPU pool or vice versa) fails validation or wastes GPUs.
+
+### Verify in session
+
+**Terminal:**
+
+```bash
+nvidia-smi
+```
+
+**`%%R`:**
+
+```r
+%%R
+if (requireNamespace("torch", quietly = TRUE)) {
+  cat("cuda_available:", torch::cuda_is_available(), "\n")
+  cat("device_count:", torch::cuda_device_count(), "\n")
+} else {
+  cat("torch not installed\n")
+}
+```
+
+**Python** (platform/uvenv stack — often already GPU-ready on GPU runtime):
+
+```python
+import torch
+print(torch.cuda.is_available(), torch.cuda.device_count())
+```
+
+### Practical recommendation
+
+| Goal | Path |
+|------|------|
+| **snowflakeR + `%%R` + occasional GPU R** | GPU snowbooks CRE + bake `torch`/friends into `workspace_env`; align CUDA with runtime 2.5 |
+| **Heavy Python GPU + some R** | Managed **GPU Container Runtime** + bootstrap R, or CRE extending GPU snowbooks |
+| **R-only, RStudio-like, full GPU control** | Custom SPCS / JupyterHub image (not Workspace CRE) — separate from Snowsight notebooks |
+
+CPU sfnb CRE v2 does **not** need changes for GPU; ship a **separate GPU-tagged image** and CRE object when you are ready to test.
+
+---
+
+## Related chapters
+
+| Topic | Chapter |
+|-------|---------|
+| `%%R` user model | [R Cells & Interop](../../08_r_cells_and_interop/index.qmd) |
+| CRE build & troubleshoot | [Custom Runtime & ML Jobs](../../09_custom_runtime_and_ml_jobs/index.qmd) |
+| Bootstrap & `/filesystem/` | [Workspace Bootstrap](../../06_workspace_bootstrap/index.qmd) |
+| Common gotchas | [Appendix C](../C_troubleshooting/index.qmd) |

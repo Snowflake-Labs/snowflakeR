@@ -1,0 +1,482 @@
+---
+title: "Feature Store"
+subtitle: "Entities, feature views, datasets, and training data from R"
+---
+
+## Overview
+
+Machine learning features — customer aggregates, rolling transaction sums, product embeddings — are usually built in **one-off SQL scripts** or **notebook cells**, then copied into training CSVs. That breaks down quickly:
+
+- **Training/serving skew** — batch SQL for training differs from the app query at inference time
+- **Leakage** — historical labels joined to features computed with *future* data
+- **No reuse** — each team re-implements the same `AVG(order_total)` logic
+- **Weak lineage** — auditors cannot trace which feature definition trained which model
+
+The Snowflake **Feature Store** is a **governed catalog** of feature definitions: entities (join keys), versioned **feature views** (SQL transformations), and APIs for **point-in-time-correct** training joins and consistent inference retrieval. **`snowflakeR`** exposes the full Python Feature Store API from R — objects you create in R appear identically in Snowsight and in Python notebooks.
+
+::: {.callout-tip}
+## Platform deep dive (recommended)
+
+For temporal joins, Dynamic Tables vs external views, online serving, and operations, read the **[Snowflake Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/)** — especially [Concepts](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/01_concepts/index.html), [Feature Views](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/04_feature_views/index.html), and [Temporal Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html). Examples there are Python; the **objects and semantics are identical** when created from R.
+:::
+
+See also [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) for where Feature Store sits in the lifecycle, and [Model Registry](../18_model_registry/index.qmd) for logging models trained on Feature Store datasets.
+
+## Learning Objectives
+
+- Explain why point-in-time joins matter and how leakage happens without them
+- Describe entities, feature views, spines, and datasets
+- Register managed vs external feature views from R (SQL or dbplyr)
+- Generate training data and retrieve inference-time features
+- Connect Feature Store outputs to Model Registry lineage
+
+---
+
+## The problem Feature Store solves {#sec-problem}
+
+Consider churn modeling:
+
+| Anti-pattern | What goes wrong |
+|--------------|-----------------|
+| Join labels to **today's** customer feature table | Model sees future behaviour at training time — inflated metrics |
+| Different SQL in training notebook vs production app | Training/serving skew — production accuracy collapses |
+| Ad hoc feature tables per project | No shared definition of `avg_order_total` across teams |
+| Export 10M rows to R with `collect()` | Slow, expensive, breaks governance |
+
+Feature Store centralizes **definitions** and enforces **temporal correctness** when building training sets.
+
+### Training vs inference (different operations)
+
+| Phase | Question | Feature Store API (R) |
+|-------|----------|------------------------|
+| **Training** | "What did we **know** about entity X at time T?" | `sfr_generate_training_data()` / `sfr_generate_dataset()` |
+| **Inference** | "What do we **know now** about entity X?" | `sfr_retrieve_features()` |
+
+Training uses a **spine** (entity keys + event timestamps + labels). Inference uses current or latest feature values — no labels, no point-in-time join across history.
+
+---
+
+## Architecture {#sec-architecture}
+
+```{mermaid}
+flowchart TB
+  subgraph sources [Source data in Snowflake]
+    ORD[orders]
+    ACT[activity events]
+    DBT[dbt / Dynamic Tables optional]
+  end
+
+  subgraph fs [Feature Store schema]
+    ENT[Entities CUSTOMER PRODUCT]
+    FV1[CUSTOMER_FEATURES v1]
+    FV2[CUSTOMER_ACTIVITY v1]
+    DT[(Backing Dynamic Table or table)]
+  end
+
+  subgraph train [Training path]
+    SPINE[Spine labels plus event_ts]
+    TD[Training data / Dataset]
+  end
+
+  subgraph infer [Inference path]
+    SCORE[Scoring spine entity keys only]
+    FEAT[Feature matrix for predict]
+  end
+
+  ORD --> DBT --> FV1
+  ACT --> FV2
+  FV1 --> DT
+  FV2 --> DT
+  ENT --> FV1
+  ENT --> FV2
+  SPINE --> TD
+  FV1 --> TD
+  FV2 --> TD
+  SCORE --> FEAT
+  FV1 --> FEAT
+  FV2 --> FEAT
+```
+
+**Compute note:** Feature view **registration and refresh** use the **warehouse** you pass to `sfr_feature_store()`. Feature data **materializes in Snowflake tables** (often Dynamic Tables when `refresh_freq` is set) — not in your R session until you explicitly read or generate training data.
+
+---
+
+## Core concepts {#sec-concepts}
+
+| Concept | Definition | Think of it as |
+|---------|------------|----------------|
+| **Feature Store** | Dedicated schema/database area for entities, views, metadata | Catalog + governance layer |
+| **Entity** | Business object + **join keys** (`CUSTOMER_ID`) | "How features attach to real-world things" |
+| **Feature View** | Versioned SQL (or dbplyr) transformation producing features for entity(ies) | Reusable feature **definition** |
+| **Managed view** | Has `refresh_freq` → Snowflake maintains backing **Dynamic Table** | Auto-refreshed pipeline |
+| **External view** | No `refresh_freq` → you maintain source table (dbt, ETL) | Registered SQL over existing table |
+| **Spine** | Rows: entity keys + **event timestamp** + optional **labels** | "One training example per row" |
+| **Point-in-time join** | For each spine row, features as-of that timestamp | Prevents future leakage |
+| **Dataset** | Immutable, versioned snapshot of joined training data | Reproducible input to `sfr_log_model()` |
+
+### Point-in-time join — concrete example {#sec-pit}
+
+**Wrong (leakage):**
+
+```sql
+-- Labels from 2024, features computed TODAY
+SELECT l.customer_id, l.churned, f.avg_order_total
+FROM churn_labels l
+JOIN customer_features_today f ON l.customer_id = f.customer_id
+```
+
+If `avg_order_total` includes orders placed *after* the churn event, the model cheats.
+
+**Right (Feature Store):**
+
+For each row in the spine `(customer_id, event_ts, churned)`, the store joins feature values **known at `event_ts`** — orders after that timestamp are excluded automatically.
+
+```{mermaid}
+sequenceDiagram
+  participant SP as Spine row C001 event_ts=T
+  participant FS as Feature Store
+  participant FV as CUSTOMER_ACTIVITY view
+
+  SP->>FS: Need features for C001 at time T
+  FS->>FV: Point-in-time filter event_ts <= T
+  FV-->>FS: page_views clicks as of T
+  FS-->>SP: Feature row attached to label
+```
+
+---
+
+## Setup {#sec-setup}
+
+Connect to (or create) a Feature Store in a dedicated schema:
+
+```r
+library(snowflakeR)
+conn <- sfr_connect()
+conn <- sfr_load_notebook_config(conn)
+
+fs <- sfr_feature_store(
+  conn,
+  database  = "ML_DB",
+  schema    = "FEATURES",
+  warehouse = "ML_WH",
+  create    = TRUE   # creates schema + tags if missing
+)
+```
+
+**First-time admin** (roles, grants, tags):
+
+```r
+sfr_setup_feature_store(conn, "ML_DB", "FEATURES", "ML_WH")
+```
+
+Requires privileges per [Feature Store RBAC](https://docs.snowflake.com/en/developer-guide/snowflake-ml/feature-store/rbac). Data engineers often run setup once; data scientists use `sfr_feature_store(..., create = FALSE)` against an existing schema.
+
+---
+
+## Workflow phases {#sec-workflow}
+
+| Step | Action | Typical owner |
+|------|--------|---------------|
+| 1 | Define **entities** (join keys) | ML engineer + domain expert |
+| 2 | Author **feature view** SQL or dbplyr | ML engineer |
+| 3 | **Register** view with version | `sfr_create_feature_view()` |
+| 4 | Build **spine** from labels table | Same or analytics team |
+| 5 | **Generate training data** or **Dataset** | `sfr_generate_*()` |
+| 6 | Train in R (tidymodels, glm, …) | Data scientist |
+| 7 | **Log model** with `training_dataset` | [Model Registry](../18_model_registry/index.qmd) |
+
+---
+
+## Entities {#sec-entities}
+
+Entities define **how features join** to business objects. Join keys are **immutable** after creation — plan compound keys carefully.
+
+```r
+customer <- sfr_create_entity(
+  fs, "CUSTOMER", "CUSTOMER_ID",
+  desc = "Customer entity"
+)
+
+product <- sfr_create_entity(
+  fs, "PRODUCT", "PRODUCT_ID",
+  desc = "Product entity"
+)
+
+sfr_list_entities(fs)
+sfr_get_entity(fs, "CUSTOMER")
+```
+
+Multi-key entities (e.g. store + SKU) pass multiple columns — see vignette `feature-store`.
+
+---
+
+## Feature views {#sec-views}
+
+A feature view is a **versioned transformation** tied to one or more entities. The `feature_df` argument accepts:
+
+- **SQL string** — executed/managed in Snowflake
+- **dbplyr lazy table** — dplyr pipeline translated to SQL ([RSnowflake](../13_rsnowflake_query/index.qmd))
+
+### Managed views (automatic refresh)
+
+When you set **`refresh_freq`**, Snowflake registers a **Dynamic Table** (or equivalent managed object) that refreshes on schedule:
+
+```r
+fv <- sfr_create_feature_view(
+  fs,
+  name         = "CUSTOMER_FEATURES",
+  version      = "v1",
+  entities     = customer,
+  feature_df   = "
+    SELECT customer_id,
+           AVG(order_total) AS avg_order_total,
+           COUNT(*) AS order_count,
+           MAX(order_date) AS last_order_date
+    FROM orders
+    GROUP BY customer_id
+  ",
+  refresh_freq = "1 hour",
+  desc         = "Customer aggregates from orders"
+)
+```
+
+Use managed views when Feature Store should **own refresh** — aggregates rebuilt hourly from raw `orders`.
+
+### External views (you maintain the table)
+
+Omit `refresh_freq` when **dbt**, Dynamic Tables elsewhere, or ETL already maintains the physical table:
+
+```r
+fv_external <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_DEMOGRAPHICS",
+  version    = "v1",
+  entities   = customer,
+  feature_df = "SELECT customer_id, age_band, region FROM analytics.customer_demo"
+)
+```
+
+Feature Store registers **metadata and lineage**; refresh is your pipeline's job.
+
+### Draft then register (two-step)
+
+Inspect locally before materializing — mirrors Python API:
+
+```r
+fv_draft <- sfr_feature_view(
+  name         = "CUSTOMER_FEATURES",
+  entities     = customer,
+  feature_df   = "SELECT customer_id, AVG(order_total) AS avg_order_total FROM orders GROUP BY 1",
+  refresh_freq = "1 hour"
+)
+
+fv <- sfr_register_feature_view(fs, fv_draft, version = "v1")
+```
+
+### dbplyr as `feature_df`
+
+Keep feature logic in R **dplyr** while SQL runs on the warehouse:
+
+```r
+library(dplyr)
+dbi_con <- sfr_dbi_connection(conn)
+
+customer_features_query <- tbl(dbi_con, "ORDERS") |>
+  group_by(customer_id) |>
+  summarise(
+    avg_order_total = mean(order_total, na.rm = TRUE),
+    order_count     = n(),
+    .groups         = "drop"
+  )
+
+fv <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_FEATURES_DBPLYR",
+  version    = "v1",
+  entities   = customer,
+  feature_df = customer_features_query
+)
+```
+
+snowflakeR translates the lazy table to SQL — no `collect()` before registration.
+
+### Time-series (event-level) features
+
+When features change over time (not one row per entity), set **`timestamp_col`**:
+
+```r
+fv_ts <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ACTIVITY",
+  version       = "v1",
+  entities      = customer,
+  feature_df    = "SELECT customer_id, event_ts, page_views, clicks FROM activity",
+  timestamp_col = "event_ts",
+  refresh_freq  = "30 minutes"
+)
+```
+
+Required for correct point-in-time joins — the store uses timestamps to pick feature values as-of each spine row.
+
+---
+
+## Managing views {#sec-manage}
+
+```r
+sfr_list_feature_views(fs)
+sfr_get_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+sfr_show_fv_versions(fs, "CUSTOMER_FEATURES")
+
+feature_data <- sfr_read_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+
+sfr_refresh_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+sfr_get_refresh_history(fs, "CUSTOMER_FEATURES", "v1")
+sfr_suspend_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+sfr_resume_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+```
+
+**Refresh history** shows Dynamic Table run status — use it when training data looks stale. **Suspend/resume** pauses automatic refresh during pipeline migrations.
+
+---
+
+## Generate training data {#sec-training}
+
+The **spine** drives training. Each row needs entity key(s), an **event timestamp**, and label column(s):
+
+```r
+training_data <- sfr_generate_training_data(
+  fs,
+  spine = "
+    SELECT customer_id, churn_date AS event_ts, churned AS label
+    FROM churn_labels
+    WHERE churn_date >= '2024-01-01'
+  ",
+  features = list(
+    list(name = "CUSTOMER_FEATURES", version = "v1"),
+    list(name = "CUSTOMER_ACTIVITY", version = "v1")
+  ),
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "label"
+)
+```
+
+Or pass registered view objects:
+
+```r
+fv1 <- sfr_get_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+fv2 <- sfr_get_feature_view(fs, "CUSTOMER_ACTIVITY", "v1")
+
+training_data <- sfr_generate_training_data(
+  fs,
+  spine    = "SELECT customer_id, churn_date AS event_ts, churned FROM churn_labels",
+  features = list(fv1, fv2),
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "churned"
+)
+```
+
+**Materialize** to a table for reuse:
+
+```r
+training_data <- sfr_generate_training_data(
+  fs,
+  spine    = "...",
+  features = list(fv1, fv2),
+  save_as  = "CHURN_TRAINING_SET_V1"
+)
+```
+
+### Datasets (immutable snapshots + lineage)
+
+For Model Registry **lineage** (visible in Snowsight as Source → Feature View → Dataset → Model):
+
+```r
+training <- sfr_generate_dataset(
+  fs,
+  name     = "CHURN_TRAINING",
+  spine    = "SELECT customer_id, label FROM labels",
+  features = list(list(name = "CUSTOMER_FEATURES", version = "v1")),
+  version  = "v1",
+  spine_label_cols = "label"
+)
+
+model <- glm(label ~ ., data = training, family = binomial)
+
+mv <- sfr_log_model(
+  reg,
+  model            = model,
+  model_name       = "CHURN_MODEL",
+  training_dataset = training,
+  input_cols       = sfr_input_cols(training, exclude = "label"),
+  output_cols      = list(prediction = "double")
+)
+```
+
+See [Model Registry §lineage](../18_model_registry/index.qmd#sec-lineage).
+
+---
+
+## Inference-time features {#sec-inference}
+
+At scoring time, fetch **latest** feature values — no labels, no historical point-in-time logic:
+
+```r
+features_for_scoring <- sfr_retrieve_features(
+  fs,
+  spine    = "SELECT customer_id FROM customers_to_score",
+  features = list(fv1, fv2)
+)
+```
+
+Pass the result to `predict()` locally or to a batch scoring pipeline. Align column names with `input_cols` declared at model registration.
+
+---
+
+## Online serving (pointer) {#sec-online}
+
+Low-latency **online feature stores** (sub-minute lag) are supported on the platform where your edition and SDK version allow — attach `sfr_online_config()` when creating or updating a view:
+
+```r
+fv_online <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ONLINE",
+  version       = "v1",
+  entities      = customer,
+  feature_df    = "SELECT customer_id, credit_score FROM credit_data",
+  refresh_freq  = "5 minutes",
+  online_config = sfr_online_config(enable = TRUE, target_lag = "2 minutes")
+)
+```
+
+Details: [Implementation Guide — Online Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html).
+
+---
+
+## Common pitfalls {#sec-pitfalls}
+
+| Issue | Mitigation |
+|-------|------------|
+| **Leakage** | Always use spine + `spine_timestamp_col`; never join "current" features to historical labels |
+| Column case mismatch | Snowflake UPPERCASE vs R lowercase — align in SQL and `input_cols` |
+| Missing warehouse | Pass `warehouse=` to `sfr_feature_store()` |
+| Huge `collect()` before FS | Register views in SQL/dbplyr; let platform materialize |
+| External view stale | Monitor your dbt/ETL — Feature Store won't refresh for you |
+| Wrong entity keys | Keys in spine must match entity definition exactly |
+
+---
+
+## Companion artifacts {#sec-companion}
+
+| Resource | Content |
+|----------|---------|
+| Vignette `feature-store` | Full API, tile aggregation, advanced options |
+| [`workspace_feature_store.ipynb`](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/workspace_feature_store.ipynb) | Runnable Workspace walkthrough |
+| [FS Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) | Platform authority |
+
+---
+
+## Next steps {#sec-next}
+
+[Model Registry](../18_model_registry/index.qmd) — log models with lineage from Feature Store datasets.
+
+[End-to-end pipeline](../23_end_to_end/index.qmd)

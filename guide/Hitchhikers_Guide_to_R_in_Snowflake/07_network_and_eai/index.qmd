@@ -1,0 +1,303 @@
+---
+title: "Network & EAI"
+subtitle: "External access for R package installation"
+---
+
+## Overview
+
+Snowflake Workspace Notebooks run inside a **locked-down container**. By default, **all outbound network traffic is blocked** — the notebook cannot reach CRAN, GitHub, conda, or PyPI unless your account explicitly allows it.
+
+That is why bootstrap often fails with cryptic timeouts: **`setup_notebook()` must download software from the internet** (micromamba, R, CRAN packages, GitHub tarballs, pip packages for rpy2). Snowflake governs that egress through **network rules** and **External Access Integrations (EAI)**.
+
+This chapter explains what those objects are, how `setup_notebook()` discovers or creates them, what you must do in Snowsight after an admin runs SQL, and how enterprise **artifact mirrors** simplify allowlists.
+
+::: {.callout-note}
+**Folder vs book numbering:** This file lives at `07_network_and_eai/` in the repo. In the rendered book it typically appears as **Chapter 8** (after Introduction, Platform, Architecture, Local setup, IDE, Workspaces, and Bootstrap). Cross-references in this guide use **chapter titles**, not folder numbers.
+:::
+
+Prerequisites: [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) calls EAI setup as part of `setup_notebook()`.
+
+## Learning Objectives
+
+- Explain why Workspace blocks egress and what EAI unlocks
+- Describe network rules vs External Access Integrations vs session attachment
+- Follow automatic, admin-assisted, and mirror-based EAI workflows
+- Diagnose common bootstrap network failures
+
+---
+
+## Why outbound access is blocked {#sec-why-blocked}
+
+Workspace notebooks run on **ML Container Runtime** — SPCS-backed services with enterprise security defaults. Unlike a laptop on the open internet, the container **cannot** open arbitrary HTTPS connections until:
+
+1. A **network rule** defines allowed destinations (hostnames or IP ranges)
+2. An **External Access Integration** binds that rule to services that may use it
+3. You **attach** the EAI to **your notebook session** in Snowsight
+
+Without all three, `micromamba install`, `install.packages()`, and `pip install` hang or fail with DNS/connection errors — not because CRAN is down, but because Snowflake never routed the request outside the account.
+
+```{mermaid}
+flowchart LR
+  NB[Workspace notebook container]
+  SF[Snowflake egress control]
+  EXT[External hosts CRAN GitHub conda PyPI]
+
+  NB -->|"blocked by default"| SF
+  SF -.->|"no EAI"| EXT
+  NB -->|"allowed with EAI + network rule"| SF
+  SF --> EXT
+```
+
+**Security intent:** Data stays in-account; only declared package hosts are reachable. Production teams often use **hostname allowlists** rather than open `0.0.0.0/0` egress.
+
+---
+
+## Core objects {#sec-objects}
+
+| Object | What it is | Analogy |
+|--------|------------|---------|
+| **Network rule** | Snowflake object listing permitted egress destinations (`VALUE_LIST` of hostnames, or IP CIDR) | Firewall allowlist |
+| **External Access Integration (EAI)** | Binds one or more network rules to **notebook/container services** that may use external access | Policy attaching allowlist to workloads |
+| **Session attachment** | Per-notebook toggle in Snowsight enabling a specific EAI for **this** running session | Turning the policy on for your kernel |
+| **Authentication secret** (optional) | Snowflake Secret referenced by EAI for authenticated corporate mirrors | Credentials for Artifactory/Nexus |
+
+Creating SQL objects is **not enough**. Developers routinely miss the Snowsight **Connected → Edit → External Access** toggle — bootstrap objects exist but the session still cannot download packages.
+
+---
+
+## What bootstrap downloads (and why each host matters) {#sec-hosts}
+
+`setup_notebook()` runs **before** R exists in the container. Phase 0 validates or creates EAI; subsequent phases download:
+
+| Phase | What | Typical external hosts |
+|-------|------|------------------------|
+| micromamba | Conda-compatible installer + R base | `micro.mamba.pm`, `conda.anaconda.org`, `repo.anaconda.com` |
+| pip (Python) | rpy2, sfnb-multilang, tabulate | `pypi.org`, `files.pythonhosted.org` |
+| CRAN / pak | R packages, GitHub-sourced tarballs | `cloud.r-project.org`, `github.com`, `api.github.com`, `objects.githubusercontent.com` |
+| Optional ADBC | Go toolchain + Arrow driver build | `proxy.golang.org`, `storage.googleapis.com`, R-universe hosts |
+
+### Shared hosts (R bootstrap minimum)
+
+| Host | Purpose |
+|------|---------|
+| `micro.mamba.pm` | micromamba binary |
+| `conda.anaconda.org` / `repo.anaconda.com` | conda-forge packages (`r-base`, `r-tidyverse`, …) |
+| `pypi.org` / `files.pythonhosted.org` | Python packages for rpy2 bridge |
+| `github.com` / `api.github.com` / `objects.githubusercontent.com` | snowflakeR/RSnowflake tarballs, pak resolution |
+| `cloud.r-project.org` | CRAN when YAML lists CRAN packages |
+
+### Optional add-ons
+
+| Host | When required |
+|------|----------------|
+| `proxy.golang.org`, `storage.googleapis.com`, … | `languages.r.addons.adbc: true` in YAML |
+| `repo1.maven.org` | Scala/Java multilang bootstrap |
+| Internal mirror hostname only | Corporate `mirrors:` config — [§Mirrors](#sec-mirrors) |
+
+Exact lists evolve with toolkit versions. When validation fails, bootstrap prints **missing domains** and may write **`eai_setup.sql`**.
+
+Authoritative list: [network_rules.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md).
+
+---
+
+## How `setup_notebook()` handles EAI {#sec-auto}
+
+EAI management is **privilege-aware** — the toolkit never attempts operations your role cannot perform.
+
+```{mermaid}
+flowchart TD
+  START[setup_notebook Phase 0]
+  DISC[Discover target EAI]
+  DNS[Test DNS for required domains]
+  OPEN{Open EAI attached?}
+  OK{All domains reachable?}
+  ALTER[ALTER network rule add domains]
+  CREATE[CREATE supplementary EAI]
+  SQL[Print eai_setup.sql for admin]
+  ATTACH[Remind: enable toggle in Snowsight]
+  CONT[Continue bootstrap downloads]
+
+  START --> DISC --> DNS --> OPEN
+  OPEN -->|yes| CONT
+  OPEN -->|no| OK
+  OK -->|yes| ATTACH --> CONT
+  OK -->|no| ALTER
+  ALTER -->|success| ATTACH
+  ALTER -->|fail| CREATE
+  CREATE -->|success| ATTACH
+  CREATE -->|fail| SQL
+```
+
+### EAI discovery priority
+
+When selecting which EAI to modify, `setup_notebook()` uses **first match wins**:
+
+| Priority | Source |
+|----------|--------|
+| 1 | **`eai.managed`** in YAML — admin-precreated team EAI (recommended) |
+| 2 | Convention name **`MULTILANG_NOTEBOOK_EAI`** (or `eai.supplementary_name`) |
+| 3 | **`DESC SERVICE`** when `SNOWFLAKE_SERVICE_NAME` is set (scheduled runs) |
+| 4 | **`.snowflake/settings.json`** hint (best-effort) |
+| 5 | **`SHOW EXTERNAL ACCESS INTEGRATIONS`** visible to role |
+
+The toolkit operates on **one target EAI** — it does not iterate all visible integrations.
+
+### When domains are missing
+
+| Situation | Action |
+|-----------|--------|
+| Managed EAI in YAML | `ALTER NETWORK RULE` to append missing hostnames |
+| ALTER fails (no privilege) | Create **supplementary** EAI with only missing domains |
+| No managed EAI | DNS test first; CREATE supplementary if unreachable |
+| CREATE fails | Print annotated SQL — which domains exist elsewhere vs new |
+
+### Open EAI shortcut
+
+If an attached EAI uses **`0.0.0.0/0`** (open egress), bootstrap skips domain patching — common in sandboxes; avoid in production.
+
+### YAML configuration
+
+```yaml
+eai:
+  managed: "TEAM_NOTEBOOK_EAI"              # ALTER target (recommended)
+  supplementary_name: "MULTILANG_NOTEBOOK_EAI"  # name if auto-created
+```
+
+---
+
+## Developer workflow {#sec-developer}
+
+### Step 1 — Run bootstrap
+
+```python
+from sfnb_setup import setup_notebook
+setup_notebook(config="snowflaker_config.yaml", packages=["snowflakeR", "RSnowflake"])
+```
+
+Watch output for:
+
+- ✅ Domains reachable — proceed
+- ⚠️ SQL printed / `eai_setup.sql` written — admin step required
+- ❌ Timeout on download after EAI exists — toggle not enabled (Step 3)
+
+### Step 2 — Admin runs SQL (if needed)
+
+Share **`eai_setup.sql`** with `ACCOUNTADMIN` or integration owner. SQL includes:
+
+- `CREATE NETWORK RULE` with `VALUE_LIST` of hostnames
+- `CREATE EXTERNAL ACCESS INTEGRATION` linking the rule
+- Grants so your role can use the integration
+
+Generated manually without bootstrap:
+
+```python
+from sfnb_multilang import generate_eai_sql
+print(generate_eai_sql(languages=["r"], account="myaccount"))
+```
+
+### Step 3 — Attach EAI in Snowsight (required)
+
+Even after SQL succeeds, **enable external access on the session**:
+
+1. Open the notebook
+2. **Connected** (or session menu) → **Edit**
+3. **External Access** → toggle your EAI **ON** → **Save**
+4. Re-run bootstrap if the first attempt failed mid-download
+
+::: {.callout-note appearance="minimal"}
+## TODO: Screenshot — EAI toggle
+
+Capture: Connected/Edit dialog with External Access integration enabled.
+:::
+
+**One-time per account setup, reuse across notebooks:** The same EAI can serve many notebooks once created — each new session still needs the **toggle** unless your org automates attachment.
+
+### Dynamic rule updates
+
+When an admin **ALTERs** a network rule, changes apply to **running** notebook services without kernel restart (Snowflake SPCS behavior). You still need the EAI attached to the session.
+
+---
+
+## Enterprise mirrors {#sec-mirrors}
+
+If all package traffic routes through **Artifactory**, **Nexus**, or Snowflake-internal mirrors, the allowlist collapses to **one hostname** instead of dozens of public CDNs.
+
+```yaml
+mirrors:
+  conda_channel: "https://artifactory.corp.example.com/conda-forge/"
+  pypi_index: "https://artifactory.corp.example.com/pypi/simple"
+  cran_mirror: "https://artifactory.corp.example.com/cran/"
+```
+
+Bootstrap derives EAI domains from **`mirrors:`** in YAML — public upstream hosts are replaced by mirror host(s).
+
+### Authenticated mirrors
+
+When mirrors require credentials:
+
+```yaml
+mirrors:
+  conda_channel: "https://artifactory.corp.example.com/conda-forge/"
+  auth_secret: "MY_DB.MY_SCHEMA.ARTIFACTORY_CREDS"
+```
+
+Generated EAI SQL includes **`ALLOWED_AUTHENTICATION_SECRETS`** so the container can read the Snowflake Secret at runtime.
+
+See [custom_mirrors.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_mirrors.md).
+
+---
+
+## EAI and other workloads {#sec-other}
+
+| Workload | EAI relevance |
+|----------|----------------|
+| **Cold bootstrap** | Required for CRAN/GitHub/conda/PyPI |
+| **CRE pre-baked image** | Runtime may skip downloads; build-time EAI still needed when building image in-account |
+| **SPCS doSnowflake workers** | Separate network rules if workers fetch external packages at runtime |
+| **Model Registry inference** | Conda env in image — build-time egress; not the same as notebook bootstrap |
+| **Posit / local R** | No Workspace EAI — uses corporate network on your laptop |
+
+Skipping EAI setup in YAML when `custom_runtime.prebaked: true` and `skip_eai_when_prebaked: true` is valid only when **all** dependencies are already in the image ([CRE chapter](../09_custom_runtime_and_ml_jobs/index.qmd)).
+
+---
+
+## Troubleshooting {#sec-failures}
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `Connection timed out` during micromamba | No EAI attached to session | Snowsight External Access toggle |
+| `Connection refused` to CRAN | Hostname missing from network rule | Re-run bootstrap; admin ALTER/CREATE |
+| GitHub tarball 403/404 | GitHub hosts not in rule | Add `github.com`, `objects.githubusercontent.com`, … |
+| Works once, fails after restart | Toggle not re-enabled | Re-attach EAI each new session |
+| Admin ran SQL, still fails | Wrong EAI toggled or role lacks USAGE on integration | Verify integration name matches YAML `eai.managed` |
+| ADBC install fails | Go module hosts blocked | Add golang proxy hosts or disable `addons.adbc` |
+| Everything allowed but slow | Corporate proxy / mirror misconfig | Verify `mirrors:` URLs |
+
+More: [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd), [Appendix B — `eai` YAML](../appendices/B_config_reference/index.qmd).
+
+---
+
+## Security considerations {#sec-security}
+
+- Prefer **hostname allowlists** over open egress in production
+- Scope EAIs to **team notebooks** — separate dev vs prod integrations if policies differ
+- **Secrets** for mirrors live in Snowflake Secret objects — not in notebook cells
+- Security team review: share bootstrap-generated `eai_setup.sql` and domain summary annotations
+- Document which external hosts each notebook config requires before approval
+
+---
+
+## Companion material {#sec-companion}
+
+| Resource | Content |
+|----------|---------|
+| [network_rules.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/network_rules.md) | Full host lists, discovery, hybrid strategy |
+| [custom_mirrors.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_mirrors.md) | Artifactory/Nexus setup |
+| [Snowflake docs — External network access](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-external-access) | Product reference |
+| [Bootstrap](../06_workspace_bootstrap/index.qmd) | Where EAI fits in `setup_notebook()` |
+
+---
+
+## Next steps
+
+[R Cells & Interop](../08_r_cells_and_interop/index.qmd) — after bootstrap and EAI succeed, run your first `%%R` cells.

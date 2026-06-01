@@ -1,0 +1,198 @@
+---
+title: "MLOps on Snowflake"
+subtitle: "Data flow, Snowflake ML, and why snowflakeR"
+---
+
+## Overview
+
+This chapter frames **MLOps on Snowflake** for R users: how data moves from sources to features to models to production — and where **snowflakeR** fits alongside Posit, vetiver, and RSnowflake.
+
+The R community has strong tools through **modeling** (tidymodels, forecast, lme4, …) and **local MLOps** (renv, targets, vetiver, Posit Connect). snowflakeR adds the **in-platform infrastructure layer** — registry, feature store, governed serving — when your data and models live in Snowflake.
+
+::: {.callout-important}
+See [Introduction](../00_introduction/index.qmd#sec-disclaimers) — snowflakeR is a community project, not officially supported by Snowflake.
+:::
+
+## Learning Objectives
+
+- Sketch an end-to-end ML lifecycle on Snowflake
+- Map existing R tools to snowflakeR capabilities
+- Explain why in-account ML vs "R only on laptop"
+- Choose snowflakeR vs RSnowflake-only paths
+
+---
+
+## The deployment gap (R context) {#sec-gap}
+
+R excels at exploration and modeling. Production often stalls on:
+
+- Containerizing R (Docker, K8s)
+- Operating REST APIs (Plumber) per model
+- Moving data out of the warehouse for scoring and back
+- Central versioning and lineage across teams
+
+**Posit Connect** and similar tools solve publishing well. **snowflakeR** targets teams whose **system of record is Snowflake** — features, models, and predictions stay in-account with the same governance as tables.
+
+## MLOps data flow {#sec-flow}
+
+```{mermaid}
+flowchart TB
+  subgraph ingest [Ingest and transform]
+    src[Source tables / streams]
+    dbt[dbt / Dynamic Tables]
+  end
+  subgraph features [Feature platform]
+    ent[Entities]
+    fv[Feature Views]
+    ds[Datasets]
+  end
+  subgraph model [Model lifecycle]
+    train[Train in R]
+    exp[Experiments]
+    reg[Model Registry]
+  end
+  subgraph serve [Serve and observe]
+    spcs[SPCS inference]
+    sql[Warehouse SQL score]
+    mon[Monitoring]
+  end
+  src --> dbt --> fv
+  ent --> fv --> ds --> train
+  train --> exp --> reg
+  reg --> spcs
+  reg --> sql
+  reg --> mon
+```
+
+| Stage | Snowflake object | R tooling |
+|-------|------------------|-----------|
+| Ingest / transform | Tables, Dynamic Tables, Streams | RSnowflake / dbplyr; dbt (other team) |
+| Feature definitions | Entities, Feature Views | `sfr_feature_store()`, `sfr_create_feature_view()` |
+| Training snapshot | Datasets | `sfr_generate_training_data()` |
+| Experimentation | Experiment runs | `sfr_start_run()`, metrics helpers |
+| Model store | Registry versions | `sfr_log_model()` |
+| Online inference | SPCS service | `sfr_deploy_model()`, `sfr_predict()` |
+| Batch inference | Warehouse SQL, REST | `sfr_predict()`, SQL functions |
+| Monitoring | Monitoring jobs | Model monitoring APIs |
+| Scale-out training/scoring | Tasks, SPCS workers | `registerDoSnowflake()` |
+
+## R MLOps stack mapping {#sec-stack}
+
+How snowflakeR **complements** (not replaces) the Posit/community stack:
+
+| Stage | Existing R tools | snowflakeR adds |
+|-------|------------------|-----------------|
+| Data access | DBI, dbplyr, arrow | Same + `sfr_query()`; bridge via RSnowflake |
+| Feature engineering | recipes, dplyr | `sfr_create_feature_view()` — governed, shared |
+| Modeling | tidymodels, caret, base R, forecast | Train as usual; `sfr_log_model()` |
+| Dependencies | renv, Posit Package Manager | `conda_deps` / env specs for **serving** |
+| Local versioning | vetiver + pins | Registry as **system of record** on Snowflake |
+| Orchestration | targets | Tasks + doSnowflake; optional targets still for local |
+| Deployment | Connect, Plumber, Docker | `sfr_deploy_model()` → SPCS |
+| Monitoring | vetiver metrics | Registry-integrated monitoring |
+
+**Principle:** Keep your modeling idioms; add Snowflake for **storage, lineage, and scaled serving**.
+
+## Why Snowflake ML (not R-only)? {#sec-why}
+
+| R-only pattern | Pain on Snowflake-centric teams |
+|----------------|--------------------------------|
+| Train locally, export CSV | Egress cost, governance, stale data |
+| PMML / ONNX conversion | Many R models don't convert cleanly |
+| One Plumber container per model | Ops sprawl, no unified registry |
+| Cron on a VM | No lineage to warehouse tables |
+| Score in R, write results manually | Race conditions, audit gaps |
+
+**Snowflake ML** provides:
+
+- **Single registry** for Python and R models
+- **Feature Store** with point-in-time correctness
+- **Lineage** from table → feature → dataset → model
+- **Elastic serving** on SPCS or SQL
+- **Same RBAC** as data objects
+
+## How snowflakeR works (brief) {#sec-how}
+
+snowflakeR uses **reticulate** to call `snowflake-ml-python`. R users call `sfr_*` functions; the package handles Python.
+
+For **serving**, `sfr_log_model()`:
+
+1. Serializes the R model (`.rds`)
+2. Auto-generates a Python `CustomModel` that loads R via **rpy2** at inference
+3. Registers in Model Registry
+4. Deploys to SPCS where the container runs R + your model
+
+You do not hand-write Python wrappers — see [Model Registry](../18_model_registry/index.qmd).
+
+In **Workspace**, **rpy2** also powers `%%R` cells (Python → R direction). See [Architecture](../02_architecture/index.qmd).
+
+## Complementary platforms {#sec-complementary}
+
+| Platform | Role | With snowflakeR |
+|----------|------|-----------------|
+| **RStudio / Positron (local)** | Author, debug | `sfr_connect(profile=...)` |
+| **Posit Workbench Native App on Snowflake** | In-account RStudio | Install RSnowflake + snowflakeR in session; same APIs |
+| **Posit Connect** | Shiny, Quarto, Plumber publishing | Apps call `sfr_predict_rest()` to registry endpoints |
+| **Posit Package Manager** | CRAN mirror | Faster corporate installs; still use Snowflake for ML |
+| **vetiver** | Local model pins + metrics | Optional; registry for production truth |
+| **RSnowflake** | SQL/dplyr only | `sfr_dbi_connection()` when mixing ML + dbplyr |
+
+::: {.callout-note}
+Posit and Snowflake partnered on **Workbench as a Native App** — RStudio inside your account with data locality. snowflakeR is independent open source but aligns with that workflow.
+:::
+
+## Platform services for operationalization {#sec-platform}
+
+ML in production uses more than registry APIs:
+
+| Service | Operational use |
+|---------|-----------------|
+| **Tasks** | Nightly retrain triggers, batch score SQL, pipeline steps |
+| **SPCS** | Low-latency inference, parallel R workers |
+| **Stages** | Model artifacts, training exports, worker file I/O |
+| **EAI** | Package installs in notebooks/containers |
+| **Git / Workspace** | Promote notebooks to scheduled jobs |
+| **Tags / masking** | Compliance on feature and prediction tables |
+
+[snowflakeR: Connect](../16_snowflaker_connect/index.qmd) and [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) cover Tasks and SPCS from R.
+
+## Decision guide {#sec-when}
+
+**Use snowflakeR when you need:**
+
+- Feature Store or Model Registry from R
+- In-account inference (SPCS / SQL / REST)
+- Experiment and monitoring integration
+- Interop with Python ML on the same objects
+
+**Use RSnowflake only when:**
+
+- SQL analytics and dplyr — no registry or Feature Store
+- You export scores to an external system deliberately
+
+**Use Posit Connect (without snowflakeR) when:**
+
+- Primary deliverable is Shiny/Quarto — predictions may still call Snowflake via REST
+
+**Use both:**
+
+- Develop in RStudio; register and serve on Snowflake; publish Connect app that calls deployed model
+
+## Anti-patterns {#sec-anti}
+
+| Avoid | Prefer |
+|-------|--------|
+| `SELECT *` millions of rows into R | Aggregate in SQL; sample; use Feature Store datasets |
+| Retrain only on laptop, deploy manually | Log version in registry; deploy alias `@champion` |
+| Duplicate feature logic in R and Python | Feature Views as single definition |
+| Ignore conda-forge constraints at serve time | Plan dependencies at `sfr_log_model()` time |
+
+## Next steps {#sec-next}
+
+[snowflakeR: Connect](../16_snowflaker_connect/index.qmd)
+
+[Feature Store](../17_feature_store/index.qmd)
+
+[Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) — concepts chapters 01–06
+
+[Model Registry](../18_model_registry/index.qmd)
