@@ -18,9 +18,9 @@ If you are new to Snowflake, start with the [Platform Primer](01_snowflake_platf
 ## Key Topics Covered
 
 - **Snowflake primer** — Warehouses, containers, ML services (for R users new to the platform)
-- **R from your IDE** — RStudio, Posit Native App, VS Code + Snowflake extension; pip or conda Python
-- **Workspace Notebooks** — UX overview, bootstrap, EAI, `%%R`, CRE, ML Jobs
-- **RSnowflake** — SQL REST API, DBI, dbplyr, Arrow
+- **R from your IDE** — RStudio, Posit Native App, VS Code; **RSnowflake** vs Posit **`odbc`** + Snowflake ODBC driver
+- **Workspace Notebooks** — UX overview, bootstrap, EAI, `%%R`, **CRE**, ML Jobs
+- **RSnowflake** — SQL REST API, DBI, dbplyr, Arrow (optional **ADBC** in CRE for fast bulk I/O)
 - **snowflakeR** — MLOps, Feature Store, Model Registry, Tasks, SPCS, monitoring
 :::
 
@@ -37,7 +37,7 @@ If you are new to Snowflake, start with the [Platform Primer](01_snowflake_platf
 | Your Goal | Start Here |
 |-----------|------------|
 | New to Snowflake | [Platform Primer](01_snowflake_platform/index.qmd) |
-| RStudio / Posit / VS Code | [Local R Setup](03_local_r_setup/index.qmd) |
+| RStudio / Posit / VS Code | [Local R Setup](03_local_r_setup/index.qmd) → [RSnowflake vs ODBC](04_rstudio_posit_vscode/index.qmd#sec-odbc) |
 | Workspace Notebooks | [Workspaces overview](05_workspaces_overview/index.qmd) |
 | Understand SQL API | [RSnowflake SQL API](11_rsnowflake_sql_api/index.qmd) |
 | MLOps on Snowflake | [MLOps chapter](15_mlops_on_snowflake/index.qmd) |
@@ -49,6 +49,12 @@ If you are new to Snowflake, start with the [Platform Primer](01_snowflake_platf
 - Snowflake account (Workspace optional depending on path)
 - R 4.2+; Python 3.10+ for snowflakeR locally
 - See [Introduction](00_introduction/index.qmd) for disclaimers
+
+::: {.callout-note}
+## CRE speeds Workspace startup (same idea as R)
+
+A **[Custom Runtime Environment](09_custom_runtime_and_ml_jobs/index.qmd)** pre-bakes micromamba, R, `%%R`, snowflakeR, RSnowflake, and optionally **ADBC** (`adbcsnowflake`) into the notebook image — so analysts skip the cold **`setup_notebook()`** install and Go-compiler bootstrap for Arrow I/O. Platform teams own the image; analysts attach `cre@<org_name>` in notebook settings. Same reproducibility principles as pinning package versions in a CRE profile.
+:::
 
 ## Revision History {.unnumbered}
 

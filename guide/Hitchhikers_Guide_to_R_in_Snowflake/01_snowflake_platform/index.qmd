@@ -26,7 +26,7 @@ Snowflake is a **cloud data platform** that combines:
 |-------|------------------|---------------|
 | **Storage** | Durable tables, stages, governed data | Everyone |
 | **SQL compute** | Virtual-Warehouses — elastic clusters for analytics | Analysts, engineers, R via RSnowflake (SQL, dplyr) |
-| **Container compute** | SPCS — Docker workloads in-account | Inference, custom R, parallel workers |
+| **Container compute** | SPCS — Docker workloads running in-account | Inference, custom R, parallel workers |
 | **ML platform** | Feature Store, Model Registry, experiments | Data scientists (Python + R via snowflakeR) |
 | **Apps & BI** | Streamlit, dashboards, partner BI tools | Analysts, business users |
 | **AI** | Cortex (LLM functions, agents) | App builders, analysts |
@@ -64,7 +64,30 @@ Unlike a traditional database server where storage and compute are tied together
 
 Implications for R:
 
-- `collect()` in dbplyr pulls result sets **to your R session** — minimize data movement for large results; aggregate in SQL first.
+- **`collect()`** in dbplyr executes the pipeline on the warehouse, then **pulls the full result into your R session**. Use it only when you need data locally (modeling, plots, small samples) — not as the default for every dplyr step.
+- **Keep transforms in Snowflake** — dbplyr builds SQL; verbs like `filter()` and `summarise()` do not move rows until you ask. For multi-step work, **materialize on the warehouse** instead of chaining everything into one giant query or pulling early:
+
+```r
+library(dplyr)
+library(dbplyr)
+
+orders <- tbl(con, in_schema("ANALYTICS", "ORDERS"))
+
+# Step 1: aggregate on warehouse → temp table (CREATE TEMPORARY TABLE AS …)
+by_region <- orders |>
+  filter(order_date >= "2024-01-01") |>
+  group_by(region) |>
+  summarise(revenue = sum(amount, na.rm = TRUE), .groups = "drop") |>
+  compute(name = "region_revenue_tmp")   # stays in Snowflake
+
+# Step 2: next dplyr step reads the materialized table, still lazy until collect()
+by_region |>
+  filter(revenue > 1e6) |>
+  collect()   # only the final, small result crosses to R
+```
+
+`compute()` runs **`CREATE TEMPORARY TABLE … AS SELECT`** (RSnowflake implements this via dbplyr). Use a **pipeline of temp tables** for heavy joins or to break up nested SQL; use **`temporary = FALSE`** and a qualified name when you want a **permanent** table other teams can reuse. **`copy_to()`** is the opposite path — upload a local `data.frame` into Snowflake to start a pipeline. Full patterns: [RSnowflake: Query §dbplyr](../13_rsnowflake_query/index.qmd#sec-materialize).
+
 - Feature Store and Model Registry objects **persist in Snowflake** — no separate model server database to maintain.
 
 **Further reading:** [Key concepts & architecture](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
@@ -148,7 +171,7 @@ At platform level: Workspace provides an **in-account Python kernel** on contain
 **Terminology:** "Workspace Notebook" means a notebook running **inside** your Snowflake account — not Jupyter on your laptop. Kernel and data stay in-account.
 :::
 
-**Further reading:** [About Snowflake Notebooks in Workspaces](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces)
+**Further reading:** [Snowflake Notebooks in Workspaces](https://docs.snowflake.com/en/user-guide/ui-snowsight/notebooks-in-workspaces/notebooks-in-workspaces-overview)
 
 ## Notebook runtime model {#sec-runtimes}
 
@@ -170,7 +193,7 @@ Flexible package install (pip/conda/micromamba) is why R bootstrap uses micromam
 | Service | Purpose | R access |
 |---------|---------|----------|
 | **Feature Store** | Governed features, point-in-time training data, data pipelines to inference datasets | `snowflakeR` |
-| **Model Registry** | Versioned models, deployment, lineage | `snowflakeR` |
+| **Model Registry** | Versioned R or Python models, deployment, lineage | `snowflakeR` |
 | **Datasets** | Immutable training data snapshots, point-in-time inference datasets | `snowflakeR` |
 | **Experiments** | Run model training and tracking metrics | `snowflakeR` |
 | **Model monitoring** | Model and Data drift and performance | `snowflakeR` |
@@ -226,8 +249,12 @@ R clients use the same role model as other tools — your `connections.toml` pro
 |------------|------------------|
 | R from your IDE | External client → SQL REST API / ML Python APIs |
 | Workspace Notebooks | In-account kernel + R bootstrap |
-| RSnowflake | SQL over **SQL REST API** (+ optional ADBC) |
+| RSnowflake | SQL over **SQL REST API** (+ optional **ADBC** for bulk I/O) |
 | snowflakeR | ML APIs + SPCS deployment + Tasks/queue backends |
+
+::: {.callout-note title="What is ADBC?"}
+**ADBC** (Arrow Database Connectivity) is a **columnar database access standard** — the Arrow ecosystem's analogue to ODBC/JDBC. RSnowflake can use the Snowflake **ADBC driver** (`adbcsnowflake`) for **large bulk reads and writes** as Apache Arrow streams instead of JSON over the SQL API. You do not need ADBC for everyday queries; enable it when moving wide or million-row result sets. Defined in [Glossary](../appendices/F_glossary/index.qmd); details in [SQL API](../11_rsnowflake_sql_api/index.qmd#sec-arrow) and [RSnowflake: Query](../13_rsnowflake_query/index.qmd#sec-arrow).
+:::
 
 ## Quickstart pointers {#sec-quickstarts}
 

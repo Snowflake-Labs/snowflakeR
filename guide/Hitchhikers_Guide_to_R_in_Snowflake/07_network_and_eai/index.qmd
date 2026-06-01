@@ -7,13 +7,11 @@ subtitle: "External access for R package installation"
 
 Snowflake Workspace Notebooks run inside a **locked-down container**. By default, **all outbound network traffic is blocked** — the notebook cannot reach CRAN, GitHub, conda, or PyPI unless your account explicitly allows it.
 
-That is why bootstrap often fails with cryptic timeouts: **`setup_notebook()` must download software from the internet** (micromamba, R, CRAN packages, GitHub tarballs, pip packages for rpy2). Snowflake governs that egress through **network rules** and **External Access Integrations (EAI)**.
+That is why bootstrap can fail with timeouts, or sometimes cryptic errors: **`setup_notebook()` must fetch software from outside the account** — by default from the **public internet** (micromamba, R, CRAN, GitHub tarballs, pip for rpy2). Snowflake governs that egress through **network rules** and **External Access Integrations (EAI)**.
 
-This chapter explains what those objects are, how `setup_notebook()` discovers or creates them, what you must do in Snowsight after an admin runs SQL, and how enterprise **artifact mirrors** simplify allowlists.
+**Alternative:** Many enterprises route the same installs through an **internal artifact repository** (Artifactory, Nexus, or similar) configured in notebook YAML under **`mirrors:`**, with the R/Python packages you need already proxied or cached there. EAI then allows the mirror hostname (often one domain instead of dozens of public CDNs). See [§Enterprise mirrors](#sec-mirrors) and [Appendix B — `mirrors:`](../appendices/B_config_reference/index.qmd#sec-sections). A **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** pre-bakes packages at image build time and avoids runtime downloads entirely.
 
-::: {.callout-note}
-**Folder vs book numbering:** This file lives at `07_network_and_eai/` in the repo. In the rendered book it typically appears as **Chapter 8** (after Introduction, Platform, Architecture, Local setup, IDE, Workspaces, and Bootstrap). Cross-references in this guide use **chapter titles**, not folder numbers.
-:::
+This chapter explains EAI objects, how `setup_notebook()` discovers or creates them, what you must do in Snowsight after an admin runs SQL, and how mirrors simplify allowlists.
 
 Prerequisites: [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) calls EAI setup as part of `setup_notebook()`.
 
@@ -218,9 +216,9 @@ When an admin **ALTERs** a network rule, changes apply to **running** notebook s
 
 ---
 
-## Enterprise mirrors {#sec-mirrors}
+## Enterprise mirrors and artifact repositories {#sec-mirrors}
 
-If all package traffic routes through **Artifactory**, **Nexus**, or Snowflake-internal mirrors, the allowlist collapses to **one hostname** instead of dozens of public CDNs.
+If all package traffic routes through a corporate **artifact repository** (**Artifactory**, **Nexus**, Sonatype, or an internal generic proxy), the EAI allowlist can collapse to **one hostname** instead of dozens of public CDNs. Your platform team must **publish or proxy** the same artifacts bootstrap expects (micromamba, conda-forge R stack, CRAN/pak sources, PyPI, GitHub tarballs for snowflakeR/RSnowflake) — then point `mirrors:` at those URLs.
 
 ```yaml
 mirrors:
@@ -243,7 +241,7 @@ mirrors:
 
 Generated EAI SQL includes **`ALLOWED_AUTHENTICATION_SECRETS`** so the container can read the Snowflake Secret at runtime.
 
-See [custom_mirrors.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_mirrors.md).
+See [custom_mirrors.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/custom_mirrors.md) and [artifact_repository_support_summary.md](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/artifact_repository_support_summary.md) (compliance-oriented walkthrough).
 
 ---
 
@@ -251,7 +249,7 @@ See [custom_mirrors.md](https://github.com/Snowflake-Labs/snowflake-notebook-mul
 
 | Workload | EAI relevance |
 |----------|----------------|
-| **Cold bootstrap** | Required for CRAN/GitHub/conda/PyPI |
+| **Cold bootstrap** | EAI required for public internet **or** internal artifact mirror (`mirrors:`) |
 | **CRE pre-baked image** | Runtime may skip downloads; build-time EAI still needed when building image in-account |
 | **SPCS doSnowflake workers** | Separate network rules if workers fetch external packages at runtime |
 | **Model Registry inference** | Conda env in image — build-time egress; not the same as notebook bootstrap |

@@ -478,11 +478,10 @@ rules documentation</a>.</p>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>  pak<span class="sc">::</span><span class="fu">pak</span>(<span class="st">&quot;Snowflake-Labs/snowflakeR&quot;</span>, <span class="at">ask =</span> <span class="cn">FALSE</span>, <span class="at">upgrade =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>}</span>
 <span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="fu">library</span>(snowflakeR)</span></code></pre></div>
-<p>When your Git project includes a <strong>local snowflakeR
-checkout</strong>, <code>sfnb_setup.py</code> may set
-<code>SNOWFLAKER_PATH</code> to that source tree for fast iteration.
-Otherwise the <code>else</code> branch installs from GitHub releases via
-<code>pak</code>.</p>
+<p>When running from the internal monorepo, <code>sfnb_setup.py</code>
+automatically sets <code>SNOWFLAKER_PATH</code> to the local package
+source. From the public repository, the <code>else</code> branch
+installs from GitHub via <code>pak</code>.</p>
 </div>
 <div id="installing-additional-r-packages" class="section level3">
 <h3>Installing additional R packages</h3>

@@ -9,9 +9,10 @@ Workspace Notebooks expose a **Python kernel** — there is no separate R kernel
 
 That design choice is fundamental. It means:
 
-- Bootstrap runs once in **Python** (`setup_notebook()`)
+- R is provisioned once per session: either **`setup_notebook()` in a Python cell** (cold bootstrap) **or** pre-installed in a **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** container (no bootstrap cell)
 - All subsequent ML and stats work can live in **`%%R` cells**
 - **SQL cells** still run on the warehouse (unchanged)
+- Python, `%%R`, and SQL cells can be intermingled throughout a notebook on the same compute pool / container runtime
 - **snowflakeR** and **RSnowflake** both run inside the embedded R session
 
 This chapter explains how that feels in practice: session persistence, passing data across the bridge, readable output, plotting, and mixing R with Python and SQL in one notebook. For the three-package stack, see [Architecture](../02_architecture/index.qmd). For bootstrap detail, see [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd).
@@ -112,8 +113,8 @@ sequenceDiagram
   participant BOOT as setup_notebook
   participant R as Embedded R via rpy2
 
-  U->>PY: Run bootstrap cell
-  PY->>BOOT: micromamba, EAI, %%R magic
+  U->>PY: Bootstrap cell OR attach CRE
+  PY->>BOOT: micromamba or pre-baked R, %%R magic
   U->>PY: Run %%R cell — library(snowflakeR)
   PY->>R: Execute R code
   R-->>PY: Output / plots
@@ -125,8 +126,8 @@ sequenceDiagram
 
 | Event | What happens |
 |-------|----------------|
-| **Start session** | Empty Python kernel; R not installed until bootstrap |
-| **After bootstrap** | R available; `%%R` magic registered |
+| **Start session** | Empty Python kernel; R not available until bootstrap or CRE attach |
+| **After bootstrap or CRE** | R available; `%%R` magic registered |
 | **First `%%R` cell** | Loads packages, creates `conn` |
 | **Later `%%R` cells** | Reuse same R workspace — no need to `library()` every cell unless you prefer explicitness |
 | **Restart session** | R state lost — re-run bootstrap (fast if cached/CRE) |
@@ -136,10 +137,12 @@ sequenceDiagram
 
 ## First R cells {#sec-first-r}
 
-**Required order:**
+**Without a CRE** — run bootstrap first, then R:
 
 1. **Python:** `setup_notebook(...)` — see [Bootstrap](../06_workspace_bootstrap/index.qmd)
 2. **R (`%%R`):** connect and smoke test
+
+**With a reference CRE** — attach `cre@<org_name>` when starting the notebook service ([Workspaces overview](../05_workspaces_overview/index.qmd#sec-create)); skip step 1. Go straight to `%%R` (magic is registered on kernel start). Optional Python cell: `setup_notebook(config="/opt/sfnb/config/cre_multilang_r.yaml", ...)` for EAI checks or session context only — it should **not** reinstall R when `SFNB_CUSTOM_RUNTIME=1`.
 
 ```r
 %%R
@@ -229,14 +232,32 @@ The bundled **`r_helpers.py`** (from `sfnb_setup`) also wires richer conversions
 
 ## Output helpers {#sec-outputs}
 
-Workspace's HTML renderer can insert **extra line breaks** between lines of R `print()` output — tables look stretched and hard to read. snowflakeR provides helpers that emit output in a single clean pass:
+### What we know about Workspace + R output
 
-| Function | Replaces | Use for |
-|----------|----------|---------|
+When R runs through **rpy2** in Workspace, stdout often reaches the notebook UI as **several separate display events** (one per `write_console` / flush from rpy2). Snowsight's HTML renderer can insert **extra vertical spacing** between those events — printed tables look stretched and `cat()` messages double-space.
+
+This is **cosmetic**, not wrong data. It was observed during multilang notebook development on Workspace; product behaviour may change by release.
+
+**Two mitigations work together:**
+
+| Layer | Where | What it does |
+|-------|--------|----------------|
+| **`%%R` magic (sfnb-multilang)** | Every `%%R` cell | Wraps cell code in R `capture.output({...})`, buffers console writes, emits **one** Python `print()` block — see [`SafeRMagics` in `r_helpers.py`](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/src/sfnb_multilang/helpers/r_helpers.py) |
+| **snowflakeR helpers** | When you call them explicitly | `rprint()`, `rview()`, `rglimpse()`, `rcat()` — wide `print()` width, `cli` summaries; use when magic buffering is not enough or you use bare rpy2 |
+| **RSnowflake** | DBI-only workflows | Same helper names in **RSnowflake** use `writeLines(capture.output(...))` for the same reason — see [`RSnowflake/R/helpers.R`](https://github.com/Snowflake-Labs/RSnowflake/blob/main/R/helpers.R) |
+
+After bootstrap, sfnb-multilang also sets **`options(width = 200)`** and **`options(tibble.width = Inf)`** so wide tables wrap less inside each line.
+
+::: {.callout-tip}
+**Interactive grids:** For data frames, the sfnb `%%R` magic can return a **pandas DataFrame** to Workspace's datagrid (lazy `dbplyr` tables may execute SQL via Snowpark without copying all rows to R). Use `%%R --text` to force plain text only. Details: multilang `r_helpers.py` docstring on `SafeRMagics`.
+:::
+
+| Function (snowflakeR) | Replaces | Use for |
+|-----------------------|----------|---------|
 | `rprint(x)` | `print(x)` | Models, lists, data frames |
-| `rview(df, n = 10)` | `head(df)` | Quick row preview |
+| `rview(df, n = 10)` | `head(df)` | Quick row preview + row count message |
 | `rglimpse(df)` | `glimpse()` / `str()` | Column types and sample values |
-| `rcat(...)` | `cat()` | Messages without double spacing |
+| `rcat(...)` | `cat()` | Status lines without awkward spacing |
 
 ```r
 %%R
@@ -245,7 +266,9 @@ rview(df, n = 8)
 rglimpse(df)
 ```
 
-Bootstrap sets **`options(width = 200)`** and **`options(tibble.width = Inf)`** so wide tibbles do not wrap aggressively. Adjust from Python if needed:
+If output still looks wrong, compare the same cell in **local RStudio** vs Workspace to confirm it is display-layer only. Platform internals: [Appendix G](../appendices/G_workspace_container_internals/index.qmd).
+
+Bootstrap / CRE also set console width from Python when needed:
 
 ```python
 from sfnb_setup import set_r_console_width
@@ -343,7 +366,7 @@ A productive layout separates **setup**, **data**, **modeling**, and **operation
 
 ```{mermaid}
 flowchart TD
-  C1["1 Python — setup_notebook"]
+  C1["1 Python — setup_notebook or CRE"]
   C2["2 SQL — DDL, USE context, seed tables"]
   C3["3 R — connect, features, train"]
   C4["4 Python — Snowpark ETL optional"]
@@ -354,7 +377,7 @@ flowchart TD
 
 | Cell | Language | Runs on | Example |
 |------|----------|---------|---------|
-| Bootstrap | Python | Container kernel | `setup_notebook()` |
+| Bootstrap (if no CRE) | Python | Container kernel | `setup_notebook()` |
 | Context / DDL | SQL | **Warehouse** | `CREATE TABLE`, `USE WAREHOUSE` |
 | Explore / model | R (`%%R`) | Embedded R | `sfr_connect()`, tidymodels |
 | Heavy ETL | Python | Snowpark on warehouse | `session.write_pandas()` |
@@ -365,9 +388,11 @@ flowchart TD
 
 ---
 
-## Installing extra R packages in-session {#sec-packages}
+## Installing extra R packages {#sec-packages}
 
-Bootstrap installs packages from YAML. For ad hoc additions in a session:
+### Cold bootstrap (no CRE)
+
+`setup_notebook()` installs the stack from **`snowflaker_*.yaml`** (conda, CRAN, tarballs). For **one-off** packages in the same session:
 
 ```r
 %%R
@@ -376,12 +401,43 @@ install.packages("forecast", quiet = TRUE)
 suppressPackageStartupMessages(library(forecast))
 ```
 
-Workspace has **no interactive stdin** — always set `repos`, use `quiet = TRUE`, and suppress startup messages. Packages with **system libraries** (e.g. `sf` → GDAL) may fail with plain `install.packages()`; add **conda-forge** equivalents (`r-sf`) to YAML instead.
+Workspace has **no interactive stdin** — always set `repos`, use `quiet = TRUE`, and suppress startup messages. Packages with **system libraries** (e.g. `sf` → GDAL) often fail with plain `install.packages()`; add **conda-forge** equivalents (`r-sf`) to YAML instead.
 
-Interactive installs **do not survive** container recycle — add recurring packages to `snowflaker_*.yaml` or bake into a [CRE](../09_custom_runtime_and_ml_jobs/index.qmd).
+Interactive installs **do not survive** container recycle — add recurring packages to YAML or move to a CRE.
+
+### On top of a CRE (recommended paths)
+
+A CRE already has R, `%%R`, snowflakeR, and RSnowflake. To add more packages:
+
+| Approach | When to use | Notes |
+|----------|-------------|--------|
+| **Rebuild CRE** | Production standard | Add packages to `cre_profile.yaml` `extras.conda_r` / `extras.cran`, rebuild image, `CREATE OR REPLACE` CRE — [CRE chapter](../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-e2e) |
+| **In-session `install.packages()`** | Quick experiment | Same pattern as above; needs **EAI** (or internal **`mirrors:`** CRAN) if the package is not cached in the image |
+| **micromamba in `%%R`** | Conda-forge-only deps | `Sys.which("micromamba")` should exist in CRE; install into `workspace_env` — platform team may prefer image rebuild instead |
+
+```r
+%%R
+# Example: ad hoc CRAN add on a CRE session (EAI / mirror must allow CRAN)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+if (!requireNamespace("forecast", quietly = TRUE)) {
+  install.packages("forecast", quiet = TRUE)
+}
+library(forecast)
+```
+
+```yaml
+# Example: bake into next CRE build (cre_profile.yaml)
+extras:
+  cran:
+    - forecast
+  conda_r:
+    - r-forecast   # prefer when a conda-forge build exists
+```
+
+After an in-session install, packages last until **kernel restart** or **container recycle** — same as bootstrap. For a durable team stack, **rebuild the CRE** rather than relying on analysts to install ad hoc.
 
 ::: {.callout-warning}
-Pin **`r-reticulate>=1.25`** in config. Older reticulate versions can **segfault** when loaded with rpy2 in the same process.
+Pin **`r-reticulate>=1.25`** in config (bootstrap YAML or CRE profile). Older reticulate versions can **segfault** when loaded with rpy2 in the same process.
 :::
 
 ---

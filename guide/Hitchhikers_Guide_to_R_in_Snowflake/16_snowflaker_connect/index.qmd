@@ -261,9 +261,9 @@ Define `main(config)` in the script. Workers use **stage volume mounts** — not
 
 ### Tasks in a typical ML lifecycle
 
-1. **Nightly Task** — refresh feature Dynamic Tables or materialized views
-2. **Weekly Task / ML Job** — retrain via executor or exported notebook
-3. **Post-deploy Task** — batch inference SQL against registry model
+1. **Feature tables** — **Dynamic Tables** refresh on their own **TARGET_LAG** / schedule (no Task needed to “refresh the DT”). **Materialized views** in Snowflake stay consistent with base tables automatically. Use **Tasks** to chain *downstream* work (e.g. start retrain after a DT run completes), not to drive DT/MV refresh itself.
+2. **Scheduled retrain** — weekly Task, ML Job, or executor script when models need periodic refit
+3. **Post-deploy Task** — batch inference SQL against registry model (or `sfr_predict_sql()` for warehouse-native models)
 4. **doSnowflake Tasks mode** — parallel `%dopar%` chunked into SPCS ([Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd))
 
 ---

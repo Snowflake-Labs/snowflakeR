@@ -3,14 +3,6 @@
 # Functions for creating the Snowflake objects and Docker images needed
 # for remote doSnowflake execution (modes: tasks, spcs, queue).
 
-# Pinned RSnowflake version for Docker images. Update here when a new
-# GitHub release is published at Snowflake-Labs/RSnowflake.
-.RSNOWFLAKE_RELEASE_VERSION <- "0.2.0"
-.RSNOWFLAKE_RELEASE_URL <- sprintf(
-  "https://github.com/Snowflake-Labs/RSnowflake/releases/download/v%s/RSnowflake_%s.tar.gz",
-  .RSNOWFLAKE_RELEASE_VERSION, .RSNOWFLAKE_RELEASE_VERSION
-)
-
 
 #' Set up Snowflake infrastructure for doSnowflake
 #'
@@ -114,7 +106,7 @@ sfr_dosnowflake_setup <- function(conn,
 #'   * `pip` -- character vector of pip package names
 #' @param docker_context Character. Path to the directory containing the
 #'   Dockerfiles and worker.R. If `NULL`, uses the built-in templates
-#'   from `inst/workers/` in the installed package.
+#'   from `internal/doSnowflake/docker/`.
 #'
 #' @returns The full image URI (invisibly).
 #'

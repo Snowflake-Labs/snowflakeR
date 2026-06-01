@@ -64,16 +64,15 @@
   if (opts$worker_type == "ephemeral") {
     cli::cli_inform("Launching {opts$n_workers} ephemeral worker{?s}...")
     bridge$create_ephemeral_workers(
-      session             = conn$session,
-      compute_pool        = opts$compute_pool,
-      image_uri           = opts$image_uri,
-      job_id              = job_id,
-      stage_path          = job$stage_path,
-      n_workers           = as.integer(opts$n_workers),
-      queue_fqn           = opts$queue_fqn,
-      instance_family     = opts$instance_family,
-      warehouse           = opts$warehouse,
-      containers_per_node = as.integer(opts$containers_per_node %||% 1L)
+      session        = conn$session,
+      compute_pool   = opts$compute_pool,
+      image_uri      = opts$image_uri,
+      job_id         = job_id,
+      stage_path     = job$stage_path,
+      n_workers      = as.integer(opts$n_workers),
+      queue_fqn      = opts$queue_fqn,
+      instance_family = opts$instance_family,
+      warehouse      = opts$warehouse
     )
 
     # 4b. Optionally wait for all workers to be READY before they start claiming
@@ -232,15 +231,10 @@
     chunks_per_job    = user_opts$chunks_per_job %||% "auto",
     pre_warm          = isTRUE(user_opts$pre_warm),
     service_name      = user_opts$service_name %||% NULL,
-    instance_family     = user_opts$instance_family %||% "CPU_X64_S",
-    containers_per_node = as.integer(user_opts$containers_per_node %||% 1L),
-    warehouse           = user_opts$warehouse %||% "",
+    instance_family   = user_opts$instance_family %||% "CPU_X64_S",
+    warehouse         = user_opts$warehouse %||% "",
     result_sync_wait_sec = as.numeric(user_opts$result_sync_wait_sec %||% 45),
-    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3),
-    data_query           = user_opts$data_query,
-    save_models          = isTRUE(user_opts$save_models),
-    model_key_arg        = user_opts$model_key_arg,
-    model_run_id         = user_opts$model_run_id
+    result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3)
   )
 }
 

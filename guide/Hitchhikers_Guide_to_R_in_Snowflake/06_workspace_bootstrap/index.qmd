@@ -5,9 +5,9 @@ subtitle: "setup_notebook() and configuration YAML"
 
 ## Overview
 
-After [Workspaces & Notebooks](../05_workspaces_overview/index.qmd), enable R in notebooks with **snowflake-notebook-multilang**. Most enterprises follow **two phases**:
+After [Workspaces & Notebooks](../05_workspaces_overview/index.qmd), enable R in notebooks with **snowflake-notebook-multilang** package. Most enterprises follow **two phases**:
 
-**1. Organisation onboarding (usually IT or platform engineering)** — Your Snowflake team builds a **[Custom Runtime Environment (CRE)](../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-e2e)**: a versioned container image with R, `%%R`, snowflakeR, RSnowflake, and your approved package set pre-installed. They register it in Snowflake (`cre@<your_org_name>`) and grant notebook roles access. Analysts then open Workspace with **no bootstrap cell** (v2 images) and go straight to `%%R` — startup is fast once the notebook container is running. This is the path most production teams adopt after a short pilot.
+**1. Organisation onboarding (usually IT or platform engineering)** — Your Snowflake team builds a **[Custom Runtime Environment (CRE)](../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-e2e)**: a versioned container image with R, `%%R`, snowflakeR, RSnowflake, and your approved package set pre-installed. They register it in Snowflake (`cre@<your_org_name>`) and grant notebook roles access. Analysts then open Workspace with **no bootstrap cell** (reference CRE image) and go straight to `%%R` — startup is fast once the notebook container is running. This is the path most production teams adopt after a short pilot.
 
 **2. Self-serve bootstrap (this chapter’s main content)** — While CRE is being set up — or for a solo proof-of-concept — a **single Python cell** runs `setup_notebook()` to install micromamba, R, tarballs, and `%%R` on the default runtime. It works without Docker or admin image builds, but runs **on each notebook compute restart** (after idle recycle). **Typical time for a standard snowflakeR + RSnowflake configuration is ~60 seconds**; more conda/CRAN packages, ADBC, or multilanguage options in your YAML add time (large stacks can reach several minutes).
 
@@ -26,8 +26,8 @@ You may use **both**: bootstrap during evaluation; CRE once your organisation’
 | | **Org CRE (after IT/platform setup)** | **Self-serve bootstrap (`setup_notebook()`)** |
 |---|--------------------------------------|-----------------------------------------------|
 | **Who sets it up** | Platform, ML ops, or IT (image build + Snowflake registration) | Individual analyst or data scientist |
-| **Typical timing** | After pilot; ongoing image updates when packages change | Day one; before org CRE exists |
-| **First `%%R`** | Seconds (after container is up) — v2 auto-registers on kernel start | ~60s typical bootstrap; longer with extra packages |
+| **Typical timing** | After pilot; ongoing image updates when packages change | Day one; before org CRE exists, or for customisation and experimentation |
+| **First `%%R`** | Seconds (after container is up) — reference CRE auto-registers on kernel start | ~60s typical bootstrap; longer with extra packages |
 | **Governance** | Image scanned in CI; pinned digest; one approved stack | Runtime downloads (EAI); per-notebook YAML |
 | **Analyst experience** | Attach `cre@<org_name>` in advanced settings; often **no setup cell** | One Python bootstrap cell per notebook (or project) |
 | **Still need bootstrap?** | Optional — session context, EAI checks, one-off extras | Required on default Snowflake runtime |
@@ -102,7 +102,7 @@ languages:
 ```
 
 ::: {.callout-warning}
-Never compile `snowflakeR` / `RSnowflake` from source inside Workspace. Build tarballs with `R CMD build --no-build-vignettes` locally.
+Wherever possible, never compile `snowflakeR` / `RSnowflake` from source inside Workspace. Build tarballs with `R CMD build --no-build-vignettes` locally.
 :::
 
 ## Notebooks deep in your Git repo {#sec-filesystem}
@@ -176,7 +176,7 @@ Prefer **one shared copy** of `sfnb_setup.py` in your repo (e.g. under `snowflak
 
 ## Custom Runtime Images (for platform / IT teams) {#sec-cre}
 
-If you are **enabling R for an organisation** (not only your own notebook), plan a one-time **CRE onboarding** project: build an image with [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) (`docker/create_cre.sh` + `cre_profile.yaml`), push to your Snowflake image repository, register `cre@<org_name>`, and grant `USAGE` to notebook roles. Reference **v2** registers `%%R` on kernel start (empty git repo is fine), includes **snowflakeR**, **RSnowflake**, and optional **ADBC**.
+If you are **enabling R for an organisation** (not only your own notebook), plan a one-time **CRE onboarding** project: build the **reference v1** image with [snowflake-notebook-multilang](https://github.com/Snowflake-Labs/snowflake-notebook-multilang) (`docker/create_cre.sh` + `cre_profile.yaml` — default tag `sfnb-multilang-r:v1`), push to your Snowflake image repository, register `cre@<org_name>`, and grant `USAGE` to notebook roles. That image registers `%%R` on kernel start (empty git repo is fine), includes **snowflakeR**, **RSnowflake**, and optional **ADBC**. Earlier internal image experiments are not a separate supported release — **v1** is the first production reference.
 
 **Analysts** only select the CRE in Workspace advanced settings — they do not run Docker. Share the [notebook template](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/examples/cre_workspace_notebook_template.md) after go-live.
 
@@ -196,7 +196,7 @@ sfr_connect()
 **Toolkit docs (public repo):** [Organisation operating model](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/org_cre_operating_model.md), [path matrix](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/docs/cre_path_matrix.md), [notebook template](https://github.com/Snowflake-Labs/snowflake-notebook-multilang/blob/main/examples/cre_workspace_notebook_template.md).
 
 ::: {.callout-warning}
-Git-connected projects with **renv** (`.Rprofile` → `renv/activate.R` at the repo root) can hijack R on the `/filesystem` mount. Use a CRE **v2** image or `enable_r_cells()` from the bootstrap helpers — never raw `%load_ext rpy2.ipython` on those repos.
+Git-connected projects with **renv** (`.Rprofile` → `renv/activate.R` at the repo root) can hijack R on the `/filesystem` mount. Use the **reference CRE (v1)** image or `enable_r_cells()` from the bootstrap helpers — never raw `%load_ext rpy2.ipython` on those repos.
 :::
 
 ## Companion notebook

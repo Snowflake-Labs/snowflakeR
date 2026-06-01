@@ -124,11 +124,11 @@ Snowflake supports several authentication mechanisms. RSnowflake and snowflakeR 
 | **External browser (`externalbrowser`)** | Opens SSO/OAuth in your browser | **Interactive desktop** — RStudio, Posit, VS Code, terminal R |
 | **Key-pair (JWT / `SNOWFLAKE_JWT`)** | RSA key pair; private key signs a token | **CI/CD, service accounts, scheduled jobs** — no browser, long-lived |
 | **Programmatic Access Token (PAT)** | Short-lived token from Snowsight | **Automation** when key-pair is not preferred; treat like a password |
-| **OAuth (Workspace session)** | Notebook runtime injects session token | **Workspace Notebooks only** — automatic after bootstrap; no TOML needed |
+| **OAuth (Workspace session)** | Notebook runtime injects session token on startup | **Workspace Notebooks only** — automatic after bootstrap; no TOML needed |
 | **MFA / Duo** | Often combined with browser or password flows | Enterprise interactive login |
 
 ::: {.callout-tip}
-**Rule of thumb:** Interactive development on your laptop → `externalbrowser` in TOML. Pipelines and service users → key-pair JWT. Workspace notebooks → rely on session OAuth (do not paste PATs into cells).
+**Rule of thumb:** Interactive development on your laptop → `externalbrowser` in TOML (**`~/.snowflake/connections.toml`**). Pipelines and service users → key-pair JWT (**`SNOWFLAKE_JWT`**). Workspace notebooks → rely on session OAuth (do not paste PATs into cells).
 :::
 
 **Further reading:** [Key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth), [Programmatic access tokens](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
@@ -193,6 +193,8 @@ Workspace Notebooks typically **do not** use `connections.toml` — the session 
 
 ### Key-pair setup (automation / CI) {#sec-keypair}
 
+Snowflake docs: [Key-pair authentication and key-pair rotation](https://docs.snowflake.com/en/user-guide/key-pair-auth) — [generate the key pair](https://docs.snowflake.com/en/user-guide/key-pair-auth#configuring-key-pair-authentication), [assign the public key](https://docs.snowflake.com/en/user-guide/key-pair-auth#assign-the-public-key-to-a-snowflake-user) with `ALTER USER`, and [rotate keys](https://docs.snowflake.com/en/user-guide/key-pair-auth#key-pair-rotation) using `RSA_PUBLIC_KEY` / `RSA_PUBLIC_KEY_2`.
+
 ```bash
 openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
 openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
@@ -202,7 +204,9 @@ Register the public key on your Snowflake user (`ALTER USER ... SET RSA_PUBLIC_K
 
 ### Programmatic Access Token (PAT) {#sec-pat}
 
-Create a PAT in **Snowsight → Admin → Security → Programmatic Access Tokens**. Prefer environment variables:
+Snowflake docs: [Using programmatic access tokens for authentication](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens) — [generate a token](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens#generating-a-programmatic-access-token) in Snowsight (**Governance & security → Users & roles** → user → **Programmatic access tokens** → **Generate new token**) or with `ALTER USER … ADD PROGRAMMATIC ACCESS TOKEN`; [use a token](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens#using-a-programmatic-access-token) with clients and the SQL API.
+
+Prefer environment variables in R (do not commit tokens):
 
 ```r
 conn <- sfr_connect(token = Sys.getenv("SNOWFLAKE_PAT"))

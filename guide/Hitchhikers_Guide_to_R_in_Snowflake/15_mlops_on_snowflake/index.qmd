@@ -10,7 +10,7 @@ This chapter frames **MLOps on Snowflake** for R users: how data moves from sour
 The R community has strong tools through **modeling** (tidymodels, forecast, lme4, …) and **local MLOps** (renv, targets, vetiver, Posit Connect). snowflakeR adds the **in-platform infrastructure layer** — registry, feature store, governed serving — when your data and models live in Snowflake.
 
 ::: {.callout-important}
-See [Introduction](../00_introduction/index.qmd#sec-disclaimers) — snowflakeR is a community project, not officially supported by Snowflake.
+See [Introduction §Disclaimers](../00_introduction/index.qmd#sec-disclaimers) — **snowflakeR**, **RSnowflake**, and **snowflake-notebook-multilang** are Snowflake-Labs community projects, not officially supported product offerings. APIs may change as they evolve.
 :::
 
 ## Learning Objectives
@@ -98,7 +98,7 @@ How snowflakeR **complements** (not replaces) the Posit/community stack:
 | R-only pattern | Pain on Snowflake-centric teams |
 |----------------|--------------------------------|
 | Train locally, export CSV | Egress cost, governance, stale data |
-| PMML / ONNX conversion | Many R models don't convert cleanly |
+| PMML / ONNX conversion | Many R models don't convert cleanly; for supported workflows, **[orbital](https://cran.r-project.org/package=orbital)** (tidymodels → SQL) or Snowflake **warehouse-native / SQL** model forms can score in SQL without shipping R to inference |
 | One Plumber container per model | Ops sprawl, no unified registry |
 | Cron on a VM | No lineage to warehouse tables |
 | Score in R, write results manually | Race conditions, audit gaps |

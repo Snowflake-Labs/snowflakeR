@@ -33,7 +33,7 @@ sfr_dosnowflake_build_image(
 
 \item{docker_context}{Character. Path to the directory containing the
 Dockerfiles and worker.R. If \code{NULL}, uses the built-in templates
-from \verb{inst/workers/} in the installed package.}
+from \verb{internal/doSnowflake/docker/}.}
 }
 \value{
 The full image URI (invisibly).

@@ -52,47 +52,55 @@ Feature Store centralizes **definitions** and enforces **temporal correctness** 
 | **Training** | "What did we **know** about entity X at time T?" | `sfr_generate_training_data()` / `sfr_generate_dataset()` |
 | **Inference** | "What do we **know now** about entity X?" | `sfr_retrieve_features()` |
 
-Training uses a **spine** (entity keys + event timestamps + labels). Inference uses current or latest feature values — no labels, no point-in-time join across history.
+Training uses a **spine** (entity keys + event timestamps + labels). Inference typically uses current or latest feature values — no labels, no point-in-time join across history.
 
 ---
 
 ## Architecture {#sec-architecture}
 
 ```{mermaid}
-flowchart TB
+flowchart LR
   subgraph sources [Source data in Snowflake]
+    direction TB
     ORD[orders]
+    DBT[dbt or Dynamic Tables]
     ACT[activity events]
-    DBT[dbt / Dynamic Tables optional]
+    ORD --> DBT
   end
 
   subgraph fs [Feature Store schema]
+    direction TB
     ENT[Entities CUSTOMER PRODUCT]
     FV1[CUSTOMER_FEATURES v1]
     FV2[CUSTOMER_ACTIVITY v1]
     DT[(Backing Dynamic Table or table)]
+    ENT --> FV1
+    ENT --> FV2
+    FV1 --> DT
+    FV2 --> DT
   end
 
-  subgraph train [Training path]
-    SPINE[Spine labels plus event_ts]
-    TD[Training data / Dataset]
+  subgraph paths [Training then inference]
+    direction TB
+    subgraph train [Training path]
+      direction TB
+      SPINE[Spine labels plus event_ts]
+      TD[Training data or Dataset]
+      SPINE --> TD
+    end
+    subgraph infer [Inference path]
+      direction TB
+      SCORE[Scoring spine entity keys only]
+      FEAT[Feature matrix for predict]
+      SCORE --> FEAT
+    end
+    TD ~~~ SCORE
   end
 
-  subgraph infer [Inference path]
-    SCORE[Scoring spine entity keys only]
-    FEAT[Feature matrix for predict]
-  end
-
-  ORD --> DBT --> FV1
+  DBT --> FV1
   ACT --> FV2
-  FV1 --> DT
-  FV2 --> DT
-  ENT --> FV1
-  ENT --> FV2
-  SPINE --> TD
   FV1 --> TD
   FV2 --> TD
-  SCORE --> FEAT
   FV1 --> FEAT
   FV2 --> FEAT
 ```
@@ -256,7 +264,7 @@ fv_external <- sfr_create_feature_view(
 )
 ```
 
-Feature Store registers **metadata and lineage**; refresh is your pipeline's job.
+Feature Store registers **metadata and lineage**; refresh is your pipeline's job.  An external process maintains the contents of `analytics.customer_demo`, and Feature Store will use the latest values from that table, or if defined and maintained with a timestamp column, the values as-of the timestamp.  When a timestamp is defined it is critical that the external process maintains the timestamp column and that it is updated with the current timestamp when the data is updated to avoid future leakage.
 
 ### Draft then register (two-step)
 
@@ -416,9 +424,9 @@ See [Model Registry §lineage](../18_model_registry/index.qmd#sec-lineage).
 
 ---
 
-## Inference-time features {#sec-inference}
+## Inference-time features (offline store) {#sec-inference}
 
-At scoring time, fetch **latest** feature values — no labels, no historical point-in-time logic:
+For **batch scoring** or joins against **offline** Feature Views, fetch **latest** values (no labels, no `spine_timestamp_col`) via `sfr_retrieve_features()`:
 
 ```r
 features_for_scoring <- sfr_retrieve_features(
@@ -430,11 +438,17 @@ features_for_scoring <- sfr_retrieve_features(
 
 Pass the result to `predict()` locally or to a batch scoring pipeline. Align column names with `input_cols` declared at model registration.
 
+For **sub-minute, key-based** serving, use the **online** Hybrid Table instead — [§Online serving](#sec-online) (`sfr_read_feature_view(..., store_type = "ONLINE")` or SQL on the OFT).
+
 ---
 
-## Online serving (pointer) {#sec-online}
+## Online serving {#sec-online}
 
-Low-latency **online feature stores** (sub-minute lag) are supported on the platform where your edition and SDK version allow — attach `sfr_online_config()` when creating or updating a view:
+**Online Feature Tables (OFTs)** expose the **latest** feature values per entity key on a **Hybrid Table**, refreshed from the offline Feature View on a schedule driven by `target_lag` (Stream + Task + MERGE). They are for **low-latency inference**, not point-in-time training — use offline views and [§Inference-time features](#sec-inference) / `sfr_generate_training_data()` for history.
+
+Requires **`snowflake-ml-python` ≥ 1.18.0** and a platform edition that supports online serving. Platform detail: [Implementation Guide — Online Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html).
+
+### Enable online on a Feature View
 
 ```r
 fv_online <- sfr_create_feature_view(
@@ -446,9 +460,91 @@ fv_online <- sfr_create_feature_view(
   refresh_freq  = "5 minutes",
   online_config = sfr_online_config(enable = TRUE, target_lag = "2 minutes")
 )
+
+# Or add online to an existing view
+sfr_update_feature_view(
+  fs, "CUSTOMER_FEATURES", "v1",
+  online_config = sfr_online_config(enable = TRUE, target_lag = "5 minutes")
+)
 ```
 
-Details: [Implementation Guide — Online Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html).
+Snowflake creates the OFT (Hybrid Table + sync Task). `target_lag` on the online config is **independent** of offline `refresh_freq` — end-to-end staleness is roughly both paths combined.
+
+### Retrieve values — snowflakeR → snowflake-ml-python
+
+Use **`sfr_read_feature_view()`** with `store_type = "ONLINE"` (wraps `fs.read_feature_view(..., StoreType.ONLINE)`). Pass entity **keys** and optional **feature column** names; batch keys in one call when scoring many entities.
+
+```r
+# Single customer lookup
+online_row <- sfr_read_feature_view(
+  fs,
+  name          = "CUSTOMER_ONLINE",
+  version       = "v1",
+  store_type    = "ONLINE",
+  keys          = list(CUSTOMER_ID = "C001"),
+  feature_names = c("CREDIT_SCORE")
+)
+
+# Batch: many keys in one round trip (preferred over a loop)
+ids <- c("C001", "C002", "C003")
+online_batch <- sfr_read_feature_view(
+  fs,
+  name          = "CUSTOMER_ONLINE",
+  version       = "v1",
+  store_type    = "ONLINE",
+  keys          = list(CUSTOMER_ID = ids),
+  feature_names = c("CREDIT_SCORE")
+)
+```
+
+| API | Store | Use when |
+|-----|-------|----------|
+| `sfr_read_feature_view(..., store_type = "ONLINE")` | Hybrid Table (OFT) | Real-time lookup by entity key(s) |
+| `sfr_read_feature_view(..., store_type = "OFFLINE")` | Offline DT / table | Inspect materialized offline features |
+| `sfr_retrieve_features()` | Offline Feature Views | Join a **spine** to features (batch scoring / latest offline values) — not the OFT API |
+
+For **multiple Feature Views** at inference, the platform typically does **one OFT read per view** (or a **pre-joined** Feature View registered for online) — see the Implementation Guide §multi-FV online reads.
+
+Operational helpers:
+
+```r
+sfr_refresh_feature_view(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
+sfr_get_refresh_history(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
+```
+
+### Retrieve values — SQL on the Online Feature Table
+
+The OFT is a queryable table in your Feature Store schema (naming is managed by the platform — often a `*_OFT` suffix). Discover the exact name in **Snowsight** (Feature Store UI) or metadata commands, then query like any Hybrid Table:
+
+```sql
+-- Illustrative: replace with your FS database.schema and OFT name
+SELECT customer_id, credit_score
+FROM MY_ML_DB.FEATURE_STORE.CUSTOMER_ONLINE_OFT
+WHERE customer_id IN ('C001', 'C002', 'C003');
+```
+
+From R with **RSnowflake** (no Feature Store API — useful for SQL-only services or joins in the warehouse):
+
+```r
+library(DBI)
+library(RSnowflake)
+
+con <- dbConnect(Snowflake())
+features <- dbGetQuery(con, "
+  SELECT customer_id, credit_score
+  FROM MY_ML_DB.FEATURE_STORE.CUSTOMER_ONLINE_OFT
+  WHERE customer_id = ?
+", params = list("C001"))
+```
+
+Use **bind parameters** (`?`) for high-QPS serving so Snowflake can reuse plans ([Implementation Guide §parameter binding](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html#sec-8-9-4-parameter-binding)).
+
+::: {.callout-note}
+## Offline vs online retrieval
+
+- **Training / point-in-time:** spine + `sfr_generate_training_data()` or `sfr_retrieve_features()` with `spine_timestamp_col` → **offline** store only.
+- **Real-time scoring:** `sfr_read_feature_view(..., ONLINE)` or **SQL** against the OFT → **latest** values per key, bounded by `target_lag`.
+:::
 
 ---
 

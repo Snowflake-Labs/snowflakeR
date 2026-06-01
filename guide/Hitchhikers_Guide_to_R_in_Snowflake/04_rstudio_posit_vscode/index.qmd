@@ -15,6 +15,7 @@ You do **not** need Workspace Notebooks to use Snowflake from R.
 - Set up VS Code for an RStudio-like experience
 - Use the **Snowflake VS Code extension** for SQL and object browsing
 - Know **Posit Workbench Native App** and container-hosted RStudio options
+- Choose between **RSnowflake** and Posit's **`odbc`** package with the Snowflake ODBC driver
 
 ---
 
@@ -46,6 +47,90 @@ orders <- tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
   filter(order_date >= "2024-01-01") |>
   collect()
 ```
+
+---
+
+## RSnowflake vs `odbc` + Snowflake ODBC {#sec-odbc}
+
+On desktop **RStudio**, **Posit Workbench**, and **Positron**, you have two well-supported ways to run **DBI** and **dbplyr** against Snowflake. Both are good options; many teams standardize on one for operations and keep the other in mind for edge cases.
+
+| Layer | **RSnowflake** | **`odbc`** + Snowflake ODBC |
+|-------|----------------|----------------------------|
+| R package | [RSnowflake](https://github.com/Snowflake-Labs/RSnowflake) | CRAN [`odbc`](https://odbc.r-dbi.org/) |
+| Under the hood | [SQL REST API](../11_rsnowflake_sql_api/index.qmd) (+ optional **ADBC** for bulk I/O) | **unixODBC** / iODBC → [Snowflake ODBC driver](https://docs.snowflake.com/en/developer-guide/odbc/odbc) |
+| Extra install | None beyond R (optional `adbcsnowflake` for Arrow bulk) | OS driver manager + Snowflake ODBC driver ([install guide](https://docs.snowflake.com/en/developer-guide/odbc/odbc)) |
+| Posit-specific drivers | Not required | [Posit Professional Drivers](https://docs.posit.co/pro-drivers/) (paid products) or Snowflake's driver from Snowflake's site — see [Posit: Snowflake](https://solutions.posit.co/connections/db/databases/snowflake/) |
+| **Connections** pane | **New Connection → Snowflake** (RSnowflake) | ODBC DSN / driver-based connection (traditional path) |
+| **`connections.toml`** | Supported via `dbConnect(Snowflake(), name = "...")` | Supported via `dbConnect(odbc::snowflake(), connection_name = "...")` |
+| **dbplyr** / **DBI** | Yes | Yes — same verbs, different driver |
+| **snowflakeR** (ML APIs) | Orthogonal — install Python + snowflakeR either way | Same |
+
+### Practical differences to plan for
+
+| Topic | RSnowflake | `odbc` + Snowflake ODBC |
+|-------|------------|-------------------------|
+| **Admin / CI footprint** | R package (+ optional ADBC build for bulk) | Driver binaries, `odbc.ini` / DSN, often IT-managed |
+| **Client `GET` / `PUT` SQL** | Not on SQL API — use ADBC bulk, Snowpark in Workspace, or stage files another way ([Query §limits](../13_rsnowflake_query/index.qmd#sec-limits)) | ODBC/JDBC stack often used for stage-oriented workflows teams already know |
+| **Bulk load from R** | `"auto"` → ADBC / Snowpark / literal INSERT ([Query §bulk](../13_rsnowflake_query/index.qmd#sec-bulk)) | Driver-dependent; no RSnowflake-specific routing |
+| **Workspace Notebooks** | First-class: session OAuth via `SNOWFLAKE_HOST`; default without ODBC install | **ODBC was impractical** in notebooks until **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** — driver + unixODBC do not fit `setup_notebook()`; bake into CRE if you must use `odbc` |
+| **Workspace bulk I/O** | Optional **ADBC** in CRE (Snowflake's optimized Arrow path) | ODBC in CRE possible; not the direction Snowflake optimizes for new bulk work |
+| **WebR / WASM** | HTTPS SQL API works without a native driver | Needs ODBC in the environment — usually impractical |
+| **Identifier case** | Defaults to uppercase (ODBC-aligned); `RSnowflake.identifier_case` | Snowflake ODBC behaviour; same quoting pitfalls |
+| **Ecosystem age** | Snowflake Labs, SQL API era | Long-running Posit + enterprise ODBC playbooks |
+
+Neither package replaces **snowflakeR** for Feature Store, Model Registry, or Snowpark ML — you still add Python + snowflakeR when you need those APIs.
+
+### Example: `odbc::snowflake()`
+
+The `odbc` package provides a Snowflake-specific connector that reads the same **`~/.snowflake/connections.toml`** as the Python connector and can pick up ambient OAuth where the platform provides it:
+
+```r
+library(DBI)
+library(odbc)
+
+con <- dbConnect(odbc::snowflake(), connection_name = "default")
+
+library(dplyr)
+tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
+  filter(ORDER_DATE >= "2024-01-01") |>
+  head(10) |>
+  collect()
+```
+
+Interactive SSO on a laptop:
+
+```r
+con <- dbConnect(
+  odbc::snowflake(),
+  account = "xy12345.us-east-1",
+  authenticator = "externalbrowser"
+)
+```
+
+### When teams pick which
+
+| Prefer **RSnowflake** when… | Prefer **`odbc`** when… |
+|-----------------------------|-------------------------|
+| You want **no ODBC install** on analyst laptops | IT already **rolls out** the Snowflake ODBC driver to all machines |
+| You align with **Snowflake-Labs** R + Workspace bootstrap in this guide | You rely on **Posit Connect** credential patterns (`connectcreds`) or legacy ODBC DSNs |
+| You need **SQL API** semantics documented in [chapter 11](../11_rsnowflake_sql_api/index.qmd) | You need **driver-level** stage/file workflows from R that assume ODBC |
+| **WebR** or minimal client footprint matters | You have years of **validated ODBC** runbooks in production |
+
+Many teams use **RSnowflake for new notebooks and dplyr**, and keep **ODBC** for Shiny on Connect, older projects, or platforms where the driver is pre-installed (e.g. some Posit Workbench images).
+
+### Workspace: why SQL API won, and what CRE changes
+
+Historically in **Snowflake Workspace**, the **`odbc` package plus Snowflake ODBC driver** was a poor fit: installing and configuring unixODBC and the driver at notebook runtime was slow, brittle, and hard to secure compared with HTTPS. That is a major reason **RSnowflake** (SQL API) exists for in-notebook R. **ADBC** did not share ODBC's deployment shape — it installs as an R/Go driver package (bootstrap or CRE) and is Snowflake's **preferred Arrow-native** path for large bulk I/O alongside the SQL API.
+
+| Path | Workspace without CRE | Workspace with CRE |
+|------|----------------------|-------------------|
+| **RSnowflake** (SQL API) | Bootstrap or tarball | Pre-baked in image — skip bootstrap |
+| **ADBC** | Bootstrap (`languages.r.addons.adbc`) + EAI for Go modules | Pre-baked — recommended for bulk |
+| **`odbc` + ODBC driver** | Impractical via bootstrap | **Possible** if platform team installs driver + DSN in the **CRE image** — not via `setup_notebook()` |
+
+See [RSnowflake in Workspace §bootstrap](../14_rsnowflake_workspace/index.qmd#sec-order).
+
+---
 
 ### snowflakeR in RStudio projects
 
@@ -167,7 +252,7 @@ Many teams use **both**: develop in RStudio or Posit Native App, schedule via Ta
 
 ## Same packages, same objects {#sec-same}
 
-Feature views, registry models, and tables written from R are visible to Python users — regardless of IDE.
+Feature views, registry models, and tables written from R are visible to R and Python users — regardless of IDE.
 
 ## Next steps {#sec-next}
 

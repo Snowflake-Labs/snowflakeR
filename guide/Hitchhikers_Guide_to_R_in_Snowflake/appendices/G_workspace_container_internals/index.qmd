@@ -7,7 +7,7 @@ subtitle: "Need-to-know anatomy, debugging, and %%R vs native R kernels"
 **Audience:** Platform engineers, CRE authors, and anyone debugging kernel startup — **not** required for day-to-day `%%R` notebooks. Start with [R Cells & Interop](../../08_r_cells_and_interop/index.qmd) and [CRE & ML Jobs](../../09_custom_runtime_and_ml_jobs/index.qmd).
 :::
 
-This appendix documents what a live **Workspace Notebook container** looks like inside (validated on snowbooks + sfnb CRE v2, May 2026). Names and paths may shift slightly by Snowflake release; the **shape** (nbctl → jupyter-server → uvenv ipykernel → FUSE `/filesystem`) is the stable mental model.
+This appendix documents what a live **Workspace Notebook container** looks like inside (validated on snowbooks + sfnb CRE v1, May 2026). Names and paths may shift slightly by Snowflake release; the **shape** (nbctl → jupyter-server → uvenv ipykernel → FUSE `/filesystem`) is the stable mental model.
 
 ---
 
@@ -146,9 +146,9 @@ Example `kernel-*.json` fields:
 
 ## sfnb CRE markers {#sec-ws-cre-markers}
 
-| Check | Healthy CRE v2 |
-|-------|----------------|
-| `/opt/sfnb/CRE_VERSION` | e.g. `v2` |
+| Check | Healthy reference CRE (v1) |
+|-------|---------------------------|
+| `/opt/sfnb/CRE_VERSION` | e.g. `v1` |
 | `SFNB_CUSTOM_RUNTIME` | `1` |
 | `~/.ipython/profile_default/startup/00-sfnb-enable-r.py` | Present (often under `/root`) |
 | `~/.workspace_env_prefix` | Points to micromamba `workspace_env` |
@@ -228,13 +228,13 @@ Snowflake Labs community docs describe **Jupyter kernel registration** as a desi
 | **snowflakeR session** | reticulate → active Snowpark session in **same** Python kernel | Separate R process — must re-auth or bridge manually |
 | **SQL cells** | Same notebook — warehouse SQL unchanged | Still need Python kernel for SQL/Snowpark or duplicate workflows |
 | **Multi-language** | One kernel + magics (`%%R`, `%%scala`, …) | Multiple kernels — context switching, no shared variables |
-| **CRE bootstrap** | IPython `startup/` hook (what v2 does) | kernelspec install + UI integration |
+| **CRE bootstrap** | IPython `startup/` hook (reference v1) | kernelspec install + UI integration |
 | **Workspace UI today** | Supported path | Not exposed |
 | **Rocker / Posit analogy** | Different product surface (full JupyterHub / RStudio) | Matches classic Jupyter-R |
 
 ### What we *are* using from Jupyter extensibility
 
-CRE v2 already exploits the same hooks Jupyter extensions use:
+The reference CRE (v1) already exploits the same hooks Jupyter extensions use:
 
 - **`~/.ipython/profile_default/startup/`** — auto-register `%%R` on kernel start
 - **Custom image layers** — micromamba R, tarballs, ADBC, `sfnb_multilang`
@@ -378,7 +378,7 @@ print(torch.cuda.is_available(), torch.cuda.device_count())
 | **Heavy Python GPU + some R** | Managed **GPU Container Runtime** + bootstrap R, or CRE extending GPU snowbooks |
 | **R-only, RStudio-like, full GPU control** | Custom SPCS / JupyterHub image (not Workspace CRE) — separate from Snowsight notebooks |
 
-CPU sfnb CRE v2 does **not** need changes for GPU; ship a **separate GPU-tagged image** and CRE object when you are ready to test.
+CPU sfnb CRE v1 does **not** need changes for GPU; ship a **separate GPU-tagged image** (`v1-gpu`) and CRE object when you are ready to test.
 
 ---
 

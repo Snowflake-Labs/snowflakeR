@@ -19,7 +19,7 @@ After completing this chapter, you will be able to:
 
 ## The problem {#sec-problem}
 
-R teams could query Snowflake via ODBC/JDBC and dplyr, but **Feature Store, Model Registry, and Snowpark ML** exposed Python-first APIs. That forced duplicate infrastructure, PMML/ONNX conversions, or hand-written Python `CustomModel` wrappers.
+Before these packagesR teams could query Snowflake via ODBC/JDBC and dplyr, but **Feature Store, Model Registry, and Snowpark ML** exposed Python-first APIs. That forced duplicate infrastructure, PMML/ONNX conversions, or hand-written Python `CustomModel` wrappers.
 
 ## The solution: three packages {#sec-three-packages}
 
@@ -70,34 +70,7 @@ flowchart TB
   SQLcell --> WH
 ```
 
-::: {.callout-note title="What is rpy2?"}
-**[rpy2](https://rpy2.github.io/)** embeds a full R interpreter **inside the Python process**. It is not a subprocess or network call. In Workspace, rpy2 registers the `%%R` **cell magic** so IPython routes cell bodies to R. Data frames and vectors can cross the boundary efficiently. You write R; rpy2 makes it run where only Python kernels exist today.
-:::
-
-::: {.callout-note title="What is reticulate?"}
-**[reticulate](https://rstudio.github.io/reticulate/)** is the R package that calls **Python from R**. snowflakeR uses it to invoke `snowflake-ml-python` (Feature Store, Model Registry, Snowpark ML) without you writing Python. rpy2 gets you *into* R from the notebook kernel; reticulate gets snowflakeR *back out* to Python ML APIs when needed.
-:::
-
-ASCII reference:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│          Workspace Notebook (Python / IPython kernel)       │
-│  Python cells          %%R cells              SQL cells     │
-│       │                     │                      │        │
-│       │    setup_notebook() registers %%R magic    │        │
-│       │                     │                      │        │
-│       │              ┌──────▼──────┐               │        │
-│       │              │    rpy2     │  (Python→R)  │        │
-│       │              │  embedded R │               │        │
-│       │              │ RSnowflake  │──DBI──────────┼──► WH   │
-│       │              │ snowflakeR  │──reticulate──►│  ML API │
-│       └──────────────┴─────────────┘               │        │
-│              Snowpark session (Workspace OAuth)    │        │
-└────────────────────────────────────────────────────┼────────┘
-                                                     │
-              Feature Store · Model Registry · Warehouse SQL
-```
+`%%R` cells indicate that the Python kernel should treat and execute the content of the cell as R code. There is no R cell type in the Workspace notebook UI, and no native R kernel. The R code is executed in the embedded R interpreter running inside the Python process via __rpy2__.
 
 ## The bidirectional bridge (rpy2 + reticulate) {#sec-bridge}
 
@@ -142,7 +115,7 @@ flowchart LR
 
 ### Serving: CustomModel + rpy2
 
-At inference time, registered R models deploy as Python **CustomModel** handlers that call back into R via rpy2 inside the **SPCS** container. Training stays in R; serving runs on Snowflake's container runtime. See [Model Registry](../18_model_registry/index.qmd).
+At inference time, registered R models deploy as Python **CustomModel** handlers that call back into R via rpy2 inside the **SPCS** inference environment container. Training stays in R; serving runs on Snowflake's container runtime. See [Model Registry](../18_model_registry/index.qmd).
 
 ### Future: R in warehouses (proposed)
 
@@ -157,7 +130,7 @@ These ideas assume familiarity with [Snowflake basics](../01_snowflake_platform/
 | **Zero-config auth** | In **Workspace**, `sfr_connect()` and RSnowflake use the session **OAuth token** within the Workspace for seamless authentication — no PATs in notebook cells |
 | **Automatic network setup** | Bootstrap detects/creates **EAI** for CRAN, GitHub, and Python package indexes assuming Role has appropriate privileges |
 | **No Python from the R user** | `snowflakeR` owns the **reticulate** / rpy2 bridge internally |
-| **Snowflake-native objects** | **Feature views**, **datasets**, and registry models created in R appear in Python tooling |
+| **Snowflake-native objects** | **Feature views**, **datasets**, and registry models created in R appear in Python tooling. Likewise Python models created in the Snowflake ML platform appear in R tooling. Polyglot data-scientist teams can collaborate on the same data and models in using the preferred language and tools. **Data Science team productivity is enhanced.**|
 | **Train in R, serve in Snowflake** | Models wrap as Python **CustomModel** + rpy2 for **SPCS** inference |
 | **ML lineage** | Source table → **Feature View** → **Dataset** → **Model** traceability in Model Registry |
 

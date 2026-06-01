@@ -9,11 +9,21 @@ subtitle: "Prerequisites, disclaimers, and guide overview"
 
 ## Overview
 
-This guide is for R users who want to run statistical modeling, forecasting, and ML workflows **on Snowflake** — from **RStudio, Posit, VS Code**, or **Workspace Notebooks** (and optionally ML Jobs and SPCS) — without maintaining a separate R server or rewriting models in Python.
+This guide is for R users who want to run data analysis, statistical modeling, forecasting, and ML workflows **on Snowflake** — from **RStudio, Posit, VS Code**, or **Workspace Notebooks** (and optionally ML Jobs and SPCS) — without maintaining a separate R server or rewriting models in Python.
 
 It covers three open-source packages, platform concepts for newcomers to Snowflake, local/IDE setup, notebook bootstrap, DBI connectivity, and the full ML platform (Feature Store, Model Registry, experiments, monitoring, and parallel R).
 
 **New to Snowflake?** Start with [Snowflake Platform Primer](../01_snowflake_platform/index.qmd) and the [Glossary](../appendices/F_glossary/index.qmd).
+
+## How this guide is organized {#sec-guide-structure}
+
+::: {.callout-note}
+## Repo folders vs rendered chapter numbers
+
+Chapter sources live in **prefixed folders** (`01_snowflake_platform/`, `07_network_and_eai/`, …). Quarto assigns chapter numbers **in reading order** from `_quarto.yml`, so a folder name like `07_` is **not** the same as “Chapter 7” in the built book — for example, [Network & EAI](../07_network_and_eai/index.qmd) usually renders as **Chapter 8** after Introduction, platform/IDE chapters, and Workspace bootstrap.
+
+**Cross-references in this guide use chapter titles**, not folder prefixes. Maintainer notes: [Guide design & plan](../../GUIDE_DESIGN_AND_PLAN.md).
+:::
 
 ## What's Covered in This Guide
 
@@ -42,9 +52,17 @@ After completing this chapter, you will be able to:
 ## Important disclaimers {#sec-disclaimers}
 
 ::: {.callout-important}
-## snowflakeR community project
+## Community packages (Snowflake-Labs)
 
-The `snowflakeR` package gives R users an idiomatic interface to the `snowflake-ml-python` SDK and Snowflake's server-side ML capabilities. It is **not yet officially supported by Snowflake** but is developed to help customers use R in Workspaces and containers and to gather feedback. APIs may change as the package evolves.
+These open-source packages are developed to help customers use R in Workspaces and containers and to gather feedback. They are **not officially supported Snowflake product offerings**; APIs may change as they evolve.
+
+| Package | Role |
+|---------|------|
+| **snowflake-notebook-multilang** | Bootstrap R/`%%R`, EAI helpers, CRE tooling in Workspace |
+| **RSnowflake** | DBI over the SQL REST API (+ optional ADBC) |
+| **snowflakeR** | R interface to `snowflake-ml-python` (Feature Store, Registry, SPCS, …) |
+
+snowflakeR depends on Snowflake's **supported** `snowflake-ml-python` SDK on the Python side; the R wrapper itself remains community-maintained.
 :::
 
 ::: {.callout-note}

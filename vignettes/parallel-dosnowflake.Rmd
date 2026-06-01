@@ -137,10 +137,7 @@ and `?sfr_crew_launch_workers`.
 
 ## Further reading
 
-- **`vignette("many-model-howto")`**: end-to-end guide for building a
-  many-model forecasting solution — Tasks vs Queue dispatch, accuracy-ranked
-  queue feeding, model contest, Model Registry, and batch inference.
 - **Function reference:** `?registerDoSnowflake`, `?sfr_dosnowflake_setup`,
   `?crew_controller_spcs`, `?sfr_execute_r_script`.
-- **Many-model walkthrough:** `vignette("many-model-howto")` for a full
-  forecasting example with Model Registry and batch inference.
+- **Internal design notes** (engineering detail): not shipped with the
+  installed package; in the development repository under `internal/doSnowflake/`.

@@ -11,10 +11,10 @@ Prerequisites: [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd), [Netw
 
 ## Learning Objectives
 
-- Run the correct bootstrap → R cell order
+- Run the correct bootstrap → R cell order (or skip bootstrap when using **CRE**)
 - Understand ADBC install constraints in Workspace
 - Use `sfr_dbi_connection()` for dplyr alongside ML APIs
-- Know when bulk writes route via Snowpark vs ADBC
+- Know when bulk writes route via ADBC vs Snowpark fallback
 
 ---
 
@@ -32,10 +32,14 @@ RSnowflake runs **inside** the embedded R session that rpy2 creates in the Pytho
 
 ## Bootstrap order {#sec-order}
 
+Two paths: **bootstrap** (default without CRE) and **CRE** (packages pre-baked in the runtime image).
+
+### Without CRE — run bootstrap first
+
 | Step | Cell | Action |
 |------|------|--------|
 | 1 | Python | `setup_notebook(config=..., packages=["RSnowflake", "snowflakeR"])` |
-| 2 | Python (optional) | Verify EAI enabled in Snowsight |
+| 2 | Python (optional) | Verify **EAI** enabled in Snowsight (needed for downloads during bootstrap) |
 | 3 | R (`%%R`) | `library(RSnowflake)` or `library(snowflakeR)` |
 | 4 | R (`%%R`) | `dbConnect(Snowflake())` or `sfr_connect()` |
 
@@ -54,6 +58,27 @@ dbGetQuery(con, "SELECT CURRENT_USER(), CURRENT_WAREHOUSE()")
 
 If `dbConnect()` fails: re-run Python bootstrap; confirm External Access is toggled on; do not pass a laptop `connections.toml` profile name in Workspace.
 
+### With CRE — steps 1 and 2 often unnecessary
+
+When the notebook uses a **[Custom Runtime Environment](../09_custom_runtime_and_ml_jobs/index.qmd)** that already includes R, `%%R`, snowflakeR, RSnowflake, and (optionally) **ADBC**, analysts can usually **skip step 1** (`setup_notebook`) and **step 2** (runtime EAI for package downloads):
+
+| Step | Cell | Action |
+|------|------|--------|
+| ~~1~~ | — | **Skipped** — tarballs and micromamba env are in the image |
+| ~~2~~ | — | **Skipped** for cold install — no public download chain unless you add new hosts at runtime |
+| 3 | R (`%%R`) | `library(RSnowflake)` / `library(snowflakeR)` |
+| 4 | R (`%%R`) | `dbConnect(Snowflake())` / `sfr_connect()` |
+
+Attach the CRE in notebook settings (`cre@<org_name>`). Platform teams rebuild the image when package versions change — same reproducibility model as pinning versions in a CRE profile.
+
+::: {.callout-important}
+## Why RSnowflake (SQL API) in Workspace — not ODBC via bootstrap
+
+Before CRE, installing the **Snowflake ODBC driver** and configuring **unixODBC** inside a notebook session was **impractical** — admin-heavy and a poor fit for `setup_notebook()`. **RSnowflake** (SQL REST API) avoided that entirely. **ADBC** (`adbcsnowflake`) was installable via bootstrap (with Go + EAI) and is Snowflake's **Arrow-native, optimized** bulk path going forward.
+
+With **CRE**, you *could* bake the ODBC driver and `odbc` package into an image if you standardize on `odbc::snowflake()` — but that is a **platform image** decision, not something bootstrap is designed to do. This guide still recommends **RSnowflake + optional ADBC in CRE** for Workspace notebooks.
+:::
+
 ---
 
 ## Internal gateway (`SNOWFLAKE_HOST`) {#sec-host}
@@ -71,8 +96,9 @@ RSnowflake detects `SNOWFLAKE_HOST` and uses the container **OAuth token** autom
 | Topic | Detail |
 |-------|--------|
 | Install | Enable `languages.r.addons.adbc: true` in YAML or bootstrap preset |
-| Build time | Requires **Go compiler** + EAI for module downloads (~2 min cold) |
-| Bulk writes | `upload_method = "auto"` may prefer **Snowpark** `write_pandas` in Workspace (~10× faster than literal INSERT for medium tables) |
+| **CRE** | Pre-install `adbcsnowflake` in the runtime image — same startup win as baking R/`%%R` (see [CRE chapter](../09_custom_runtime_and_ml_jobs/index.qmd)) |
+| Build time | Requires **Go compiler** + EAI for module downloads (~2 min cold without CRE) |
+| Bulk writes | `"auto"` prefers **ADBC** when installed (internal gateway); **Snowpark** `write_pandas` is fallback (~2–3 s vs ~7 s vs ~45 s literal for ~50k rows in RSnowflake tests) |
 | Reads | ADBC can use internal gateway with OAuth |
 
 ```r

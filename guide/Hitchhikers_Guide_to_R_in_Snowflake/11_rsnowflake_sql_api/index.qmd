@@ -5,7 +5,11 @@ subtitle: "Driverless REST access — how RSnowflake connects"
 
 ## Overview
 
-**RSnowflake** does not use JDBC or ODBC. It speaks to Snowflake through the **SQL API** — HTTPS REST endpoints that submit SQL and return results as JSON (or Arrow with ADBC).
+**RSnowflake** does not use JDBC or ODBC. It speaks to Snowflake through the **SQL API** — HTTPS REST endpoints that submit SQL and return results as JSON (or Arrow with **ADBC** for bulk I/O).
+
+::: {.callout-note title="What is ADBC?"}
+**ADBC** (Arrow Database Connectivity) is a **columnar database access standard** built on Apache Arrow — not a Snowflake-specific product. RSnowflake can route large result sets through the Snowflake **ADBC driver** (`adbcsnowflake`) instead of deserializing JSON from the SQL API. See [Glossary](../appendices/F_glossary/index.qmd) and [RSnowflake: Query §Arrow](../13_rsnowflake_query/index.qmd#sec-arrow).
+:::
 
 Understanding the SQL API explains RSnowflake's strengths, limits, and why patterns like **WebR-in-the-browser** are possible without a native driver install.
 
@@ -73,7 +77,7 @@ SPCS workers using RSnowflake **must** use volume-mounted stages for file I/O �
 | **Serverless / browser** | Possible (HTTPS) | Impractical |
 | **DBI + dbplyr** | Yes | Yes (other drivers) |
 | **Stage file I/O** | No `GET`/`PUT` | Often yes |
-| **Ecosystem maturity** | Newer | Decades of tooling |
+| **Ecosystem maturity** | Newer | Decades of tooling (incl. Posit [`odbc`](https://odbc.r-dbi.org/) + Snowflake ODBC — see [§RSnowflake vs ODBC](../04_rstudio_posit_vscode/index.qmd#sec-odbc)) |
 
 ### Why WebR + SQL API matters {#sec-webr}
 
@@ -83,7 +87,7 @@ SPCS workers using RSnowflake **must** use volume-mounted stages for file I/O �
 
 Default SQL API results deserialize through JSON — fine for moderate row counts.
 
-For **large bulk reads**, RSnowflake optionally uses **ADBC** (Arrow Database Connectivity):
+For **large bulk reads**, RSnowflake optionally uses **ADBC** — the Arrow-native driver path described in the callout above:
 
 - Columnar Arrow streams with less overhead
 - Automatic fallback to SQL API if ADBC unavailable

@@ -5,9 +5,9 @@ subtitle: "Custom runtime images and batch execution beyond notebooks"
 
 ## Overview
 
-**Workspace Notebooks** are the default interactive surface for R on Snowflake — but every new session that runs cold `setup_notebook()` pays a **bootstrap tax**: micromamba, R, packages, EAI checks, and `%%R` registration. That is fine for exploration; it is expensive for teams that restart notebooks daily or run **scheduled batch** workloads.
+**Workspace Notebooks** are the default interactive surface for R on Snowflake — but every new session that runs cold `setup_notebook()` pays a **bootstrap tax**: micromamba, R, packages, EAI checks, and `%%R` registration. That is fine for exploration; it is expensive for teams that restart notebooks very regularly or run **scheduled batch** workloads.
 
-Two extensions address that:
+Two Snowflake features address that:
 
 | Extension | What it solves |
 |-----------|----------------|
@@ -17,7 +17,7 @@ Two extensions address that:
 This chapter explains when each tier applies, how CRE relates to bootstrap, and why ML Job images are **not** the same as Model Registry inference images.
 
 ::: {.callout-warning}
-CRE and ML Jobs are evolving product areas. Verify against [Snowflake ML Container Runtime](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml) and [Custom Runtime Images](https://docs.snowflake.com/en/developer-guide/snowflake-ml/custom-runtime-images) documentation.
+CRE and ML Jobs are new and evolving Snowflake product areas. Verify against [Snowflake ML Container Runtime](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml) and [Custom Runtime Images](https://docs.snowflake.com/en/developer-guide/snowflake-ml/custom-runtime-images) documentation.
 :::
 
 ## Learning Objectives
@@ -67,7 +67,7 @@ flowchart TB
 
 ---
 
-## Why cold bootstrap is slow {#sec-cold}
+## Why cold bootstrap is slower than using a CRE {#sec-cold}
 
 First `setup_notebook()` in a fresh Workspace session typically:
 
@@ -95,7 +95,7 @@ Reference implementation: [snowflake-notebook-multilang](https://github.com/Snow
 
 ---
 
-## End-to-end: build a multilang-R CRE (v2) {#sec-cre-e2e}
+## End-to-end: build a multilang-R CRE (reference v1) {#sec-cre-e2e}
 
 Validated workflow: local `docker build` → `docker push` → `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` → attach to Workspace → `%%R` on kernel start without a setup cell.
 
@@ -139,7 +139,7 @@ flowchart TB
 | Env var | Meaning |
 |---------|---------|
 | `SFNB_CUSTOM_RUNTIME=1` | Skip micromamba reinstall in `setup_notebook()` |
-| `SFNB_CRE_VERSION` | Image recipe tag (e.g. `v2`) |
+| `SFNB_CRE_VERSION` | Image recipe tag (e.g. `v1`) |
 
 ### Prerequisites
 
@@ -168,11 +168,11 @@ export IMAGE_REPO_PATH="mydb/myschema/my_cre_images"   # lowercase path
 
 ```bash
 snow spcs image-registry login -c <your_connection>
-export CRE_IMAGE_TAG=v2
+export CRE_IMAGE_TAG=v1
 ./docker/build_cre.sh
 ```
 
-Runs `docker build --platform linux/amd64` and `snow custom-image validate sfnb-multilang-r:v2` (20 checks — must pass).
+Runs `docker build --platform linux/amd64` and `snow custom-image validate sfnb-multilang-r:v1` (20 checks — must pass).
 
 ### Step 3 — Push
 
@@ -180,7 +180,7 @@ Runs `docker build --platform linux/amd64` and `snow custom-image validate sfnb-
 PUSH=1 ./docker/build_cre.sh
 ```
 
-Pushes to `{REGISTRY_URL}/{IMAGE_REPO_PATH}/sfnb-multilang-r:v2`.
+Pushes to `{REGISTRY_URL}/{IMAGE_REPO_PATH}/sfnb-multilang-r:v1`.
 
 ### Step 4 — Register CRE
 
@@ -188,7 +188,7 @@ Pushes to `{REGISTRY_URL}/{IMAGE_REPO_PATH}/sfnb-multilang-r:v2`.
 USE ROLE ACCOUNTADMIN;
 
 CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r
-    IMAGE_PATH = '/MYDB/MYSCHEMA/MY_CRE_IMAGES/sfnb-multilang-r:v2'
+    IMAGE_PATH = '/MYDB/MYSCHEMA/MY_CRE_IMAGES/sfnb-multilang-r:v1'
     BASE_IMAGE_TYPE = CPU;
 
 DESCRIBE CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r;
@@ -249,12 +249,15 @@ setup_notebook(config="/opt/sfnb/config/cre_multilang_r.yaml", packages=["snowfl
 ```
 :::
 
-### v1 vs v2 reference image
+### Reference image (v1) vs cold bootstrap
 
-| Tag | Auto `%%R` | sfnb-multilang | ADBC |
-|-----|------------|----------------|------|
-| v1 | No | No | No |
-| **v2** | **Yes** | **Yes** | **Yes** |
+The **sfnb-multilang-r:v1** reference image is the first supported CRE release (earlier local experiments were not published as a product version).
+
+| Capability | Reference CRE (`:v1`) | Cold `setup_notebook()` only |
+|------------|----------------------|------------------------------|
+| Auto `%%R` on kernel start | **Yes** | No — bootstrap cell required |
+| sfnb-multilang + IPython startup hook | **Yes** | Installed at runtime |
+| ADBC (optional at build) | **Yes** | Optional at runtime |
 
 ### How kernel auto-registration works
 
@@ -271,13 +274,13 @@ sequenceDiagram
   participant User as Analyst
   participant WS as Workspace kernel
   participant Hook as IPython startup
-  participant R as R via rpy2
+  participant R as Embedded R
 
-  User->>WS: Open / restart notebook
-  WS->>Hook: 00-sfnb-enable-r.py
-  Hook->>R: setup_r_environment()
-  Hook-->>User: sfnb CRE — R cells ready
-  User->>R: R cell library(snowflakeR); sfr_connect()
+  User->>WS: Open or restart notebook
+  WS->>Hook: sfnb startup hook
+  Hook->>R: setup_r_environment
+  Hook-->>User: CRE ready for R cells
+  User->>R: library snowflakeR and connect
 ```
 
 ---
@@ -309,46 +312,97 @@ PUSH=1 SNOW_CONNECTION=my_conn ./docker/create_cre.sh configs/my_team.yaml
 
 `create_cre.sh` renders `docker/generated/cre_extra_install.sh`, runs `build_cre.sh`, validates with `snow custom-image validate`, optionally pushes, and prints `docker/generated/cre_register.sql`.
 
+### Pinning package versions (reproducibility) {#sec-cre-versions}
+
+Production CREs should be **reproducible**: same image tag → same R/Python stack. Use a combination of **image tag**, **pinned tarballs**, and **versioned package specs**.
+
+| Layer | How to pin | Example |
+|-------|------------|---------|
+| **Image identity** | `cre.tag` + `version_label` in profile; bump on every rebuild | `tag: v1`, `version_label: v1.20260529` |
+| **R base** | `cre.r_version` and conda `r-base=` | `r_version: "4.5.2"` → `r-base=4.5.2` in micromamba |
+| **snowflakeR / RSnowflake** | `tarballs:` URLs to a **specific GitHub release** | `.../releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz` |
+| **Conda R packages** | conda-forge specs in `extras.conda_r` or `CONDA_PACKAGES` | `r-reticulate>=1.25`, `r-dplyr=1.1.4`, `r-fable=0.4.0` |
+| **CRAN packages** | Pin in `extras.cran` + build script installs at fixed CRAN snapshot date, or use **remotes** in a generated R block | Prefer conda-forge when a recipe exists |
+| **Python (kernel)** | `extras.pip` with `==` or `>=` | `rpy2==3.5.17`, `scikit-learn>=1.3,<2` |
+| **snowbooks base** | `cre.snowbooks_tag` in profile | `snowbooks_tag: "2.5.0"` |
+
+**Profile example** (`configs/my_team.yaml`):
+
+```yaml
+cre:
+  name: my_team_multilang_r
+  image: sfnb-multilang-r
+  tag: v1.20260529
+  version_label: v1.20260529
+  r_version: "4.5.2"
+  snowbooks_tag: "2.5.0"
+
+tarballs:
+  snowflakeR: "https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+  RSnowflake: "https://github.com/Snowflake-Labs/RSnowflake/releases/download/v0.2.0/RSnowflake_0.2.0.tar.gz"
+
+extras:
+  conda_r:
+    - r-fable=0.4.0
+    - r-lme4=1.1-35
+  cran: []   # prefer conda pins when available
+  pip:
+    - "rpy2>=3.5,<4"
+    - "tabulate>=0.9"
+```
+
+The reference `install_prebaked_r.sh` already pins core stack versions (see `r-base=${R_VERSION}`, `r-reticulate>=1.25`, tarball env vars). Team extras are merged by `create_cre.sh` into `cre_extra_install.sh`.
+
+::: {.callout-note}
+**CRAN vs conda:** CRAN `install.packages()` at build time resolves **latest** matching the repo mirror unless you pin via **conda-forge** (`r-package=version`) or install from a **fixed tarball** / `remotes::install_version()`. For auditability, record the build date and `conda list` / `pip freeze` output in your CI logs.
+:::
+
 ### At image build time (advanced)
 
 Edit `docker/install_prebaked_r.sh`, bump tag, rebuild, push, `CREATE OR REPLACE` CRE.
 
-**Extra conda R packages** — extend `CONDA_PACKAGES`:
+**Extra conda R packages** — extend `CONDA_PACKAGES` with version constraints:
 
 ```bash
 CONDA_PACKAGES=(
   "r-base=${R_VERSION}"
   "r-tidyverse"
-  "r-fable"
-  "r-lme4"
+  "r-fable=0.4.0"
+  "r-lme4=1.1-35"
+  "r-reticulate>=1.25"
 )
 ```
 
-**Extra CRAN packages** — add an R block after tarball install:
+**Extra CRAN packages** — add an R block after tarball install (pin with `remotes` when you need an exact CRAN version):
 
 ```bash
-"${R_BIN}" --vanilla -e "install.packages('survival', repos='${CRAN_MIRROR}', quiet=TRUE)"
+"${R_BIN}" --vanilla -e "
+  install.packages('remotes', repos='${CRAN_MIRROR}', quiet=TRUE)
+  remotes::install_version('survival', version='3.5-8', repos='${CRAN_MIRROR}')
+"
 ```
 
 **Disable ADBC** (smaller image): `SFNB_CRE_ADBC=0 ./docker/build_cre.sh`
 
-**Extra Python packages** — extend pip in the script:
+**Extra Python packages** — pin in pip:
 
 ```bash
-"${NOTEBOOK_PY}" -m pip install -q --break-system-packages rpy2 tabulate scikit-learn
+"${NOTEBOOK_PY}" -m pip install -q --break-system-packages \
+  'rpy2>=3.5,<4' 'tabulate>=0.9' 'scikit-learn==1.5.2'
 ```
 
-**Pin snowflakeR / RSnowflake:**
+**Pin snowflakeR / RSnowflake tarballs** (required for team reproducibility):
 
 ```bash
-export SNOWFLAKER_TARBALL="https://github.com/Snowflake-Labs/snowflakeR/releases/download/vX.Y.Z/snowflakeR_X.Y.Z.tar.gz"
+export SNOWFLAKER_TARBALL="https://github.com/Snowflake-Labs/snowflakeR/releases/download/v0.1.0/snowflakeR_0.1.0.tar.gz"
+export RSNOWFLAKE_TARBALL="https://github.com/Snowflake-Labs/RSnowflake/releases/download/v0.2.0/RSnowflake_0.2.0.tar.gz"
 ```
 
 | Build variable | Default |
 |----------------|---------|
 | `SFNB_R_VERSION` | `4.5.2` |
 | `SFNB_CRE_ADBC` | `1` |
-| `SFNB_CRE_IMAGE_TAG` | `v2` |
+| `SFNB_CRE_IMAGE_TAG` | `v1` |
 | `SNOWBOOKS_TAG` | `2.5.0` (Docker build arg) |
 
 ### At notebook runtime (flexible)
@@ -388,7 +442,7 @@ There is **no documented, stable path** to a Jupyter “kernel stdout file” in
 Snowflake validates the image **before** any notebook kernel runs. Fix locally first:
 
 ```bash
-snow custom-image validate sfnb-multilang-r:v2
+snow custom-image validate sfnb-multilang-r:v1
 ```
 
 Check SQL output from `DESCRIBE CUSTOM RUNTIME ENVIRONMENT <name>;` — status and error text refer to image contract (entrypoint, `DASHBOARD_PORT`, base image type), not R startup.
@@ -467,8 +521,8 @@ Expect `[sfnb CRE] %%R ready` **here** if the hook file exists and `SFNB_CUSTOM_
 |---------|-----|
 | CRE `CREATE` fails | `snow custom-image validate` locally |
 | `exec format error` | Rebuild `--platform linux/amd64` |
-| No `[sfnb CRE] %%R ready` banner | Banner optional — test `%%R`; see [§sec-cre-logs](#sec-cre-logs); use v2+ image; `CREATE OR REPLACE` CRE |
-| `Bootstrapping renv` hang | renv at Git repo root on `/filesystem`; use CRE v2 or a project without renv |
+| No `[sfnb CRE] %%R ready` banner | Banner optional — test `%%R`; see [§sec-cre-logs](#sec-cre-logs); use reference **v1** image; `CREATE OR REPLACE` CRE |
+| `Bootstrapping renv` hang | renv at Git repo root on `/filesystem`; use reference CRE **v1** or a project without renv |
 | Docker push invalid reference | Lowercase `IMAGE_REPO_PATH` |
 | Image Builder disk full | Local Docker build |
 

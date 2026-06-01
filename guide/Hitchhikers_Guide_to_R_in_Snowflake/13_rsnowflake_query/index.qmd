@@ -39,7 +39,7 @@ flowchart LR
 | `collect()`, `dbGetQuery()` | **Warehouse** executes SQL |
 | Result transfer | JSON (SQL API) or Arrow (ADBC) to R |
 
-In Workspace, bulk **writes** may route through **Snowpark** `write_pandas` (Python via reticulate) on an internal network path — still orchestrated by RSnowflake from R, transparent to you.
+Bulk **writes** from R (`dbWriteTable`, `dbAppendTable`) use separate routing — see [§Bulk write routing](#sec-bulk). Prefer **not** loading huge tables into R only to write them back; materialize with SQL/dbplyr when possible.
 
 ---
 
@@ -103,49 +103,136 @@ tbl(con, in_schema("MY_SCHEMA", "ORDERS")) |>
 
 **Why lazy matters:** `filter()` and `summarise()` do not pull data to R. A 10-billion-row table stays in Snowflake until the final aggregation is computed on the warehouse.
 
-Snowflake-specific translations include `VARIANT` access, `ARRAY_AGG`, `FLATTEN`, and approximate aggregates — see RSnowflake `getting-started` vignette.
+Additional Snowflake-specific translations in RSnowflake include `VARIANT` access, `ARRAY_AGG`, `FLATTEN`, and approximate aggregates — see RSnowflake `getting-started` vignette to discover more.
 
 ::: {.callout-warning}
 dbplyr keeps Snowflake's **UPPERCASE** column names. snowflakeR's `sfr_query()` lowercases — do not mix blindly in joins between APIs.
 :::
 
+### Materialize on the warehouse (`compute()`) {#sec-materialize}
+
+**Anti-pattern:** `collect()` after every dplyr verb — data shuttles to R repeatedly.
+
+**Better:** treat Snowflake as the execution engine. Build lazy pipelines; **materialize intermediate results as tables** when a step is expensive, reused, or hard to read as one nested query.
+
+| Function | What it does | When to use |
+|----------|--------------|-------------|
+| **`collect()`** | Run SQL + pull all rows to R | Final modest result (modeling, plot, `head()`) |
+| **`compute()`** | `CREATE TEMPORARY TABLE … AS` + return lazy handle | Multi-step ETL; break up joins; debug with `show_query()` per step |
+| **`copy_to()`** | Upload local `data.frame` to a Snowflake table | Seed pipeline from R object |
+| **`dbExecute()` + `sql_render()`** | Run explicit DDL you control | Permanent tables, `CREATE TABLE AS` with custom options |
+
+```r
+library(dplyr)
+
+base <- tbl(con, in_schema("RAW", "EVENTS")) |>
+  filter(event_date >= "2024-01-01")
+
+# Materialize once on the warehouse (session-scoped temp table)
+daily <- base |>
+  group_by(customer_id, event_date) |>
+  summarise(n_events = n(), .groups = "drop") |>
+  compute(name = "daily_events_tmp")
+
+# Continue from the materialized table — still lazy until collect()
+features <- daily |>
+  group_by(customer_id) |>
+  summarise(avg_daily = mean(n_events), .groups = "drop")
+
+# Permanent table (set session schema or use a fully qualified name)
+features |>
+  compute(name = "CUSTOMER_EVENT_FEATURES", temporary = FALSE)
+
+# Or inspect SQL without executing
+features |> show_query()
+```
+
+RSnowflake's `sql_query_save` generates Snowflake **`CREATE TEMPORARY TABLE`** (or permanent when `temporary = FALSE`). Temp tables live for the **session** — ideal for notebook pipelines; use qualified permanent names for shared artifacts.
+
+**When to materialize vs one big query:** materialize when (1) an intermediate is reused in multiple branches, (2) the generated SQL is deeply nested or slow to optimize, or (3) you want to inspect row counts with `SELECT COUNT(*)` on a named table. Otherwise a single pipeline + one `collect()` is fine.
+
+See [Platform Primer §storage-compute](../01_snowflake_platform/index.qmd#sec-storage-compute) for the mental model.
+
 ---
 
 ## Bulk write routing {#sec-bulk}
 
-Small tables can use literal `INSERT` statements. Large writes use faster paths selected by **`RSnowflake.upload_method`**:
+Small tables use batched **literal `INSERT`** over the SQL API. Above **`RSnowflake.bulk_write_threshold`** (cells = rows × columns; default **200,000** in Workspace, **50,000** elsewhere), `"auto"` picks a bulk backend.
+
+### How `"auto"` chooses a path (current RSnowflake behaviour)
+
+| Environment | Order when above threshold |
+|-------------|----------------------------|
+| **Workspace** | **ADBC** `write_adbc` (internal gateway) → **Snowpark** `write_pandas` (fallback) → literal INSERT |
+| **Local / Posit** | **ADBC** → literal INSERT |
+
+This differs from older docs that listed Snowpark as the Workspace default. After internal-gateway ADBC work (2026), **ADBC is preferred in Workspace** when `adbcsnowflake` is installed; Snowpark remains an explicit opt-in or fallback. See [WORKSPACE_ADBC.md](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md).
 
 ```{mermaid}
 flowchart TD
-  WT[dbWriteTable / dbAppendTable]
-  AUTO{upload_method auto?}
-  SIZE{rows x cols > threshold?}
-  SP[Snowpark write_pandas]
-  ADBC[ADBC PUT + COPY INTO]
+  WT[dbWriteTable or dbAppendTable]
+  AUTO{upload_method}
+  BIG{cells >= threshold?}
+  ADBC{ADBC installed?}
+  SP{Snowpark plus reticulate?}
+  ADBC_W[ADBC write_adbc from R]
+  SP_W[reticulate r_to_py then write_pandas]
   LIT[Literal INSERT]
+
   WT --> AUTO
-  AUTO -->|Workspace large| SP
-  AUTO -->|Local + ADBC| SIZE
-  SIZE -->|yes| ADBC
-  SIZE -->|no| LIT
-  AUTO -->|small| LIT
+  AUTO -->|literal or small| LIT
+  AUTO -->|auto and large| BIG
+  BIG -->|no| LIT
+  BIG -->|yes| ADBC
+  ADBC -->|yes| ADBC_W
+  ADBC -->|no| SP
+  SP -->|yes| SP_W
+  SP -->|no| LIT
 ```
 
-| Method | Mechanism | Typical environment |
-|--------|-----------|---------------------|
-| `"auto"` (default) | Picks best available | Most users |
-| `"snowpark"` | Python `write_pandas` via reticulate | **Workspace** bulk writes |
-| `"adbc"` | Arrow file + `COPY INTO` | **Local** / Posit with `adbcsnowflake` |
-| `"literal"` | Row-by-row or batched INSERT | Small data, max compatibility |
+| Method | What actually happens | When to use |
+|--------|----------------------|-------------|
+| `"auto"` | Routing table above | Default |
+| `"adbc"` | R `data.frame` → Snowflake driver **PUT + COPY INTO** (no SQL API `PUT` from R) | Force Arrow path; bake into [CRE](../09_custom_runtime_and_ml_jobs/index.qmd) to skip per-session Go install |
+| `"snowpark"` | R → **`reticulate::r_to_py()`** → pandas → active Snowpark session **`write_pandas()`** | Fallback in Workspace; explicit override |
+| `"literal"` | SQL `INSERT` batches via REST | Small tables, debugging, no extra packages |
 
 ```r
-options(RSnowflake.upload_method = "snowpark")
+options(RSnowflake.verbose = TRUE)   # log conversion and write timings
+options(RSnowflake.upload_method = "auto")
 dbWriteTable(con, "big_table", large_df)
 
 options(RSnowflake.bulk_write_threshold = 100000L)  # rows × cols
 ```
 
-In Workspace benchmarks, Snowpark routing is often **~10× faster** than literal INSERT for tens of thousands of rows. Locally, ADBC wins for wide tables when installed.
+### Is the Snowpark path copying the whole data frame through reticulate?
+
+**Yes, when Snowpark is used.** RSnowflake converts the R `data.frame` in memory with `reticulate::r_to_py()`, then calls the Workspace kernel’s Snowpark `write_pandas()`. In RSnowflake benchmarks (~50k rows), that R→pandas step is on the order of **~0.2 seconds** — small next to network upload, but it still **duplicates the dataset in process memory** (R + Python) for the duration of the write.
+
+**ADBC avoids the Python hop:** `write_adbc()` sends the R table through the Arrow/Snowflake driver (PUT + COPY under the hood), staying in the R process with no pandas intermediate.
+
+### For very large data, prefer not to round-trip through R
+
+| Approach | Why |
+|----------|-----|
+| **dbplyr / SQL** — `compute()`, `CREATE TABLE AS`, load from existing Snowflake tables | Data never leaves the warehouse |
+| **Python Snowpark cell** — write from a DataFrame already in Python, or `session.write_pandas` from a file you read in Python | No R→Python copy for the bulk of the bytes |
+| **Stage + `COPY INTO` (SQL)** | Classic warehouse pattern; RSnowflake’s SQL API driver **cannot** run client `PUT` — so “write CSV in R, then PUT” is **not** a built-in RSnowflake path; use a **Python** cell, Snowpark, or ADBC instead |
+| **`dbWriteTable(large_df)` from R** | Convenient up to modest sizes; for millions of rows, memory and reticulate/ADBC cost dominate |
+
+Writing CSV/Parquet locally and loading via Python is a valid **manual** pattern in a mixed notebook, but RSnowflake does not automatically spool to disk first — it passes the in-memory `data.frame` to ADBC or `r_to_py()`.
+
+### Workspace benchmarks (order of magnitude)
+
+From RSnowflake testing (~50k rows, Mar 2026 — your account may differ):
+
+| Path | Typical time |
+|------|----------------|
+| Snowpark `write_pandas` (after `r_to_py`) | ~2–3 s |
+| ADBC via internal `SNOWFLAKE_HOST` | ~7 s |
+| Literal INSERT via SQL API | ~45 s |
+
+So Snowpark can be **faster** when both are available, but **ADBC is the default** in `"auto"` because it avoids the reticulate dependency and matches bulk read auth. Use `options(RSnowflake.upload_method = "snowpark")` when you have measured Snowpark winning for your shape of data.
 
 **Reads** follow a similar `"auto"` / `"adbc"` backend via `RSnowflake.backend`.
 
@@ -153,7 +240,11 @@ In Workspace benchmarks, Snowpark routing is often **~10× faster** than literal
 
 ## Arrow and ADBC {#sec-arrow}
 
-**ADBC** (Arrow Database Connectivity) uses the Go Snowflake driver for columnar bulk transfer:
+::: {.callout-note title="What is ADBC?"}
+**ADBC** (Arrow Database Connectivity) is a **columnar database access standard** (Apache Arrow ecosystem). RSnowflake uses the Snowflake ADBC driver for bulk I/O; routine queries use the SQL API. [Glossary](../appendices/F_glossary/index.qmd) · [SQL API chapter](../11_rsnowflake_sql_api/index.qmd#sec-arrow).
+:::
+
+The Snowflake **ADBC** driver uses the Go Snowflake driver for columnar bulk transfer:
 
 ```r
 requireNamespace("adbcsnowflake", quietly = TRUE)
@@ -194,7 +285,7 @@ RSnowflake uses the [SQL REST API](../11_rsnowflake_sql_api/index.qmd). These af
 | Goal | Pattern |
 |------|---------|
 | Ad hoc SQL | `dbGetQuery()` |
-| ETL-style transforms | dbplyr pipeline + `collect()` at end |
+| ETL-style transforms | dbplyr pipeline + `compute()` for heavy steps + `collect()` at end |
 | Large local export | ADBC backend + aggregate in SQL first |
 | Workspace notebook write | `"auto"` or `"snowpark"` |
 | ML platform objects | snowflakeR `sfr_*` APIs (may share DBI via `sfr_dbi_connection()`) |

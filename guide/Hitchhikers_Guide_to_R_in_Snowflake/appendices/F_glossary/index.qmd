@@ -8,7 +8,7 @@ Alphabetical reference for readers new to Snowflake or MLOps. See also [Snowflak
 ## A
 
 **ADBC (Arrow Database Connectivity)**  
-Columnar database access protocol. RSnowflake can use ADBC for faster bulk reads/writes when the `adbcsnowflake` package is installed.
+Open standard for database access using **Apache Arrow** columnar memory — comparable role to ODBC/JDBC, optimized for analytics bulk transfer. RSnowflake optionally uses the Snowflake ADBC driver (`adbcsnowflake` R package) for large **reads/writes** as Arrow streams; everyday SQL still uses the **SQL REST API** (JSON). Typical install: `options(RSnowflake.backend = "adbc")`. See [Platform Primer §ADBC](../../01_snowflake_platform/index.qmd#sec-map), [SQL API](../../11_rsnowflake_sql_api/index.qmd#sec-arrow), [RSnowflake: Query](../../13_rsnowflake_query/index.qmd#sec-arrow).
 
 **Account**  
 Your Snowflake tenant identifier (e.g. `xy12345.us-east-1`). Used in connection strings and `connections.toml`.

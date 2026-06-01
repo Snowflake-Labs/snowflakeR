@@ -10,31 +10,6 @@ Called from R via reticulate.
 from typing import Any, Dict, Optional
 
 
-# Node capacity (from SHOW COMPUTE POOL INSTANCE FAMILIES).
-# See sfr_queue_bridge.py for the auto-sizing logic.
-NODE_CAPACITY = {
-    "CPU_X64_XS": {"cpu": 1,  "mem_gib": 6},
-    "CPU_X64_S":  {"cpu": 3,  "mem_gib": 13},
-    "CPU_X64_M":  {"cpu": 6,  "mem_gib": 28},
-    "CPU_X64_SL": {"cpu": 14, "mem_gib": 54},
-    "CPU_X64_L":  {"cpu": 28, "mem_gib": 116},
-}
-
-
-def _get_resource_spec(instance_family: str, containers_per_node: int = 1):
-    """Compute container resources from node capacity and packing ratio."""
-    node = NODE_CAPACITY.get(instance_family.upper(), NODE_CAPACITY["CPU_X64_S"])
-    containers_per_node = max(1, containers_per_node)
-    cpu_share = node["cpu"] // containers_per_node
-    mem_share = node["mem_gib"] // containers_per_node
-    return {
-        "cpu_request": max(1, cpu_share - 1),
-        "memory_request": f"{max(2, mem_share - 2)}Gi",
-        "cpu_limit": max(1, cpu_share),
-        "memory_limit": f"{mem_share}Gi",
-    }
-
-
 def create_and_run_dag(
     session,
     dag_name: str,
@@ -44,8 +19,6 @@ def create_and_run_dag(
     compute_pool: str,
     image_uri: str,
     warehouse: Optional[str] = None,
-    instance_family: str = "CPU_X64_S",
-    containers_per_node: int = 1,
 ) -> Dict[str, Any]:
     """Build a Task DAG with one SPCS job per chunk and execute it.
 
@@ -61,8 +34,6 @@ def create_and_run_dag(
         compute_pool: Name of the SPCS compute pool.
         image_uri: Full image URI (e.g. /db/schema/repo/image:tag).
         warehouse: Optional warehouse for non-serverless tasks.
-        instance_family: SPCS instance family for container resource sizing.
-        containers_per_node: Workers packed per node (1 = dedicated node).
 
     Returns:
         Dict with dag_name and status.
@@ -84,8 +55,6 @@ def create_and_run_dag(
                 chunk_id=chunk_id,
                 stage_path=stage_path,
                 image_uri=image_uri,
-                instance_family=instance_family,
-                containers_per_node=containers_per_node,
             )
             DAGTask(
                 f"chunk_{chunk_id}",
@@ -273,32 +242,21 @@ def _build_job_spec(
     chunk_id: str,
     stage_path: str,
     image_uri: str,
-    instance_family: str = "CPU_X64_S",
-    containers_per_node: int = 1,
 ) -> str:
     """Generate a YAML service specification for a worker job container.
 
     The spec passes job metadata via environment variables that worker.R
-    reads on startup.  Container resources are auto-sized from
-    *instance_family* and *containers_per_node*.
+    reads on startup.
 
     Args:
         job_id: UUID for the foreach job.
         chunk_id: Zero-padded chunk identifier (e.g. "001").
         stage_path: Full stage path to the job directory.
         image_uri: Docker image URI in the Snowflake image repo.
-        instance_family: SPCS instance family for resource sizing.
-        containers_per_node: Workers packed per node (1 = dedicated node).
 
     Returns:
         YAML string for the SPCS service specification.
     """
-    res = _get_resource_spec(instance_family, containers_per_node)
-    cpu_req = res["cpu_request"]
-    mem_req = res["memory_request"]
-    cpu_lim = res["cpu_limit"]
-    mem_lim = res["memory_limit"]
-
     stage_base = stage_path.split("/job_")[0]
     job_subdir = "job_" + stage_path.split("/job_")[1]
     spec = f"""
@@ -317,11 +275,11 @@ spec:
       mountPath: /data/stage
     resources:
       requests:
-        cpu: {cpu_req}
-        memory: {mem_req}
+        cpu: 2
+        memory: 4Gi
       limits:
-        cpu: {cpu_lim}
-        memory: {mem_lim}
+        cpu: 4
+        memory: 8Gi
   volumes:
   - name: stage-vol
     source: "{stage_base}"
