@@ -2,7 +2,7 @@ project:
   type: book
   output-dir: _site
   post-render:
-    - ../scripts/copy_vignette_html_to_site.sh
+    - scripts/copy_vignette_html_to_site.sh
 
 website:
   site-url: https://snowflake-labs.github.io/snowflakeR/
