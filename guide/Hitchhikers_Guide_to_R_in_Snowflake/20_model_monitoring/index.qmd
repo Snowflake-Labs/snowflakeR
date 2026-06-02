@@ -57,7 +57,9 @@ cfg <- sfr_monitor_config(
 )
 ```
 
-Align column names with your log schema. Snowflake stores unquoted identifiers as UPPERCASE — quote or match case consistently.
+**Inference log schema** means the **column layout of the table that stores production predictions** (your inference log), not a separate Snowflake object type. The names you pass to `sfr_monitor_source()` — `timestamp_column`, `prediction_score_columns`, `actual_score_columns`, `id_columns` — must match **real columns** in that table.
+
+Snowflake stores unquoted identifiers as **UPPERCASE** (`EVENT_TIME`, `PREDICTION`). If you created the table with quoted mixed-case names, quote them consistently in R or use uppercase names everywhere. A mismatch surfaces as “column not found” when monitors run.
 
 ---
 

@@ -9,7 +9,7 @@ If you have used R's **`foreach`** package with `%dopar%`, you already know the 
 
 That matters because many R workloads — many-model forecasting, hyperparameter grids, per-partition feature engineering — are **embarrassingly parallel**: each iteration is independent, but there may be thousands of them. Running them sequentially in a Workspace notebook or on a desktop does not scale. Copying data out of Snowflake to a separate HPC cluster breaks governance. doSnowflake keeps data and execution **in-account** by running R inside **Snowpark Container Services (SPCS)** containers, coordinated either by **Snowflake Tasks** or a **Hybrid Table queue**.
 
-This chapter explains how the modes differ, what Snowflake objects each mode needs, and how work flows from your R session to workers and back. For a full many-model forecasting walkthrough, see [Many-Model Patterns](../21_many_model/index.qmd).
+This chapter explains how the modes differ, what Snowflake objects each mode needs, how work flows from your R session to workers and back, and **how each partition gets its input data**. Read this before [Many-Model Patterns](../21_many_model/index.qmd), which applies these mechanics to partitioned forecasting and registry batch scoring.
 
 ::: {.callout-note}
 **Prerequisites:** Active `sfr_connect()` session; SPCS **compute pool** and **image repository** for remote modes; **Hybrid Table** entitlement for queue mode; role grants for `CREATE TASK` / `CREATE SERVICE` as required by your account.
@@ -20,6 +20,8 @@ This chapter explains how the modes differ, what Snowflake objects each mode nee
 - Explain what doSnowflake does and why it wraps `foreach`
 - Compare **local**, **tasks**, and **queue** modes — compute, coordination, and trade-offs
 - Describe the master → stage → workers → results lifecycle
+- Explain who creates `tasks/task_XXX.rds` and how loop variables vs input data reach workers
+- Compare patterns for partition input data (bulk SQL, stage files, `.export`)
 - Register a backend, build worker images, and handle stage I/O correctly
 
 ---
@@ -404,7 +406,102 @@ flowchart TB
 
 When a worker **claims** a row, it reads `CHUNK_ID` and `STAGE_PATH`, loads `tasks/task_{CHUNK_ID}.rds`, evaluates your `%dopar%` expression once per element in `args`, and writes `results/result_{CHUNK_ID}.rds`. The master never puts full iteration data in the Hybrid Table — only enough metadata for workers to find the payload on the stage.
 
-In **many-model feeder** scenarios (screen-then-refine), additional rows can be **inserted dynamically** while workers run — e.g. only the worst-performing SKUs from a first pass — without rebuilding the entire Task graph. See [Many-Model Patterns](../21_many_model/index.qmd).
+### Who creates `task_XXX.rds`? {#sec-serialize}
+
+**You do not create these files.** When your master session runs `%dopar%`, doSnowflake's serializer (`.serialize_job_to_stage()` in snowflakeR) automatically:
+
+1. Expands your `foreach` iterator into a list of per-iteration argument lists (e.g. `list(unit_id = "SKU_001")`, …).
+2. Groups them into chunks according to `chunks_per_job`.
+3. Writes `task_001.rds`, `task_002.rds`, … — each containing `args` (iteration parameters for that chunk) and `indices`.
+4. PUTs `export.rds`, `expr.rds`, `manifest.json`, and the task files to `@stage/job_<uuid>/`.
+5. For queue mode, inserts one Hybrid Table row per chunk pointing at that stage path.
+
+Your job is only to write the `%dopar%` loop and `registerDoSnowflake()` options. Chunk files are ephemeral job payloads unless you disable cleanup.
+
+In **many-model feeder** scenarios (screen-then-refine), additional queue rows can be **inserted dynamically** while workers run — see [Many-Model Patterns](../21_many_model/index.qmd).
+
+---
+
+## Getting data into each partition {#sec-partition-data}
+
+The foreach loop variable (e.g. `unit_id`) is **always** serialized into `task_XXX.rds`. **Training or inference rows are not** — unless you choose one of the patterns below.
+
+| What | Automatic? | Mechanism |
+|------|------------|-----------|
+| Loop variables (`unit_id`, `i`, …) | Yes | Stored in each element of `chunk$args`; worker `assign()`s them before `eval(expr)` |
+| Shared functions / constants | If listed in `.export` | `export.rds` from master session |
+| **Partition dataset** (e.g. time series for one SKU) | **No** — you configure it | `data_query`, stage files, or (discouraged) SQL inside the body |
+
+### Pattern A — Bulk SQL per chunk (recommended) {#sec-data-query}
+
+For many-model workloads, pass a **`data_query`** spec to `registerDoSnowflake()`. It is written to `manifest.json`. Before `mclapply` runs inside the worker, the worker issues **one `SELECT` per chunk**:
+
+```sql
+SELECT UNIT_ID, OBS_DATE, Y
+FROM MY_DB.MY_SCHEMA.SERIES_EVENTS
+WHERE UNIT_ID IN ('SKU_001', 'SKU_002', ...)
+ORDER BY UNIT_ID, OBS_DATE
+```
+
+The result is split by partition key; for each iteration the worker injects **`unit_data`** as a data frame for that key. Your `%dopar%` body can then use `unit_data$Y` without writing SQL:
+
+```r
+registerDoSnowflake(conn, mode = "tasks",
+  compute_pool = "MY_POOL",
+  image_uri    = "mydb.myschema.myrepo/dosnowflake-worker:latest",
+  stage        = "DOSNOWFLAKE_STAGE",
+  chunks_per_job = 50L,
+  data_query = list(
+    table      = "MY_DB.MY_SCHEMA.SERIES_EVENTS",
+    key_column = "UNIT_ID",
+    key_arg    = "unit_id",   # must match foreach loop variable name
+    columns    = c("UNIT_ID", "OBS_DATE", "Y"),
+    order_by   = "UNIT_ID, OBS_DATE",
+    warehouse  = "MY_WH"      # warehouse used for the bulk read
+  )
+)
+
+foreach(unit_id = sku_ids, .combine = rbind, .packages = "forecast") %dopar% {
+  ts_full <- ts(unit_data$Y, frequency = 7)   # unit_data injected by worker
+  # ...
+}
+```
+
+**Warehouse sizing:** each **active chunk** can run one bulk read while its SPCS container processes iterations. With Tasks mode, many chunks may start together; with queue mode, concurrency is roughly `n_workers` × chunks in flight. If hundreds of workers hit Snowflake at once, use a **multi-cluster warehouse** (or cap `n_workers` / pool size) so the read layer does not queue excessively. The warehouse in `data_query` is for **data reads**; a separate warehouse often handles Task orchestration and queue polling SQL (see `registerDoSnowflake(..., warehouse = ...)`).
+
+Workers use **RSnowflake inside SPCS** for this read — keep queries bounded with the `IN (...)` list for keys in the chunk only, not full table scans per iteration.
+
+### Pattern B — Input files on stage {#sec-data-stage}
+
+Export partitions ahead of time (e.g. `COPY INTO @stage/partitions/` as Parquet or `.rds` per key). In the `%dopar%` body, read from `Sys.getenv("STAGE_MOUNT")` using the loop variable as part of the path:
+
+```r
+foreach(unit_id = sku_ids, .combine = rbind) %dopar% {
+  path <- file.path(Sys.getenv("STAGE_MOUNT"), "inputs", paste0(unit_id, ".rds"))
+  unit_data <- readRDS(path)
+  # ...
+}
+```
+
+**When to use:** very wide tables where SQL projection is awkward, simulation inputs generated offline, or repeated runs over frozen snapshots. **Efficiency:** upload once; workers read via volume mount (no SQL `GET`). ETL can populate the stage with warehouse `COPY` while workers only do local I/O.
+
+### Pattern C — Small data in `.export` {#sec-data-export}
+
+Objects in `.export` are snapshotted into `export.rds` at job submit time. Suitable for **functions**, scalars, or **small** lookup tables — not for thousands of full series. Large exports inflate stage payloads and slow every chunk download.
+
+### Pattern D — SQL inside the foreach body (usually avoid) {#sec-data-per-iter}
+
+You *can* open a connection and query per iteration inside `%dopar%`, but with `mclapply` that implies **many queries per chunk** and fork-unfriendly connection handling. The worker template intentionally runs **one bulk read before** `mclapply` when `data_query` is set. Prefer Pattern A unless iterations need unrelated tables per key.
+
+### Training vs inference {#sec-train-infer-data}
+
+| Phase | Typical input pattern |
+|-------|------------------------|
+| **Training** (fit many models) | Pattern A: `data_query` from feature/series table; optional `save_models` + `model_obj` in return list → `.rds` on stage |
+| **Batch inference** (score all partitions) | Often **`sfr_run_batch()`** after `sfr_log_many_model()` — Registry loads models server-side; input table supplies rows. Parallel `%dopar%` is the training path, not the only scoring path |
+| **Simulation / what-if** | Pattern B: staged scenario files per run id; or Pattern A from a simulation results table |
+
+See [Many-Model Patterns](../21_many_model/index.qmd) for registry aggregation and `sfr_run_batch()`.
 
 ### Ephemeral vs persistent workers
 

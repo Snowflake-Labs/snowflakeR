@@ -356,24 +356,24 @@ you replace for your own data and models.</p>
 <div id="architecture-overview" class="section level2">
 <h2>1. Architecture Overview</h2>
 <p>The many-model workflow has four phases:</p>
-<pre><code> ┌──────────────┐   foreach / SPCS     ┌──────────────┐
- │ SERIES_EVENTS├──────────────────────► .rds models  │
- │  (data table)│  N parallel workers  │  on @STAGE   │
- └──────────────┘                      └──────┬───────┘
-                                              │
-                                   sfr_log_many_model()
-                                              │
-                                       ┌──────▼───────┐
-                                       │Model Registry│
-                                       │ (aggregator) │
-                                       └──────┬───────┘
-                                              │
-                                    sfr_run_batch()
-                                              │
-                                      ┌───────▼────────┐
-                                      │FORECAST_RESULTS│
-                                      │  (output table)│
-                                      └────────────────┘</code></pre>
+<pre><code> +--------------+   foreach / SPCS     +--------------+
+ | SERIES_EVENTS|--------------------&gt;| .rds models  |
+ | (data table) |  N parallel workers | on @STAGE    |
+ +--------------+                      +------+-------+
+                                             |
+                                  sfr_log_many_model()
+                                             |
+                                      +------v-------+
+                                      |Model Registry|
+                                      | (aggregator) |
+                                      +------+-------+
+                                             |
+                                   sfr_run_batch()
+                                             |
+                                     +-------v--------+
+                                     |FORECAST_RESULTS|
+                                     | (output table) |
+                                     +----------------+</code></pre>
 <p><strong>Two dispatch modes</strong> are available:</p>
 <table style="width:100%;">
 <colgroup>

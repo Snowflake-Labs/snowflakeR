@@ -1,6 +1,8 @@
 project:
   type: book
   output-dir: _site
+  post-render:
+    - ../scripts/copy_vignette_html_to_site.sh
 
 website:
   site-url: https://snowflake-labs.github.io/snowflakeR/
@@ -56,8 +58,8 @@ book:
         - 18_model_registry/index.qmd
         - 19_experiments/index.qmd
         - 20_model_monitoring/index.qmd
-        - 21_many_model/index.qmd
         - 22_parallel_dosnowflake/index.qmd
+        - 21_many_model/index.qmd
         - 23_end_to_end/index.qmd
 
   appendices:
@@ -68,6 +70,7 @@ book:
     - appendices/E_package_reference/index.qmd
     - appendices/F_glossary/index.qmd
     - appendices/G_workspace_container_internals/index.qmd
+    - appendices/H_package_vignettes/index.qmd
 
 format:
   html:

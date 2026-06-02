@@ -7,10 +7,12 @@ subtitle: "From features to deployed model in one flow"
 
 This chapter ties the guide into a single **reference pipeline** — the path most R teams want on Snowflake: governed features, training in R, registry deployment, monitoring, and optional scale-out. Use it as a map while reviewing individual chapters.
 
+**Workspace R readiness** has two supported paths: **self-serve bootstrap** (`setup_notebook()` on the default runtime) and **organisation CRE** (Custom Runtime Environment with R pre-baked). The pipeline stages below are the same after R is available — only the first interactive step differs.
+
 ## Learning Objectives
 
 - Map chapters to pipeline stages
-- Choose Workspace vs local IDE entry points
+- Choose Workspace (bootstrap vs CRE) vs local IDE entry points
 - Find companion notebooks for copy-paste starting points
 - Complete production checklist before go-live
 
@@ -25,7 +27,7 @@ flowchart TB
     fv[Feature Views]
   end
   subgraph dev [Development]
-    boot[Workspace bootstrap]
+    boot["R-ready Workspace<br/>bootstrap or CRE"]
     train[Train in R]
     exp[Experiments optional]
   end
@@ -53,33 +55,48 @@ flowchart TB
 |-------|-------------|---------------|------------------|
 | **0. Learn platform** | Warehouses, Workspace, ML services | [01](../01_snowflake_platform/index.qmd), [05](../05_workspaces_overview/index.qmd) | — |
 | **1. Connect** | Auth, TOML, IDE or Workspace | [03](../03_local_r_setup/index.qmd), [04](../04_rstudio_posit_vscode/index.qmd), [16](../16_snowflaker_connect/index.qmd) | `connections.toml` |
-| **2. Bootstrap** | `setup_notebook()`, EAI, YAML | [06](../06_workspace_bootstrap/index.qmd), [07](../07_network_and_eai/index.qmd) | `snowflaker_config.yaml` |
+| **2. R-ready Workspace** | Bootstrap **or** attach org CRE | [06](../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap), [09](../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-e2e), [07](../07_network_and_eai/index.qmd) | `snowflaker_config.yaml` / `cre@<org>` |
 | **3. Features** | Entities, views, point-in-time data | [17](../17_feature_store/index.qmd) | `workspace_feature_store.ipynb` |
 | **4. Train** | tidymodels / fable / custom | [08](../08_r_cells_and_interop/index.qmd), [19](../19_experiments/index.qmd) | — |
 | **5. Register** | `sfr_log_model()`, deploy | [18](../18_model_registry/index.qmd) | `workspace_model_registry.ipynb` |
 | **6. Monitor** | Inference log + drift | [20](../20_model_monitoring/index.qmd) | monitoring vignette |
-| **7. Scale** | Many-model / parallel | [21](../21_many_model/index.qmd), [22](../22_parallel_dosnowflake/index.qmd) | parallel SPCS notebooks |
+| **7. Scale** | Parallel doSnowflake → many-model | [22](../22_parallel_dosnowflake/index.qmd), [21](../21_many_model/index.qmd) | parallel SPCS notebooks |
 
 [MLOps framing](../15_mlops_on_snowflake/index.qmd) situates these stages in your organization's lifecycle.
 
 ---
 
-## Two entry paths {#sec-paths}
+## Entry paths {#sec-paths}
 
-### Path A — Workspace-first (recommended for teams on Snowflake)
+Three common ways teams enter this pipeline. Stages **3–7** are identical once R can run in your environment.
 
-1. Snowsight → Workspace → Git project
-2. Bootstrap Python cell + `snowflaker_*.yaml`
-3. `%%R` cells for all R work
-4. Promote to ML Job or Task for schedule
+### Path A — Workspace with self-serve bootstrap
 
-### Path B — Local IDE-first
+For pilots, sandboxes, or while an org CRE is not yet available:
+
+1. Snowsight → **Workspace** → Git-connected project
+2. Run the **Python bootstrap cell** — `setup_notebook()` + `snowflaker_*.yaml` ([06](../06_workspace_bootstrap/index.qmd))
+3. Enable **External Access** for package downloads on first run ([07](../07_network_and_eai/index.qmd))
+4. Use `%%R` cells for all R work; re-run bootstrap after **idle recycle** (~60s typical for snowflakeR + RSnowflake)
+
+### Path B — Workspace with organisation CRE (recommended at scale)
+
+When platform/IT has registered a **[Custom Runtime Environment](../09_custom_runtime_and_ml_jobs/index.qmd#sec-cre-e2e)**:
+
+1. Snowsight → Workspace → attach **`cre@<org_name>`** in notebook advanced settings
+2. **Skip** `setup_notebook()` for standard packages already in the image (R, `%%R`, snowflakeR, RSnowflake, optional ADBC)
+3. Optional Python cell: session checks, `sfr_load_notebook_config()`, or EAI-only extras — see [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd#sec-order)
+4. `%%R` cells for modeling; promote to **ML Job + same CRE** for scheduled batch ([09](../09_custom_runtime_and_ml_jobs/index.qmd))
+
+CRE and bootstrap can coexist: bootstrap for experimentation, CRE for production notebooks and jobs.
+
+### Path C — Local IDE-first
 
 1. Install RSnowflake + snowflakeR locally ([03](../03_local_r_setup/index.qmd))
-2. Develop in RStudio / Posit / VS Code with `connections.toml`
-3. Push notebook + config to Workspace Git for scheduled runs
+2. Develop in RStudio / Posit / VS Code with `connections.toml` ([04](../04_rstudio_posit_vscode/index.qmd))
+3. Push notebook + config to Workspace Git; run in Workspace via **Path A or B** for scheduled execution
 
-Both paths use the **same R APIs** once connected — only bootstrap and auth differ.
+Paths A, B, and C use the **same snowflakeR / RSnowflake APIs** after connection — only environment setup and auth differ.
 
 ---
 
@@ -97,7 +114,21 @@ Good template for **measurement** and **MMM** teams evaluating snowflakeR.
 
 ## Minimal smoke test {#sec-smoke}
 
-After bootstrap in Workspace, run this sequence before a full pipeline:
+After your Workspace is **R-ready** (bootstrap finished **or** CRE attached and kernel started), run this sequence before a full pipeline.
+
+::: {.callout-note}
+## If you used bootstrap (Path A)
+
+Run the Python bootstrap cell first ([06](../06_workspace_bootstrap/index.qmd)). Wait until it reports success (~60s typical). Then run the `%%R` cells below.
+:::
+
+::: {.callout-note}
+## If you use organisation CRE (Path B)
+
+Attach `cre@<org_name>` in notebook settings, start the kernel, and confirm `%%R` is available (often automatic on kernel start). **Do not** re-run `setup_notebook()` unless you need packages not in the image. Then run the `%%R` cells below.
+:::
+
+**snowflakeR connection and config:**
 
 ```r
 %%R
@@ -107,6 +138,8 @@ conn <- sfr_load_notebook_config(conn)
 sfr_query(conn, "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
 ```
 
+**RSnowflake / DBI (same session — validates SQL API path used by workers and bulk I/O):**
+
 ```r
 %%R
 library(DBI)
@@ -115,15 +148,18 @@ con <- dbConnect(Snowflake())
 dbGetQuery(con, "SELECT 1 AS ok")
 ```
 
+If the first block fails on a CRE notebook, check that snowflakeR is in the image and that `sfr_load_notebook_config()` points at your project's YAML (absolute path under `/filesystem/` for Git projects — [06](../06_workspace_bootstrap/index.qmd#sec-filesystem)). If the second block fails after bootstrap only, re-run the Python bootstrap cell and confirm EAI is enabled.
+
 ---
 
 ## Production handoff {#sec-prod}
 
 Before production cutover:
 
-- [Appendix D: Production checklist](../appendices/D_production_checklist/index.qmd)
+- [Appendix D: Production checklist](../appendices/D_production_checklist/index.qmd) — includes **org CRE onboarding** for platform teams and tarball pins for both CRE builds and bootstrap YAML
 - [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd)
-- Pre-built tarballs in all notebook configs ([Appendix B](../appendices/B_config_reference/index.qmd))
+- Pre-built tarballs in bootstrap configs **and** CRE build profiles ([Appendix B](../appendices/B_config_reference/index.qmd))
+- Decide **bootstrap vs CRE** per audience: analysts on CRE; sandbox/PoC may keep bootstrap until the image is promoted
 
 ::: {.callout-important}
 Community packages — validate SLAs, support, and compliance with your organization.

@@ -32,24 +32,24 @@ and models.
 The many-model workflow has four phases:
 
 ```
- ┌──────────────┐   foreach / SPCS     ┌──────────────┐
- │ SERIES_EVENTS├──────────────────────► .rds models  │
- │  (data table)│  N parallel workers  │  on @STAGE   │
- └──────────────┘                      └──────┬───────┘
-                                              │
-                                   sfr_log_many_model()
-                                              │
-                                       ┌──────▼───────┐
-                                       │Model Registry│
-                                       │ (aggregator) │
-                                       └──────┬───────┘
-                                              │
-                                    sfr_run_batch()
-                                              │
-                                      ┌───────▼────────┐
-                                      │FORECAST_RESULTS│
-                                      │  (output table)│
-                                      └────────────────┘
+ +--------------+   foreach / SPCS     +--------------+
+ | SERIES_EVENTS|-------------------->| .rds models  |
+ | (data table) |  N parallel workers | on @STAGE    |
+ +--------------+                      +------+-------+
+                                             |
+                                  sfr_log_many_model()
+                                             |
+                                      +------v-------+
+                                      |Model Registry|
+                                      | (aggregator) |
+                                      +------+-------+
+                                             |
+                                   sfr_run_batch()
+                                             |
+                                     +-------v--------+
+                                     |FORECAST_RESULTS|
+                                     | (output table) |
+                                     +----------------+
 ```
 
 **Two dispatch modes** are available:

@@ -1,0 +1,85 @@
+---
+title: "Appendix H: Package Vignettes (HTML)"
+subtitle: "Browser-readable API walkthroughs from snowflakeR and RSnowflake"
+---
+
+## Overview
+
+The narrative chapters in this guide are the **learning path**. Package **vignettes** are the **API reference walkthroughs** — longer, example-heavy documents shipped with each R package (`vignettes/*.Rmd` → `inst/doc/*.html`).
+
+This appendix links vignettes into the same GitHub Pages site (snowflakeR) or out to RSnowflake on GitHub, so you can open them in a browser without installing R.
+
+::: {.callout-note}
+## Source of truth
+
+Vignette **source** lives in each package repo (`snowflakeR/vignettes/`, `RSnowflake/vignettes/`). HTML is built by `generate_r_docs.sh` during `sync_snowflakeR_to_public.sh`. This guide **copies** snowflakeR HTML into `_site/vignettes/snowflakeR/` at render time — it does not duplicate `.Rmd` bodies in the guide tree.
+:::
+
+---
+
+## snowflakeR vignettes (on this site) {#sec-snowflaker}
+
+These open on the **same** Hitchhiker's Guide GitHub Pages host under `vignettes/snowflakeR/`:
+
+| Vignette | HTML | Guide chapter |
+|----------|------|---------------|
+| `getting-started` | [getting-started.html](../../vignettes/snowflakeR/getting-started.html) | [16 — Connect](../../16_snowflaker_connect/index.qmd) |
+| `setup` | [setup.html](../../vignettes/snowflakeR/setup.html) | [03](../../03_local_r_setup/index.qmd), [04](../../04_rstudio_posit_vscode/index.qmd) |
+| `workspace-notebooks` | [workspace-notebooks.html](../../vignettes/snowflakeR/workspace-notebooks.html) | [06–08](../../06_workspace_bootstrap/index.qmd) |
+| `feature-store` | [feature-store.html](../../vignettes/snowflakeR/feature-store.html) | [17 — Feature Store](../../17_feature_store/index.qmd) |
+| `model-registry` | [model-registry.html](../../vignettes/snowflakeR/model-registry.html) | [18 — Model Registry](../../18_model_registry/index.qmd) |
+| `experiments` | [experiments.html](../../vignettes/snowflakeR/experiments.html) | [19 — Experiments](../../19_experiments/index.qmd) |
+| `model-monitoring` | [model-monitoring.html](../../vignettes/snowflakeR/model-monitoring.html) | [20 — Monitoring](../../20_model_monitoring/index.qmd) |
+| `parallel-dosnowflake` | [parallel-dosnowflake.html](../../vignettes/snowflakeR/parallel-dosnowflake.html) | [Parallel doSnowflake](../../22_parallel_dosnowflake/index.qmd) (read first) |
+| `many-model-howto` | [many-model-howto.html](../../vignettes/snowflakeR/many-model-howto.html) | [Many-model](../../21_many_model/index.qmd) |
+
+After `install.packages` / tarball install: `browseVignettes("snowflakeR")` opens the same content locally.
+
+Reference manual (PDF): `system.file("doc/snowflakeR-reference.pdf", package = "snowflakeR")` — see [Appendix E](../E_package_reference/index.qmd).
+
+---
+
+## RSnowflake vignettes (RSnowflake repo) {#sec-rsnowflake}
+
+RSnowflake vignettes are maintained in **[Snowflake-Labs/RSnowflake](https://github.com/Snowflake-Labs/RSnowflake)**. They are **not** copied into this book site; links open the committed HTML on `main` in a **new tab**.
+
+| Vignette | HTML (new tab) | Guide chapter |
+|----------|----------------|---------------|
+| `getting-started` | [getting-started.html](https://github.com/Snowflake-Labs/RSnowflake/raw/main/inst/doc/getting-started.html){target="_blank" rel="noopener noreferrer"} | [12–13](../../12_rsnowflake_connect/index.qmd) |
+| `workspace-rsnowflake` | [workspace-rsnowflake.html](https://github.com/Snowflake-Labs/RSnowflake/raw/main/inst/doc/workspace-rsnowflake.html){target="_blank" rel="noopener noreferrer"} | [14 — Workspace](../../14_rsnowflake_workspace/index.qmd) |
+
+Engineering note (ADBC, internal gateway): [WORKSPACE_ADBC.md](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md){target="_blank" rel="noopener noreferrer"}
+
+::: {.callout-tip}
+## Viewing RSnowflake HTML in the browser
+
+Links use GitHub **`/raw/`** URLs so the browser opens the committed HTML file directly (new tab). If your browser downloads instead of displaying, open the file from a local clone (`RSnowflake/inst/doc/`) or `browseVignettes("RSnowflake")` after install.
+:::
+
+---
+
+## How vignettes get into this site {#sec-build}
+
+```{mermaid}
+flowchart LR
+  RMD[snowflakeR/vignettes/*.Rmd]
+  GEN[generate_r_docs.sh]
+  DOC[inst/doc/*.html]
+  QRT[quarto render book]
+  CP[copy_vignette_html_to_site.sh]
+  SITE[_site/vignettes/snowflakeR/]
+
+  RMD --> GEN --> DOC
+  DOC --> CP
+  QRT --> CP --> SITE
+```
+
+1. Edit vignettes in **snowflakeR** (or RSnowflake) repo.  
+2. `bash sync_snowflakeR_to_public.sh` rebuilds `inst/doc/` and syncs to public.  
+3. Guide CI runs `quarto render` then **post-render** copies snowflakeR HTML into `_site/`.
+
+---
+
+## Related {#sec-related}
+
+[Appendix E — Package reference](../E_package_reference/index.qmd) (repos, notebooks, multilang docs)

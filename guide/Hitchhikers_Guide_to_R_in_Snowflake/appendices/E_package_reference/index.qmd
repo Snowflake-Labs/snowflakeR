@@ -5,6 +5,8 @@ subtitle: "Vignettes, repos, and API documentation"
 
 Package vignettes remain the **API reference of record**. This guide provides narrative context; use `?function` and vignettes for signatures and edge cases.
 
+**Browser-readable vignettes:** [Appendix H — Package vignettes (HTML)](../H_package_vignettes/index.qmd) links snowflakeR `inst/doc` HTML on this site and RSnowflake vignettes on GitHub (new tab).
+
 ---
 
 ## snowflakeR {#sec-snowflaker}

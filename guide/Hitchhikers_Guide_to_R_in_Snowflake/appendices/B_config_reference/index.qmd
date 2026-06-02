@@ -68,7 +68,7 @@ setup_notebook(config="/absolute/path/to/snowflaker_config.yaml",
 ## Tarballs (required for snowflakeR / RSnowflake in prod) {#sec-tarballs}
 
 ::: {.callout-warning}
-**Never compile snowflakeR or RSnowflake from source in Workspace.** Build tarballs locally (~10 seconds) and reference URLs or committed `.tar.gz` files.
+**Avoid compiling snowflakeR or RSnowflake from source in Workspace.** Build tarballs locally (~10 seconds) and reference URLs or committed `.tar.gz` files. If you must compile from source, ensure you are using the latest version of the code and that you have the necessary dependencies installed.
 :::
 
 ```bash

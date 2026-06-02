@@ -14,16 +14,17 @@ That pattern is everywhere in retail, supply chain, and IoT, but it collides wit
 
 snowflakeR addresses both by combining **doSnowflake** (parallel R on SPCS), **stage** persistence (`.rds` models in-account), and **Model Registry** batch APIs (`sfr_log_many_model()`, `sfr_run_batch()`). You write one `foreach` loop; Snowflake runs it across a compute pool and registers the result as a **single registry version** that knows how to score every partition.
 
-This chapter explains the end-to-end architecture. Implementation detail for Tasks vs Queue backends is in [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd).
+This chapter applies **doSnowflake** to partitioned forecasting and registry batch scoring. Read [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) first for serialization, `tasks/task_XXX.rds`, queue rows, and **how `unit_data` reaches workers** (`data_query` vs stage files).
 
-Primary reference: `vignette("many-model-howto", package = "snowflakeR")`.
+Primary reference: [many-model-howto vignette (HTML)](../appendices/H_package_vignettes/index.qmd#sec-snowflaker) or `vignette("many-model-howto", package = "snowflakeR")` after install.
 
 ## Learning Objectives
 
 - Decide when many-model beats one global model
 - Trace data from source table → parallel training → stage → registry → batch inference
 - Choose Tasks vs Queue dispatch and the screen-then-refine pattern
-- Understand the worker return contract and aggregator registration
+- Wire `data_query` so each SKU's series is available as `unit_data` in the worker
+- Understand the worker return contract (`model_obj`, metrics) and aggregator registration
 
 ---
 
@@ -101,36 +102,14 @@ flowchart TB
 
 ## Dispatch: Tasks vs Queue {#sec-dispatch}
 
-Both modes run the **same** `%dopar%` loop body. The difference is **how work reaches SPCS workers** — see [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) for full detail.
-
-```{mermaid}
-flowchart LR
-  subgraph tasks [Tasks mode]
-    M1[Master] --> T1[Task 1]
-    M1 --> T2[Task 2]
-    M1 --> T3[Task N]
-    T1 --> S1[SPCS chunk]
-    T2 --> S2[SPCS chunk]
-    T3 --> S3[SPCS chunk]
-  end
-
-  subgraph queue [Queue mode]
-    M2[Master] --> HT[(Hybrid Table rows)]
-    HT --> W1[Worker pulls row]
-    HT --> W2[Worker pulls row]
-    W1 --> S4[SPCS]
-    W2 --> S5[SPCS]
-  end
-```
+Both modes run the **same** `%dopar%` loop body. The difference is **coordination** (Task DAG vs Hybrid Table queue), not the modeling code.
 
 | | **Tasks** | **Queue** |
 |--|-----------|-----------|
-| **Coordination** | Snowflake Task DAG — fixed upfront | Hybrid Table — one **row per chunk** (pointer to stage payload) |
-| **Dispatch** | All chunks scheduled at start | Workers **claim** rows when ready |
-| **Completion** | Every chunk must finish | Feeder can stop early; workers drain queue |
 | **Best for** | Full pass over all SKUs (screen pass) | Time-boxed refine pass on worst performers |
+| **Completion** | Every chunk must finish | Feeder can stop early; workers drain queue |
 
-Remember: queue **rows** reference **chunks** on the stage; **iteration parameters** (e.g. which `unit_id` values) live in `tasks/task_XXX.rds`, not in the Hybrid Table columns themselves.
+Queue **rows** are one per **chunk**, not per SKU. doSnowflake creates `tasks/task_XXX.rds` on the stage automatically when you call `%dopar%` — you never author those files by hand. See [Who creates task_XXX.rds?](../22_parallel_dosnowflake/index.qmd#sec-serialize) and [Queue rows](../22_parallel_dosnowflake/index.qmd#sec-queue-rows).
 
 ---
 
@@ -167,14 +146,36 @@ Runnable walkthrough: [many-model-howto](https://github.com/Snowflake-Labs/snowf
 
 ## Worker expression contract {#sec-worker}
 
-The R code inside `%dopar%` runs **on SPCS workers**, not in your master session. doSnowflake **injects** partition-specific data:
+The `%dopar%` body runs **on SPCS workers**, not in your master session.
 
-| Variable | Source |
-|----------|--------|
-| `unit_id` (or your loop variable) | From foreach iteration args in the chunk |
-| `unit_data` | Rows from source table filtered to that partition |
+| Variable | How it appears |
+|----------|----------------|
+| `unit_id` (foreach loop variable) | Serialized automatically in `task_XXX.rds` → `args` |
+| `unit_data` | **Not automatic.** Worker bulk-reads via `data_query` on `registerDoSnowflake()` — see [Getting data into each partition](../22_parallel_dosnowflake/index.qmd#sec-partition-data) |
 
-Example worker body:
+Register with bulk read (typical many-model setup):
+
+```r
+registerDoSnowflake(conn, mode = "tasks",
+  compute_pool = cfg$compute_pool,
+  image_uri    = cfg$image_uri,
+  stage        = cfg$dosnowflake_stage_name,
+  chunks_per_job = 50L,
+  save_models    = TRUE,
+  model_run_id   = "tasks_20260529_1200",
+  model_key_arg  = "unit_id",
+  data_query = list(
+    table      = "MY_DB.MY_SCHEMA.SERIES_EVENTS",
+    key_column = "UNIT_ID",
+    key_arg    = "unit_id",
+    columns    = c("UNIT_ID", "OBS_DATE", "Y"),
+    order_by   = "UNIT_ID, OBS_DATE",
+    warehouse  = cfg$warehouse
+  )
+)
+```
+
+Example worker body (after `unit_data` injection):
 
 ```r
 suppressPackageStartupMessages(library(forecast))
@@ -184,16 +185,15 @@ model <- auto.arima(ts_full, stepwise = TRUE)
 fc    <- forecast(model, h = 30L)
 
 list(
-  unit_id   = unit_id,
-  model     = as.character(fc$method),
-  forecast  = as.numeric(fc$mean),
-  accuracy  = forecast::accuracy(model)
+  unit_id    = unit_id,
+  model      = as.character(fc$method),
+  forecast   = as.numeric(fc$mean),
+  model_obj  = model,
+  accuracy   = forecast::accuracy(model)
 )
 ```
 
-**Contract:** return a **list** the aggregator expects. The worker also persists the fitted model object to stage (handled by doSnowflake / worker script). Adapt return fields for **tidymodels**, **fable**, or custom predict logic.
-
-Inside each container, **`parallel::mclapply`** may further parallelize across CPU cores on the node — one SPCS container typically consumes a full compute node.
+**Return contract:** a **list** per iteration. Include **`model_obj`** (fitted R object) when `save_models = TRUE`; the worker writes `@stage/models/<model_run_id>/<unit_id>.rds` and strips `model_obj` from chunk results. The string field `model` is metadata only. Within-chunk CPU use (`mclapply`, `instance_family`, `chunks_per_job`) is covered in [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd#sec-tasks).
 
 ---
 
@@ -246,11 +246,10 @@ Snowflake runs **server-side** scoring: for each partition, load `.rds` from sta
 
 ## Prerequisites {#sec-prereq}
 
-- SPCS **compute pool** and **image repository** with worker image (`linux/amd64`)
-- **Warehouse** for orchestration SQL and batch jobs
-- Role: `USAGE` on pool, `CREATE SERVICE`, `CREATE TASK` (as required)
+- [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — serialization, `data_query`, stage layout, modes
+- SPCS **compute pool** and worker image (`linux/amd64`)
+- **Warehouse** for `data_query` reads, orchestration, and batch jobs (consider **multi-cluster** when many chunks read in parallel)
 - Hybrid Table entitlement for queue mode
-- [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — modes, queue rows, stage layout
 
 ---
 
@@ -266,6 +265,6 @@ Snowflake runs **server-side** scoring: for each partition, load `.rds` from sta
 
 ## Next steps
 
-[Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — backend mechanics in depth.
+[Model Registry](../18_model_registry/index.qmd) — `sfr_log_many_model()` and aggregator detail.
 
-[Model Registry](../18_model_registry/index.qmd) — single-model path and `sfr_log_many_model()` detail.
+[End-to-End Pipeline](../23_end_to_end/index.qmd) — full lifecycle placement.
