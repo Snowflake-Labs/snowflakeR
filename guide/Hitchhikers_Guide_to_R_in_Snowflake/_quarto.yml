@@ -57,9 +57,9 @@ book:
         - 17_feature_store/index.qmd
         - 18_model_registry/index.qmd
         - 19_experiments/index.qmd
-        - 20_model_monitoring/index.qmd
         - 22_parallel_dosnowflake/index.qmd
         - 21_many_model/index.qmd
+        - 20_model_monitoring/index.qmd
         - 23_end_to_end/index.qmd
 
   appendices:

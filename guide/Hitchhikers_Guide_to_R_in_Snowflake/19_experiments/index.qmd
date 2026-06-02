@@ -135,4 +135,6 @@ sfr_delete_experiment(exp, name = "FORECAST_TUNING")
 
 ## Next steps
 
-[Model Monitoring](../20_model_monitoring/index.qmd)
+[Model Registry](../18_model_registry/index.qmd) — promote a winning run to a versioned model.
+
+[Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — when training must scale beyond one notebook.

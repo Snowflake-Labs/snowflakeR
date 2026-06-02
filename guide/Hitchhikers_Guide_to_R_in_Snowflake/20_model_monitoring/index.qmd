@@ -7,7 +7,7 @@ subtitle: "Drift, performance, and inference logs"
 
 After deployment, **model monitoring** tracks drift, performance degradation, and statistical shifts on production inference data — configured through the Model Registry API in snowflakeR.
 
-Monitoring complements [Experiments](../19_experiments/index.qmd) (training exploration) and [Model Registry](../18_model_registry/index.qmd) (versioned serving).
+Read this chapter **after** you have a **logged model version** in the registry ([Model Registry](../18_model_registry/index.qmd)) and, for partition-heavy workloads, after [Many-Model Patterns](../21_many_model/index.qmd). Monitoring complements [Experiments](../19_experiments/index.qmd) (training exploration) on the path to production.
 
 Requires **`snowflake-ml-python` ≥ 1.7.1** — verify with `sfr_check_environment()`.
 
@@ -125,4 +125,6 @@ Connect monitoring alerts to your MLOps process — see [MLOps on Snowflake](../
 
 ## Next steps
 
-[Many-Model Forecasting](../21_many_model/index.qmd)
+[End-to-End Pipeline](../23_end_to_end/index.qmd) — full lifecycle map.
+
+[Model Registry](../18_model_registry/index.qmd) — prerequisites (`sfr_log_model()`, deployed version).

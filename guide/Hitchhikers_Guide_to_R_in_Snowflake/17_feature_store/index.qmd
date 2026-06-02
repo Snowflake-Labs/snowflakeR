@@ -308,6 +308,12 @@ fv <- sfr_create_feature_view(
 
 snowflakeR translates the lazy table to SQL — no `collect()` before registration.
 
+### Wide and sparse feature sets {#sec-wide-sparse}
+
+When a feature view would need **hundreds of scalar columns**, prefer **OBJECT** or **ARRAY** bundles (and, for training export at scale, **ARRAY → `::VECTOR`** columns) instead of a wide table. Snowflake documents the pattern in [Implementation Guide §12.10 — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse).
+
+From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query §RSnowflake-only translations](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr) and [§VECTOR](../13_rsnowflake_query/index.qmd#sec-vector). Register the resulting SQL as `feature_df`; use `sfr_generate_training_data()` for point-in-time joins rather than `collect()` on the full training set.
+
 ### Time-series (event-level) features
 
 When features change over time (not one row per entity), set **`timestamp_col`**:

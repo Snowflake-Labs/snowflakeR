@@ -59,8 +59,8 @@ flowchart TB
 | **3. Features** | Entities, views, point-in-time data | [17](../17_feature_store/index.qmd) | `workspace_feature_store.ipynb` |
 | **4. Train** | tidymodels / fable / custom | [08](../08_r_cells_and_interop/index.qmd), [19](../19_experiments/index.qmd) | — |
 | **5. Register** | `sfr_log_model()`, deploy | [18](../18_model_registry/index.qmd) | `workspace_model_registry.ipynb` |
-| **6. Monitor** | Inference log + drift | [20](../20_model_monitoring/index.qmd) | monitoring vignette |
-| **7. Scale** | Parallel doSnowflake → many-model | [22](../22_parallel_dosnowflake/index.qmd), [21](../21_many_model/index.qmd) | parallel SPCS notebooks |
+| **6. Scale** | Parallel doSnowflake → many-model | [22](../22_parallel_dosnowflake/index.qmd), [21](../21_many_model/index.qmd) | parallel SPCS notebooks |
+| **7. Monitor** | Inference log + drift on deployed versions | [20](../20_model_monitoring/index.qmd) | monitoring vignette |
 
 [MLOps framing](../15_mlops_on_snowflake/index.qmd) situates these stages in your organization's lifecycle.
 
@@ -68,7 +68,7 @@ flowchart TB
 
 ## Entry paths {#sec-paths}
 
-Three common ways teams enter this pipeline. Stages **3–7** are identical once R can run in your environment.
+Three common ways teams enter this pipeline. Stages **3–7** in the table above follow the same order as the snowflakeR chapters (features through monitoring).
 
 ### Path A — Workspace with self-serve bootstrap
 
