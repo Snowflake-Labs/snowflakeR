@@ -18,7 +18,8 @@ The design goal is **push computation to the data**. Your R session sends SQL; t
 - Run queries, DDL, and table operations with DBI
 - Build lazy dplyr pipelines that execute on the warehouse
 - Use RSnowflake-only dbplyr translations (semi-structured types, `OBJECT_AGG`, approximate aggregates)
-- Understand how VARIANT / OBJECT / ARRAY / VECTOR columns appear in R after `collect()`
+- Parse OBJECT / ARRAY / VECTOR JSON from the SQL API into native R types efficiently
+- Choose read paths for Feature Store training data (`sfr_generate_training_data`, Datasets, `save_as`, RSnowflake)
 - Understand how RSnowflake chooses bulk write/read backends
 - Know SQL API limits that affect stage I/O
 
@@ -200,102 +201,289 @@ For **fixed keys** (known feature names), `OBJECT_CONSTRUCT` in SQL is often cle
 
 ---
 
-## VARIANT, OBJECT, ARRAY, and VECTOR in R {#sec-semi-structured-read}
+## Semi-structured columns in R {#sec-semi-structured-read}
 
-### What `collect()` returns today
+When RSnowflake uses the **SQL API** (the default in Workspace), result metadata is JSON. Snowflake types that are not plain scalars arrive in R as **character** — one JSON string per cell:
 
-RSnowflake maps Snowflake types in `type-map.R` when results come through the **SQL API** (JSON):
+| Snowflake type | R type after `collect()` / `dbGetQuery()` |
+|----------------|-------------------------------------------|
+| VARIANT, OBJECT, ARRAY | **character** (JSON text) |
+| VECTOR | **character** (JSON array of numbers) |
+| NUMBER, FLOAT, BOOLEAN, DATE, TIMESTAMP | native R types as usual |
 
-| Snowflake type | R type after `collect()` / `dbGetQuery()` | Notes |
-|----------------|-------------------------------------------|-------|
-| VARIANT, OBJECT, ARRAY | **character** | JSON text per cell |
-| VECTOR | **character** | JSON (or string) representation — **not** a native R matrix column |
-| TEXT, GEOGRAPHY, GEOMETRY | character | |
-| FIXED, REAL, BOOLEAN, timestamps | integer / double / logical / POSIXct | As usual |
+That is expected behaviour, not a connection error. Scalar training columns (`DOUBLE`, `NUMBER`, …) round-trip normally; bundled features need a short parse step in R (below) unless you reshape in SQL first.
 
-So `collect()` on a wide training export gives you **columns of JSON strings**, not an `n × p` numeric matrix. Parse in R when needed:
+With **ADBC** (`options(RSnowflake.backend = "adbc")` in a CRE that includes `adbcsnowflake`), some accounts return richer Arrow types for semi-structured data. Treat SQL API + character JSON as the portable baseline; try ADBC when you move beyond validation-sized pulls — see [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd).
+
+### Why Feature Store users care
+
+Snowflake recommends **OBJECT** or **ARRAY** columns to avoid thousand-column tables when feature cardinality is high — see [Feature Store Implementation Guide — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse).
+
+| Pattern | In Snowflake | Through RSnowflake SQL API |
+|---------|--------------|----------------------------|
+| Many scalar columns | One column per feature | Native numeric/logical columns — ready for modeling |
+| OBJECT bundle per entity | Few columns | JSON string per row — expand in R (or extract in SQL) |
+| ARRAY / VECTOR packs | Fixed-length numeric sequences | JSON string per row — parse to `matrix` in R |
+
+RSnowflake helps you **build** those bundles on the warehouse (`object_agg`, `array_agg`, casts to `VECTOR`) with dplyr; parsing after `collect()` is a separate, deliberate step.
+
+---
+
+## Parse JSON results into native R types {#sec-parse-json}
+
+Use **`jsonlite`** (already a dependency of RSnowflake). Prefer **`vapply()`** over `lapply()` + `rbind()` — it pre-allocates and is much faster on thousands of rows.
+
+### OBJECT column → named features per row
 
 ```r
 library(jsonlite)
 
-row <- training[1, ]
-feat_obj <- fromJSON(row$FEATURE_OBJECT)
-# named numeric vector — then cbind/bind_cols for modeling
+sample <- dbGetQuery(con, "
+  SELECT entity_id, feature_object
+  FROM MY_DB.ML.CUSTOMER_FEATURES_BUNDLED
+  LIMIT 5000
+")
+
+# One row: named numeric vector
+fromJSON(sample$FEATURE_OBJECT[1])
+
+# All rows: list of named vectors, then rectangular data.frame
+feat_list <- vapply(
+  sample$FEATURE_OBJECT,
+  fromJSON,
+  FUN.VALUE = numeric(0),
+  simplify = FALSE
+)
+# If every row has the same keys:
+feat_mat <- do.call(rbind, lapply(feat_list, `[`, unique(names(feat_list[[1]]))))
+training <- cbind(entity_id = sample$ENTITY_ID, as.data.frame(feat_mat))
 ```
 
-For very large exports, prefer **keeping transforms in SQL** (narrow/aggregated result) or **ADBC** bulk reads (`options(RSnowflake.backend = "adbc")`) and measure whether Arrow delivers richer types for your account — the SQL API path is the conservative baseline documented here.
+If keys differ by row, normalize with **`tidyr::unnest_wider()`** after `tibble::enframe(feat_list)` or keep features in SQL with `feature_object:avg_spend::FLOAT` style extracts.
 
-### Why this matters for Feature Store + wide features
+### ARRAY column → numeric matrix
 
-| Approach | In Snowflake | At R `collect()` |
-|----------|--------------|------------------|
-| Wide table (500+ scalar columns) | Simple SQL | Many numeric columns; heavy compile + transfer |
-| OBJECT bundle per entity | Few columns; [recommended in FS guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse) | One JSON string per row — parse client-side |
-| ARRAY → `::VECTOR(FLOAT, n)` at query time | O(1) compile vs per-column extract | Still character in R via SQL API today; Python+Arrow can get `fixed_size_list` |
+```r
+arr <- dbGetQuery(con, "
+  SELECT entity_id, feature_array
+  FROM MY_DB.ML.TRAINING_ARRAY_PACK
+  LIMIT 5000
+")
 
-RSnowflake's advantage for R users is **pushing** `object_agg`, `array_agg`, and approximate aggregates into SQL via dplyr — not requiring Python for the transform step.
+# Each cell is JSON like "[1.0, 2.5, ...]"
+rows <- vapply(
+  arr$FEATURE_ARRAY,
+  function(s) fromJSON(s, simplifyVector = TRUE),
+  FUN.VALUE = numeric(0)
+)
+X <- matrix(unlist(rows), nrow = nrow(arr), byrow = TRUE)
+```
+
+Check `ncol(X)` once against your declared array length; mismatches usually mean NULL or ragged arrays in source data.
+
+### VECTOR column → numeric matrix
+
+VECTOR values also arrive as JSON text on the SQL API path. The decode step is the same as ARRAY:
+
+```r
+vec <- dbGetQuery(con, "
+  SELECT entity_id,
+         packed_floats::VECTOR(FLOAT, 128) AS packed_floats
+  FROM MY_DB.ML.TRAINING_VECTOR_PACK
+  LIMIT 5000
+")
+
+float_rows <- vapply(
+  vec$PACKED_FLOATS,
+  function(s) fromJSON(s, simplifyVector = TRUE),
+  FUN.VALUE = numeric(0)
+)
+X_float <- matrix(unlist(float_rows), nrow = nrow(vec), byrow = TRUE)
+```
+
+For production-sized training sets, **do not** rely on row-wise `fromJSON` over millions of rows. Materialize a narrow table in Snowflake (`save_as` on training generation, or a Dynamic Table), then read with **ADBC**, **Parquet + arrow**, or keep modeling in SQL — see [§Feature Store training data in R](#sec-feature-store-read).
 
 ---
 
-## VECTOR type {#sec-vector}
+## VECTOR columns for wide feature exports {#sec-vector}
 
-### Do we support VECTOR?
+Snowflake **VECTOR** types store a fixed-length sequence of numbers (up to **4,096** elements per column). They are useful when you export hundreds or thousands of features but want the query planner to see only a **small number of columns** — not one expression per feature.
 
-**Yes as a Snowflake column type you can query.** RSnowflake does not block `VECTOR(FLOAT, n)` / `VECTOR(INT, n)` in SQL.
+RSnowflake runs SQL that references `VECTOR(FLOAT, n)` and `VECTOR(INT, n)` without restriction. There are no dplyr helpers yet for `VECTOR_AVG` / `VECTOR_SUM`; write those in SQL with `sql()` or `dbGetQuery()`.
 
-**In R today:** VECTOR columns map to **`character`** (same family as VARIANT/OBJECT/ARRAY on the SQL API path). There is **no** built-in conversion to an R `matrix` or packed numeric vector on `collect()`.
+After `collect()`, VECTOR columns are **character** (JSON), same as ARRAY. Use the parse pattern in [§Parse JSON results](#sec-parse-json).
 
-| Layer | VECTOR support |
-|-------|----------------|
-| SQL / `dbGetQuery()` | Full — use casts, `VECTOR_AVG`, `VECTOR_SUM`, etc. in SQL text |
-| dbplyr helpers | **No** dedicated `vector_avg()` wrappers yet — use `sql()` or raw SQL |
-| `collect()` → modeling matrix | **Manual** — parse JSON or build SQL that returns scalars/ARRAY instead |
+### Packed export layout (three columns)
 
-Snowflake stores VECTOR as a fixed-width numeric sequence (up to **4,096** dimensions). That is the format SnowCAT wide-table work targets for efficient export to Python (Arrow `fixed_size_list` → NumPy). See internal research in `sc-sf-adaptive-vw-benchmark` / `WIDE_DATA_BRIEFING.md` (engineering repo).
+A common layout for mixed numeric and categorical features stores data as ARRAY in tables, then casts to VECTOR at read time:
 
-### Three-vector export pattern (ARRAY → VECTOR)
+| Column | Type | Role |
+|--------|------|------|
+| `features_float` | `VECTOR(FLOAT, n)` | Imputed numerics |
+| `features_int` | `VECTOR(INT, n)` | Ordinal-encoded categoricals |
+| `null_mask` | `VECTOR(INT, ceil(n/32))` | Bitmask of which features were NULL |
 
-Wide-table benchmarks found it more efficient to export **three ARRAY columns**, cast to **VECTOR** at query time, instead of thousands of scalar columns or per-field OBJECT extraction:
-
-1. **`features_float`** — `VECTOR(FLOAT, n)` for numeric / imputed floats  
-2. **`features_int`** — `VECTOR(INT, n)` for categoricals encoded as ordinals  
-3. **`null_mask`** — `VECTOR(INT, ceil(n/32))` bitmask for which features were NULL  
-
-Compilation stays **O(1)** in feature count because the planner sees three expressions, not one per feature. Example (run on warehouse; adjust names):
+The export SQL stays short regardless of feature count — the warehouse compiles three expressions instead of hundreds:
 
 ```r
-training_vectors <- dbGetQuery(con, "
+export <- dbGetQuery(con, "
   SELECT
     entity_id,
     features_float_arr::VECTOR(FLOAT, 1000) AS features_float,
     features_int_arr::VECTOR(INT, 400)     AS features_int,
     null_mask_arr::VECTOR(INT, 32)         AS null_mask
-  FROM FEATURE_STORE.ML.ARRVEC_TRAINING_EXPORT
-  WHERE event_date = '2026-01-01'
+  FROM MY_DB.ML.TRAINING_EXPORT_VIEW
+  WHERE train_date = '2026-01-01'
   LIMIT 10000
 ")
 
-# SQL API path: columns are character JSON — decode per row or in a follow-up R step
-str(training_vectors)
+# Decode each pack (validation-sized sample)
+decode_vec_col <- function(col) {
+  m <- vapply(col, function(s) fromJSON(s, simplifyVector = TRUE), FUN.VALUE = numeric(0))
+  matrix(unlist(m), nrow = length(col), byrow = TRUE)
+}
+X_num  <- decode_vec_col(export$FEATURES_FLOAT)
+X_cat  <- decode_vec_col(export$FEATURES_INT)
+# Apply null_mask semantics using your feature metadata (per-project)
 ```
 
-Building `features_float_arr` / `features_int_arr` is usually done in **SQL or Dynamic Tables** (see Feature Store guide §12.10 and ARRVEC patterns), not row-by-row in R. R's role is **orchestration**: register views, `generate_training_data()`, and selective `collect()` for validation.
+Define `features_*_arr` in the Feature View or a downstream Dynamic Table — not row-by-row in R. See the [Implementation Guide §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse) for platform patterns.
 
-### Practical guidance for R + wide ML
+::: {.callout-note}
+**Parquet and VECTOR:** Snowflake cannot write VECTOR columns directly to Parquet. For file-based pipelines, export **typed ARRAY** columns (or scalars) instead; VECTOR is for in-warehouse query and SQL API/ADBC reads.
+:::
 
-| Goal | Prefer |
-|------|--------|
-| Feature View with 30–50 columns | Scalar columns + dbplyr; `collect()` is fine |
-| 100+ features, shared definitions | OBJECT or ARRAY bundles in Feature View SQL; avoid `SELECT *` with 500 literals |
-| Training export for Python/pytorch | Often **Python cell** or batch job with ADBC/Arrow; R validates SQL and row counts |
-| Proof-of-concept in R only | `collect()` small `LIMIT`, `jsonlite::fromJSON` on OBJECT column, then `as.matrix()` |
+---
+
+## Wide training sets: views, joins, and column count {#sec-wide-training}
+
+Width is not only “one Feature View with 500 columns.” It also accumulates when you **join several Feature Views** into one training set:
+
+```r
+training_data <- sfr_generate_training_data(
+  fs,
+  spine    = spine_sql,
+  features = list(
+    list(name = "CUSTOMER_DEMOGRAPHICS", version = "v1"),  # 40 cols
+    list(name = "CUSTOMER_TRANSACTIONS", version = "v1"), # 120 cols
+    list(name = "PRODUCT_EMBEDDINGS",    version = "v1")  # 256 cols
+  ),
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "label",
+  auto_prefix         = TRUE   # CUSTOMER_TRANSACTIONS_avg_spend, ...
+)
+```
+
+Each view adds its feature columns (plus keys and optional timestamp columns). **`auto_prefix = TRUE`** avoids name collisions but **increases total width** — plan for hundreds of columns even when each view is modest.
+
+| Situation | Practical approach |
+|-----------|-------------------|
+| Few views, &lt; ~100 columns total | `sfr_generate_training_data()` → R `data.frame`; scalar columns are ready to model |
+| Several views, 100–500+ columns | Prefer `save_as = "TRAINING_MATERIALIZED"` then `tbl(con, ...)` for EDA; sample with `LIMIT` before full `collect()` |
+| High cardinality per entity | Define OBJECT/ARRAY bundles **in each Feature View SQL**; fewer columns per view, parse in R only for samples |
+| Very large row counts | Materialize in Snowflake; read via stage Parquet + **arrow** or train in Python on Dataset files (below) |
+| Multi-view + bundled features | Join fewer, wider logical views in SQL first, or use `exclude_columns` / `object_agg` in upstream ETL |
+
+---
+
+## Feature Store training data in R {#sec-feature-store-read}
+
+Feature Store training flows through **snowflakeR**, not RSnowflake alone — but the data types you get in R depend on **which read path** you choose.
+
+### Path 1 — `sfr_generate_training_data()` (transient join)
+
+Joins your spine to one or more Feature Views and returns an R **`data.frame`**:
+
+```r
+training <- sfr_generate_training_data(
+  fs,
+  spine    = spine_sql,
+  features = list(fv1, fv2),
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "label"
+)
+```
+
+**What happens under the hood:** the Python Feature Store SDK runs the join in Snowflake, materializes a Snowpark result, converts it to **pandas**, then snowflakeR transfers columns into R (today via a JSON round-trip for compatibility with Workspace). Scalar feature columns arrive as normal R types. Any OBJECT/ARRAY/VECTOR columns in the join result follow the pandas/JSON path — treat them like SQL API character columns if they appear as strings.
+
+**Materialize without pulling everything to R:**
+
+```r
+sfr_generate_training_data(
+  fs,
+  spine    = spine_sql,
+  features = list(fv1, fv2),
+  save_as  = "CHURN_TRAINING_V1",   # table in Feature Store schema
+  spine_timestamp_col = "event_ts",
+  spine_label_cols    = "label"
+)
+
+# Inspect or model from Snowflake with RSnowflake
+library(dplyr)
+training_tbl <- tbl(con, in_schema("FEATURE_STORE", "CHURN_TRAINING_V1"))
+sample       <- training_tbl |> head(10000) |> collect()
+```
+
+Use `save_as` for wide or large training sets: validate joins in Snowflake, then read slices with dplyr/`LIMIT` or ADBC.
+
+### Path 2 — `sfr_generate_dataset()` (versioned Dataset + lineage)
+
+Creates an immutable **Snowflake ML Dataset** (Parquet files on a stage — the same object Python reads with **fsspec**):
+
+```r
+training <- sfr_generate_dataset(
+  fs,
+  name     = "CHURN_TRAINING",
+  version  = "v1",
+  spine    = spine_sql,
+  features = list(fv1, fv2),
+  spine_label_cols = "label"
+)
+
+attr(training, "dataset_name")     # for sfr_log_model() lineage
+attr(training, "dataset_version")
+```
+
+**What R receives today:** the bridge reads the Dataset through **`Dataset.read.to_snowpark_dataframe().to_pandas()`** — not direct Parquet file access. That matches demo and moderate row counts; it is the same semantic data Python would get from an in-session read, not the maximum-throughput fsspec path.
+
+**What Python does at scale:** after `generate_dataset()`, the SDK exposes Parquet files on internal storage:
+
+```python
+# Python (snowflake-ml) — not wrapped in snowflakeR yet
+ds = session.dataset.load("MY_DB.ML.CHURN_TRAINING").select_version("v1")
+files = ds.read.files()          # fsspec-compatible paths
+# pd.read_parquet(files) or pyarrow.dataset
+```
+
+See [Snowflake ML Dataset — direct file access](https://docs.snowflake.com/en/developer-guide/snowflake-ml/dataset#direct-file-access).
+
+**R options for large Datasets today:**
+
+1. **`sfr_read_dataset(conn, name, version)`** — same pandas → R path as `sfr_generate_dataset()`; suitable when the Dataset already exists.
+2. **`save_as` table + RSnowflake** — materialize training SQL to a table, bulk-read with ADBC or `arrow` if you export to a stage your role can read.
+3. **Python cell in a multilang notebook** — read Parquet with pandas/pyarrow for training; use R for Feature Store registration and Registry logging (common split for wide feature matrices).
+
+A future snowflakeR release may add **`format = "parquet"`** on dataset reads (fsspec → `arrow::read_parquet()`). Until then, assume Dataset APIs in R are **lineage- and moderate-scale-friendly**, not a substitute for a full Parquet export pipeline.
+
+### Path 3 — RSnowflake only (custom SQL / dbplyr)
+
+When you own the SQL (external Feature View table, export view, or `save_as` output), use RSnowflake directly:
+
+```r
+training_tbl <- tbl(con, in_schema("ML", "CHURN_TRAINING_V1"))
+training     <- training_tbl |> collect()   # scalars: native types
+# OBJECT/ARRAY/VECTOR columns: parse per §Parse JSON results
+```
+
+This path gives you the most control over **which columns** cross the wire — important when joins are wide.
 
 ::: {.callout-tip}
 ## Related chapters
 
-- [Feature Store](../17_feature_store/index.qmd) — `sfr_generate_training_data()`, entities, feature views  
-- [Feature Store Implementation Guide — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse) — platform patterns (Python examples; SQL is the same)  
-- [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd) — ADBC for larger reads
+- [Feature Store](../17_feature_store/index.qmd) — entities, views, `sfr_generate_training_data()`, Datasets  
+- [Feature Store — Wide & sparse](../17_feature_store/index.qmd#sec-wide-sparse) — OBJECT/ARRAY in views  
+- [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd) — ADBC for larger reads  
+- [Model Registry](../18_model_registry/index.qmd) — `training_dataset` lineage from `sfr_generate_dataset()`
 :::
 
 ### Materialize on the warehouse (`compute()`) {#sec-materialize}
