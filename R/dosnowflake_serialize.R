@@ -108,7 +108,7 @@
                            paste0(stage_base, "/tasks/"))
   }
 
-  # 3. Write and upload manifest
+  # 3. Write and upload manifest (optional worker flags from opts)
   manifest <- list(
     job_id     = job_id,
     n_chunks   = n_chunks,
@@ -117,6 +117,9 @@
     packages   = obj$packages,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
   )
+  for (key in c("save_models", "model_run_id", "model_key_arg", "data_query")) {
+    if (!is.null(opts[[key]])) manifest[[key]] <- opts[[key]]
+  }
   manifest_file <- file.path(tmp_dir, "manifest.json")
   writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE),
              manifest_file)

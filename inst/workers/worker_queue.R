@@ -10,13 +10,17 @@
 #   "ephemeral" -- exit after MAX_EMPTY_POLLS consecutive empty polls
 #
 # Environment variables:
-#   WORKER_MODE  -- "queue" (default) or "ephemeral"
-#   JOB_ID       -- UUID of the job to process ("*" for any)
-#   QUEUE_FQN    -- Fully-qualified queue table (e.g. CONFIG.DOSNOWFLAKE_QUEUE)
-#   STAGE_PATH   -- Base stage path (optional, for volume mounts)
+#   WORKER_MODE    -- "queue" (default) or "ephemeral"
+#   JOB_ID         -- UUID of the job to process ("*" for any)
+#   QUEUE_FQN      -- Fully-qualified queue table (e.g. CONFIG.DOSNOWFLAKE_QUEUE)
+#   STAGE_PATH     -- Base stage path (optional, for volume mounts)
+#   LEASE_MINUTES  -- Lease duration for claimed chunks (default 10)
 
 library(DBI)
 library(RSnowflake)
+library(parallel)
+
+`%||%` <- function(x, y) if (is.null(x) || (is.character(x) && !nzchar(x))) y else x
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -26,6 +30,7 @@ WORKER_MODE      <- Sys.getenv("WORKER_MODE", "queue")
 JOB_ID           <- Sys.getenv("JOB_ID", "*")
 QUEUE_FQN        <- Sys.getenv("QUEUE_FQN", "CONFIG.DOSNOWFLAKE_QUEUE")
 MAX_EMPTY_POLLS  <- as.integer(Sys.getenv("MAX_EMPTY_POLLS", "5"))
+LEASE_MINUTES    <- as.integer(Sys.getenv("LEASE_MINUTES", "10"))
 BACKOFF_BASE_SEC <- 2
 BACKOFF_MAX_SEC  <- 30
 WAREHOUSE        <- Sys.getenv("SNOWFLAKE_WAREHOUSE", "")
@@ -68,40 +73,59 @@ stage_put <- function(con, local_path, stage_path) {
 }
 
 # ---------------------------------------------------------------------------
-# Queue operations via SQL
+# Queue operations via SQL -- lease-based compare-and-swap (CAS)
+#
+# Two-step claim prevents silent race losses that caused stuck PENDING chunks:
+#   1. SELECT a candidate row (PENDING or expired lease)
+#   2. UPDATE with WHERE re-checking claimability (CAS)
+#   3. If n_updated == 0, return "RETRY" (not NULL) so caller retries
+#      immediately without incrementing empty_count
 # ---------------------------------------------------------------------------
 
-claim_work <- function(con, job_id, worker_id, queue_fqn) {
-  job_filter <- if (job_id == "*") "" else sprintf("AND JOB_ID = '%s'", job_id)
-  claim_tag <- as.character(runif(1))
+esc <- function(x) gsub("'", "''", as.character(x))
 
-  DBI::dbExecute(con, sprintf("
+claim_work <- function(con, job_id, worker_id, queue_fqn, lease_min) {
+  job_filter <- if (job_id == "*") "" else sprintf("AND JOB_ID = '%s'", job_id)
+
+  candidate <- DBI::dbGetQuery(con, sprintf("
+    SELECT QUEUE_ID FROM %s
+    WHERE (STATUS = 'PENDING'
+           OR (STATUS = 'RUNNING'
+               AND LEASE_UNTIL IS NOT NULL
+               AND LEASE_UNTIL < CURRENT_TIMESTAMP()))
+      %s
+    ORDER BY CREATED_AT
+    LIMIT 1
+  ", queue_fqn, job_filter))
+
+  if (nrow(candidate) == 0) return(NULL)
+  cand_id <- candidate$QUEUE_ID[1]
+
+  n_updated <- DBI::dbExecute(con, sprintf("
     UPDATE %s
-    SET STATUS = 'RUNNING',
-        WORKER_ID = '%s',
-        CLAIMED_AT = CURRENT_TIMESTAMP(),
-        ERROR_MSG = '%s'
-    WHERE QUEUE_ID = (
-      SELECT QUEUE_ID FROM %s
-      WHERE STATUS = 'PENDING' %s
-      ORDER BY CREATED_AT
-      LIMIT 1
-    )
-  ", queue_fqn, worker_id, claim_tag, queue_fqn, job_filter))
+    SET STATUS      = 'RUNNING',
+        WORKER_ID   = '%s',
+        CLAIMED_AT  = CURRENT_TIMESTAMP(),
+        LEASE_UNTIL = DATEADD('minute', %d, CURRENT_TIMESTAMP()),
+        ATTEMPTS    = NVL(ATTEMPTS, 0) + 1
+    WHERE QUEUE_ID = '%s'
+      AND (STATUS = 'PENDING'
+           OR (STATUS = 'RUNNING'
+               AND LEASE_UNTIL IS NOT NULL
+               AND LEASE_UNTIL < CURRENT_TIMESTAMP()))
+  ", queue_fqn, esc(worker_id), lease_min, cand_id))
+
+  if (n_updated == 0) {
+    cat(sprintf("[worker] Claim race lost for %s (another worker won)\n", cand_id))
+    return("RETRY")
+  }
 
   result <- DBI::dbGetQuery(con, sprintf("
     SELECT QUEUE_ID, JOB_ID, CHUNK_ID, STAGE_PATH
-    FROM %s
-    WHERE ERROR_MSG = '%s' AND STATUS = 'RUNNING'
-    LIMIT 1
-  ", queue_fqn, claim_tag))
+    FROM %s WHERE QUEUE_ID = '%s'
+  ", queue_fqn, cand_id))
 
   if (nrow(result) == 0) return(NULL)
-
-  DBI::dbExecute(con, sprintf("
-    UPDATE %s SET ERROR_MSG = NULL WHERE QUEUE_ID = '%s'
-  ", queue_fqn, result$QUEUE_ID[1]))
-
   list(
     queue_id   = result$QUEUE_ID[1],
     job_id     = result$JOB_ID[1],
@@ -110,10 +134,17 @@ claim_work <- function(con, job_id, worker_id, queue_fqn) {
   )
 }
 
+renew_lease <- function(con, queue_id, worker_id, queue_fqn, lease_min) {
+  DBI::dbExecute(con, sprintf("
+    UPDATE %s SET LEASE_UNTIL = DATEADD('minute', %d, CURRENT_TIMESTAMP())
+    WHERE QUEUE_ID = '%s' AND WORKER_ID = '%s' AND STATUS = 'RUNNING'
+  ", queue_fqn, lease_min, queue_id, esc(worker_id)))
+}
+
 mark_done <- function(con, queue_id, queue_fqn) {
   DBI::dbExecute(con, sprintf("
     UPDATE %s
-    SET STATUS = 'DONE', COMPLETED_AT = CURRENT_TIMESTAMP()
+    SET STATUS = 'DONE', COMPLETED_AT = CURRENT_TIMESTAMP(), LEASE_UNTIL = NULL
     WHERE QUEUE_ID = '%s'
   ", queue_fqn, queue_id))
 }
@@ -124,6 +155,7 @@ mark_failed <- function(con, queue_id, error_msg, queue_fqn) {
     UPDATE %s
     SET STATUS = 'FAILED',
         COMPLETED_AT = CURRENT_TIMESTAMP(),
+        LEASE_UNTIL = NULL,
         ERROR_MSG = '%s'
     WHERE QUEUE_ID = '%s'
   ", queue_fqn, safe_msg, queue_id))
@@ -151,6 +183,7 @@ process_chunk <- function(con, claim, shared_cache) {
     for (pkg in manifest$packages) {
       suppressPackageStartupMessages(library(pkg, character.only = TRUE))
     }
+    shared_cache$manifest <- manifest
     shared_cache$job_id <- claim$job_id
   }
 
@@ -158,23 +191,77 @@ process_chunk <- function(con, claim, shared_cache) {
   stage_get(con, paste0(sp, "/tasks/", task_file), tmp_dir)
   chunk <- readRDS(file.path(tmp_dir, task_file))
 
-  cat(sprintf("[worker] Processing chunk %s (%d iterations)\n",
-              chunk_id, length(chunk$args)))
+  Sys.setenv(OPENBLAS_NUM_THREADS = "1", OMP_NUM_THREADS = "1",
+             MKL_NUM_THREADS = "1")
+  n_cores <- max(1L, detectCores() - 1L)
 
-  results <- vector("list", length(chunk$args))
-  for (j in seq_along(chunk$args)) {
-    e <- list2env(shared_cache$export_list, parent = .GlobalEnv)
+  # --- Manifest-driven bulk read (if data_query present) ---
+  unit_data_splits <- NULL
+  dq <- shared_cache$manifest$data_query
+  if (!is.null(dq)) {
+    key_arg <- dq$key_arg
+    keys <- vapply(chunk$args, function(a) as.character(a[[key_arg]]), character(1))
+    sql_in <- paste(sprintf("'%s'", gsub("'", "''", keys)), collapse = ", ")
+    cols <- paste(dq$columns, collapse = ", ")
+    query <- sprintf("SELECT %s FROM %s WHERE %s IN (%s) ORDER BY %s",
+                     cols, dq$table, dq$key_column, sql_in, dq$order_by)
+
+    if (!is.null(dq$warehouse) && nzchar(dq$warehouse)) {
+      tryCatch(DBI::dbExecute(con, sprintf("USE WAREHOUSE %s", dq$warehouse)),
+               error = function(e) NULL)
+    }
+    cat(sprintf("[worker] Bulk read: %d keys from %s\n", length(keys), dq$table))
+    all_data <- DBI::dbGetQuery(con, query)
+    cat(sprintf("[worker] Read %d rows for %d keys\n", nrow(all_data), length(keys)))
+    unit_data_splits <- split(all_data, all_data[[dq$key_column]])
+  }
+
+  cat(sprintf("[worker] Processing chunk %s (%d iterations, %d cores)\n",
+              chunk_id, length(chunk$args), n_cores))
+
+  expr <- shared_cache$expr
+  export_list <- shared_cache$export_list
+  results <- mclapply(seq_along(chunk$args), function(j) {
+    e <- list2env(export_list, parent = .GlobalEnv)
     args <- chunk$args[[j]]
     for (nm in names(args)) assign(nm, args[[nm]], envir = e)
 
-    results[[j]] <- tryCatch(
-      eval(shared_cache$expr, envir = e),
+    if (!is.null(unit_data_splits) && !is.null(dq)) {
+      key_val <- as.character(args[[dq$key_arg]])
+      assign("unit_data", unit_data_splits[[key_val]], envir = e)
+    }
+
+    tryCatch(
+      eval(expr, envir = e),
       error = function(err) {
         cat(sprintf("[worker] Error in iteration %d: %s\n",
                     chunk$indices[j], conditionMessage(err)))
         err
       }
     )
+  }, mc.cores = n_cores)
+
+  # Persist individual model .rds files to a run-specific directory on the stage
+  manifest <- shared_cache$manifest
+  if (isTRUE(manifest$save_models) && nzchar(manifest$model_run_id %||% "")) {
+    if (nzchar(STAGE_MOUNT)) {
+      models_dir <- file.path(STAGE_MOUNT, "models", manifest$model_run_id)
+    } else {
+      models_dir <- file.path(tmp_dir, "models_out")
+    }
+    dir.create(models_dir, showWarnings = FALSE, recursive = TRUE)
+    n_saved <- 0L
+    for (j in seq_along(results)) {
+      r <- results[[j]]
+      if (!inherits(r, "error") && !is.null(r$model_obj)) {
+        key <- as.character(chunk$args[[j]][[manifest$model_key_arg]])
+        saveRDS(r$model_obj, file.path(models_dir, paste0(key, ".rds")))
+        n_saved <- n_saved + 1L
+        results[[j]]$model_obj <- NULL
+      }
+    }
+    cat(sprintf("[worker] Saved %d model .rds files to models/%s/\n",
+                n_saved, manifest$model_run_id))
   }
 
   result_data <- list(results = results, indices = chunk$indices)
@@ -205,22 +292,35 @@ main <- function() {
   )
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
+  if (nzchar(WAREHOUSE)) {
+    tryCatch(
+      DBI::dbExecute(con, sprintf("USE WAREHOUSE %s", WAREHOUSE)),
+      error = function(e) cat(sprintf("[worker] USE WAREHOUSE failed: %s\n", conditionMessage(e)))
+    )
+  }
+
   shared_cache <- list(export_list = NULL, expr = NULL, job_id = NULL)
   empty_count <- 0L
+  race_losses <- 0L
   backoff_sec <- BACKOFF_BASE_SEC
 
-  # Graceful shutdown flag
   running <- TRUE
   tryCatch(
     {
       while (running) {
         claim <- tryCatch(
-          claim_work(con, JOB_ID, worker_id, QUEUE_FQN),
+          claim_work(con, JOB_ID, worker_id, QUEUE_FQN, LEASE_MINUTES),
           error = function(e) {
             cat(sprintf("[worker] Claim error: %s\n", conditionMessage(e)))
+            Sys.sleep(1)
             NULL
           }
         )
+
+        if (identical(claim, "RETRY")) {
+          race_losses <- race_losses + 1L
+          next
+        }
 
         if (is.null(claim)) {
           empty_count <- empty_count + 1L
@@ -263,7 +363,7 @@ main <- function() {
     }
   )
 
-  cat("[worker] Queue worker exiting\n")
+  cat(sprintf("[worker] Queue worker exiting (race_losses=%d)\n", race_losses))
 }
 
 

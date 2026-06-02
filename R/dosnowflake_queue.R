@@ -218,7 +218,7 @@
     image_uri <- user_opts$image_uri %||% ""
   }
 
-  list(
+  opts <- list(
     worker_type       = worker_type,
     compute_pool      = compute_pool,
     image_uri         = image_uri,
@@ -236,6 +236,10 @@
     result_sync_wait_sec = as.numeric(user_opts$result_sync_wait_sec %||% 45),
     result_sync_poll_sec = as.numeric(user_opts$result_sync_poll_sec %||% 3)
   )
+  for (key in c("save_models", "model_run_id", "model_key_arg", "data_query")) {
+    if (!is.null(user_opts[[key]])) opts[[key]] <- user_opts[[key]]
+  }
+  opts
 }
 
 
