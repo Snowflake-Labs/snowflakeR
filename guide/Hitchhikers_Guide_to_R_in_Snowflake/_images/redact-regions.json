@@ -1,23 +1,23 @@
 {
-  "_comment": "Coordinates for 2458x2704 (Browser MCP) captures. crop applied after blur. Wave 1.8.",
+  "_comment": "Coordinates for 3840x2160 (Playwright+Chrome, deviceScale=2). After redact, run validate_screenshots.py",
   "default_regions": {
     "user_badge": [
-      13,
-      2491,
-      243,
-      213
+      20,
+      1990,
+      380,
+      170
     ],
     "top_context": [
-      1536,
+      2400,
       0,
-      921,
-      113
+      1439,
+      90
     ],
     "legacy_sidebar": [
       0,
-      1127,
-      332,
-      1578
+      900,
+      519,
+      1261
     ]
   },
   "images": {
@@ -29,8 +29,8 @@
       "crop": [
         0,
         0,
-        527,
-        1350
+        823,
+        1078
       ]
     },
     "05-workspace-landing.png": {
@@ -39,10 +39,10 @@
         "top_context"
       ],
       "crop": [
-        279,
+        436,
         0,
-        1055,
-        1650
+        1648,
+        1318
       ]
     },
     "05-create-notebook.png": {
@@ -53,8 +53,8 @@
       "crop": [
         0,
         0,
-        682,
-        1550
+        1065,
+        1238
       ]
     },
     "05-notebook-editor.png": {
@@ -64,10 +64,10 @@
         "legacy_sidebar"
       ],
       "crop": [
-        217,
+        339,
         0,
-        1303,
-        1200
+        2036,
+        959
       ]
     },
     "05-compute-context.png": {
@@ -76,10 +76,10 @@
         "top_context"
       ],
       "crop": [
-        217,
+        339,
         0,
-        1303,
-        950
+        2036,
+        759
       ]
     },
     "05-session-controls.png": {
@@ -88,10 +88,10 @@
         "top_context"
       ],
       "crop": [
-        217,
+        339,
         0,
-        1303,
-        1000
+        2036,
+        799
       ]
     },
     "06-bootstrap-cell.png": {
@@ -99,6 +99,12 @@
         "user_badge",
         "top_context",
         "legacy_sidebar"
+      ],
+      "crop": [
+        625,
+        64,
+        1718,
+        559
       ]
     },
     "07-eai-toggle.png": {
@@ -108,10 +114,10 @@
         "legacy_sidebar"
       ],
       "crop": [
-        558,
+        872,
         0,
-        931,
-        1100
+        1454,
+        879
       ]
     },
     "09-cre-runtime-select.png": {
@@ -121,10 +127,10 @@
         "legacy_sidebar"
       ],
       "crop": [
-        527,
+        823,
         0,
-        993,
-        1200
+        1551,
+        959
       ]
     }
   }

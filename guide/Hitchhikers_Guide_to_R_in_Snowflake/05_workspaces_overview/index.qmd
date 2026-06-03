@@ -46,7 +46,7 @@ Before bootstrapping R, understand **where** you work in Snowflake. **Snowsight*
 
 ### Snowsight navigation {#sec-screenshots-snowsight}
 
-Screenshots are **cropped to the relevant UI** — full-window captures made controls too small to read.
+Screenshots are **cropped to the relevant UI area** — to aid readability.
 
 ![Snowsight Home — Projects menu with Workspaces shortcut](../_images/05-snowsight-nav.png){fig-alt="Snowsight left navigation with Projects selected and Workspaces flyout menu" width=72%}
 
