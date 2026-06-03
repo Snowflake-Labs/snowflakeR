@@ -99,7 +99,7 @@ Reference implementation: [snowflake-notebook-multilang](https://github.com/Snow
 
 Validated workflow: local `docker build` → `docker push` → `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` → attach to Workspace → `%%R` on kernel start without a setup cell.
 
-### What you are building
+### What you are building - Example
 
 ```{mermaid}
 flowchart TB
