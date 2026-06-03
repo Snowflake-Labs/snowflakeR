@@ -26,7 +26,7 @@ These open on the **same** Hitchhiker's Guide GitHub Pages host under `vignettes
 | `getting-started` | [getting-started.html](../../vignettes/snowflakeR/getting-started.html) | [16 — Connect](../../16_snowflaker_connect/index.qmd) |
 | `setup` | [setup.html](../../vignettes/snowflakeR/setup.html) | [03](../../03_local_r_setup/index.qmd), [04](../../04_rstudio_posit_vscode/index.qmd) |
 | `workspace-notebooks` | [workspace-notebooks.html](../../vignettes/snowflakeR/workspace-notebooks.html) | [06–08](../../06_workspace_bootstrap/index.qmd) |
-| `feature-store` | [feature-store.html](../../vignettes/snowflakeR/feature-store.html) | [17 — Feature Store](../../17_feature_store/index.qmd) |
+| `feature-store` | [feature-store.html](../../vignettes/snowflakeR/feature-store.html) | [17 — Feature Store](../../17_feature_store/index.qmd), [17a — Feature Engineering](../../17a_feature_engineering_with_r/index.qmd) |
 | `model-registry` | [model-registry.html](../../vignettes/snowflakeR/model-registry.html) | [18 — Model Registry](../../18_model_registry/index.qmd) |
 | `experiments` | [experiments.html](../../vignettes/snowflakeR/experiments.html) | [19 — Experiments](../../19_experiments/index.qmd) |
 | `model-monitoring` | [model-monitoring.html](../../vignettes/snowflakeR/model-monitoring.html) | [20 — Monitoring](../../20_model_monitoring/index.qmd) |

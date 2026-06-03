@@ -55,6 +55,7 @@ book:
         - 15_mlops_on_snowflake/index.qmd
         - 16_snowflaker_connect/index.qmd
         - 17_feature_store/index.qmd
+        - 17a_feature_engineering_with_r/index.qmd
         - 18_model_registry/index.qmd
         - 19_experiments/index.qmd
         - 22_parallel_dosnowflake/index.qmd

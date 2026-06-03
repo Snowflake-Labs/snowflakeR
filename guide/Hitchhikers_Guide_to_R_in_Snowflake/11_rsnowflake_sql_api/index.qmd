@@ -69,6 +69,20 @@ Client-side or session-protocol commands are **not** available over the SQL API:
 SPCS workers using RSnowflake **must** use volume-mounted stages for file I/O — not `GET`/`PUT` SQL. See [Troubleshooting](../appendices/C_troubleshooting/index.qmd).
 :::
 
+## Bulk inserts vs driver file loads {#sec-bulk-inserts}
+
+The SQL API supports **parameter binding** and batched `INSERT` statements — RSnowflake uses this path when ADBC and Snowpark fallbacks are unavailable. That works for moderate row counts, but it is **not** the fastest way to land millions of rows:
+
+| Path | Transport | Typical use |
+|------|-----------|-------------|
+| **Bind-based INSERT** (SQL API) | One HTTP round-trip per batch; JSON serialization per row | Small/medium uploads, ad hoc `dbAppendTable()` |
+| **ADBC bulk upload** (RSnowflake) | Columnar Arrow stream | Large in-account writes without stage files |
+| **PUT + COPY** (JDBC/ODBC driver) | Stage file upload + server-side `COPY INTO` | **Highest throughput** for very large local files |
+
+::: {.callout-important}
+If you are moving a **large volume of data** into Snowflake from R, prefer a **driver-based** workflow (**JDBC/ODBC `PUT` + `COPY`**, or RSnowflake **ADBC** bulk upload when installed) over SQL API bind inserts. RSnowflake's `upload_method = "auto"` already prefers ADBC when available — see [Query §Bulk write routing](../13_rsnowflake_query/index.qmd#sec-bulk). For terabyte-scale file loads outside DBI, classic drivers remain the standard pattern.
+:::
+
 ## Pros and cons {#sec-pros-cons}
 
 | | SQL API (RSnowflake) | JDBC/ODBC driver |
