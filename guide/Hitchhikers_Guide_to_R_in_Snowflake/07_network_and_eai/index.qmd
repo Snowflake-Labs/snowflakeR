@@ -195,16 +195,16 @@ print(generate_eai_sql(languages=["r"], account="myaccount"))
 
 ### Step 3 — Attach EAI in Snowsight (required)
 
-Even after SQL succeeds, **enable external access on the session**:
+Even after SQL succeeds, **attach external access to the notebook compute service**:
 
-1. Open the notebook
-2. **Connected** (or session menu) → **Edit**
-3. **External Access** → toggle your EAI **ON** → **Save**
+1. Open the notebook and start or select a **Connected** session
+2. Click **Connected** (toolbar) → review **Enabled EAI's** on the service (or **Change service** / **Create new service** to pick EAIs when provisioning compute)
+3. If bootstrap still times out, the service likely has no EAI — create or edit the notebook compute service and attach your integration
 4. Re-run bootstrap if the first attempt failed mid-download
 
-![Notebook toolbar before session attach — use Connected → Edit → External Access after connecting](../_images/07-eai-toggle.png){fig-alt="Workspace notebook with bootstrap cell and Connect control before compute session starts; enable External Access via Connected then Edit once connected" width=85%}
+![Connected service — runtime, compute pool, and enabled External Access Integrations](../_images/07-eai-toggle.png){fig-alt="Snowsight notebook Connected menu showing Runtime, Compute pool, and Enabled EAIs on the notebook service" width=78%}
 
-**One-time per account setup, reuse across notebooks:** The same EAI can serve many notebooks once created — each new session still needs the **toggle** unless your org automates attachment.
+**One-time per account setup, reuse across notebooks:** The same EAI can serve many notebook services once created — each **service** must list the integration under **Enabled EAI's** (or you attach it when creating compute).
 
 ### Dynamic rule updates
 

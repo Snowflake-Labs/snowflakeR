@@ -368,8 +368,8 @@ A productive layout separates **setup**, **data**, **modeling**, and **operation
 flowchart TD
   C1["1 Python — setup_notebook or CRE"]
   C2["2 SQL — DDL, USE context, seed tables"]
-  C3["3 R — connect, features, train"]
-  C4["4 Python — Snowpark ETL optional"]
+  C3["3 R — connect, dbplyr ETL, train"]
+  C4["4 R or Python — optional Snowpark ETL"]
   C5["5 R — log model, registry"]
   C6["6 SQL — verify scores / grants"]
   C1 --> C2 --> C3 --> C4 --> C5 --> C6
@@ -380,9 +380,14 @@ flowchart TD
 | Bootstrap (if no CRE) | Python | Container kernel | `setup_notebook()` |
 | Context / DDL | SQL | **Warehouse** | `CREATE TABLE`, `USE WAREHOUSE` |
 | Explore / model | R (`%%R`) | Embedded R | `sfr_connect()`, tidymodels |
-| Heavy ETL | Python | Snowpark on warehouse | `session.write_pandas()` |
+| Warehouse ETL | R (`%%R`) + **dbplyr** | **Warehouse** (push-down SQL) | `tbl(con, ...) %>% mutate(...) %>% compute()` — see [RSnowflake: Query](../13_rsnowflake_query/index.qmd) |
+| Heavy ETL (optional) | Python | Snowpark on warehouse | `session.write_pandas()` when the notebook is already Python-centric or a colleague owns Snowpark transforms |
 | ML platform | R (`%%R`) | Embedded R | `sfr_log_model()` |
 | Validation | SQL | **Warehouse** | `SELECT COUNT(*) FROM scores` |
+
+::: {.callout-note}
+**Prefer R dbplyr for data pipelines.** RSnowflake + dbplyr translates dplyr to Snowflake SQL and materializes with `compute()` — same push-down pattern as Python Snowpark, without leaving R. Use **Snowpark Python** only when you need Python-only APIs, an existing Snowpark pipeline, or mixed-language cells where Python already owns the transform step.
+:::
 
 **Compute reminder:** SQL uses **warehouse credits**; R/Python kernel work uses **container runtime credits**; Snowflake ML API calls may touch both depending on operation.
 

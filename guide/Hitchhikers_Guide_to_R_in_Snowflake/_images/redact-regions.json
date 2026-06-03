@@ -1,34 +1,131 @@
 {
-  "_comment": "Coordinates for 3960x2704 (Browser MCP retina) captures. Scaled from 3840x2160 baseline. Updated 2026-06-03 Wave 1.6.",
+  "_comment": "Coordinates for 2458x2704 (Browser MCP) captures. crop applied after blur. Wave 1.8.",
   "default_regions": {
-    "user_badge": [21, 2491, 392, 213],
-    "top_context": [2475, 0, 1485, 113],
-    "legacy_sidebar": [0, 1127, 536, 1578]
+    "user_badge": [
+      13,
+      2491,
+      243,
+      213
+    ],
+    "top_context": [
+      1536,
+      0,
+      921,
+      113
+    ],
+    "legacy_sidebar": [
+      0,
+      1127,
+      332,
+      1578
+    ]
   },
   "images": {
     "05-snowsight-nav.png": {
-      "regions": ["user_badge", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "legacy_sidebar"
+      ],
+      "crop": [
+        0,
+        0,
+        527,
+        1350
+      ]
     },
     "05-workspace-landing.png": {
-      "regions": ["user_badge", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context"
+      ],
+      "crop": [
+        279,
+        0,
+        1055,
+        1650
+      ]
     },
     "05-create-notebook.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "legacy_sidebar"
+      ],
+      "crop": [
+        0,
+        0,
+        682,
+        1550
+      ]
     },
     "05-notebook-editor.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context",
+        "legacy_sidebar"
+      ],
+      "crop": [
+        217,
+        0,
+        1303,
+        1200
+      ]
     },
     "05-compute-context.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context"
+      ],
+      "crop": [
+        217,
+        0,
+        1303,
+        950
+      ]
     },
     "05-session-controls.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context"
+      ],
+      "crop": [
+        217,
+        0,
+        1303,
+        1000
+      ]
     },
     "06-bootstrap-cell.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context",
+        "legacy_sidebar"
+      ]
     },
     "07-eai-toggle.png": {
-      "regions": ["user_badge", "top_context", "legacy_sidebar"]
+      "regions": [
+        "user_badge",
+        "top_context",
+        "legacy_sidebar"
+      ],
+      "crop": [
+        558,
+        0,
+        931,
+        1100
+      ]
+    },
+    "09-cre-runtime-select.png": {
+      "regions": [
+        "user_badge",
+        "top_context",
+        "legacy_sidebar"
+      ],
+      "crop": [
+        527,
+        0,
+        993,
+        1200
+      ]
     }
   }
 }

@@ -97,9 +97,9 @@ Reference implementation: [snowflake-notebook-multilang](https://github.com/Snow
 
 ## End-to-end: build a multilang-R CRE (reference v1) {#sec-cre-e2e}
 
-Validated workflow: local `docker build` → `docker push` → `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` → attach to Workspace → `%%R` on kernel start without a setup cell.
+Validated workflow: local `docker build` → `docker push` → `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` → **create notebook compute + attach CRE in Snowsight** → `%%R` on kernel start without a setup cell.
 
-### What you are building - Example
+### What you are building — example
 
 ```{mermaid}
 flowchart TB
@@ -117,13 +117,19 @@ flowchart TB
     CFG["/opt/sfnb/config/cre_multilang_r.yaml"]
   end
 
-  subgraph runtime [Workspace session]
+  subgraph register [Register in account]
+    REG["CREATE CUSTOM RUNTIME ENVIRONMENT<br/>IMAGE_PATH = …/sfnb-multilang-r:v1"]
+  end
+
+  subgraph attach [Analyst — Snowsight notebook session]
+    POOL["Notebook compute pool / service<br/>(ML Container Runtime)"]
+    SEL["Connected → Edit → Runtime<br/>select cre@sfnb_multilang_r"]
     K["Kernel: [sfnb CRE] %%R ready"]
     CELLS["%%R + sfr_connect()"]
   end
 
   SB --> MM --> RPK --> SF --> ADBC --> PY --> HOOK --> CFG
-  CFG --> K --> CELLS
+  CFG --> REG --> POOL --> SEL --> K --> CELLS
 ```
 
 | Layer | Location | Purpose |
@@ -147,7 +153,7 @@ flowchart TB
 |-------------|-------|
 | Role with CRE + image repo privileges | Often `ACCOUNTADMIN` first; `GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT` to notebook roles |
 | Image repository | e.g. `MYDB.MYSCHEMA.MY_CRE_IMAGES` |
-| Docker + Snowflake CLI | `linux/amd64` build; `snow spcs image-registry login` |
+| Docker + **Snowflake CLI (`snow`)** | `linux/amd64` build; `snow spcs image-registry login`; `snow custom-image validate` (see below) |
 | Build-time egress | Pull base image, conda, tarballs, r-multiverse (ADBC) |
 
 ::: {.callout-note}
@@ -165,6 +171,10 @@ export IMAGE_REPO_PATH="mydb/myschema/my_cre_images"   # lowercase path
 ```
 
 ### Step 2 — Build and validate
+
+::: {.callout-important}
+**Requires the [Snowflake CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index) (`snow`).** Steps below use `snow spcs image-registry login` and `snow custom-image validate`. Install the CLI locally, configure a [connection](https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/specify-credentials) (`snow connection add`), then pass `-c <connection>` or set `SNOWFLAKE_CONNECTION`. You can push with `docker push` after `snow spcs image-registry login` if you prefer not to use the toolkit's `PUSH=1` wrapper.
+:::
 
 ```bash
 snow spcs image-registry login -c <your_connection>
@@ -199,9 +209,18 @@ GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT sfnb_multilang_r TO ROLE <notebook_rol
 
 ### Step 5 — Attach to Workspace
 
-**Snowsight:** Notebook → Advanced settings → select your CRE.
+**Snowsight (recommended):**
 
-**SQL:**
+1. Open or create a **Workspace notebook** ([Workspaces overview](../05_workspaces_overview/index.qmd#sec-create)).
+2. **Connect** (or **Connected → Edit**) to start or edit the notebook compute session.
+3. Under **Runtime** / **Custom Runtime Environment**, select your registered image — e.g. **`cre@sfnb_multilang_r`** (name matches `CREATE CUSTOM RUNTIME ENVIRONMENT`).
+4. Set **role**, **warehouse**, and **database/schema** context, then **Save** and start the session.
+
+Without a CRE selected, the notebook uses the default ML Container Runtime and you still need the Python **`setup_notebook()`** bootstrap for R.
+
+![Connected service — CRE runtime and notebook compute pool](../_images/09-cre-runtime-select.png){fig-alt="Snowsight Connected menu showing Custom Runtime Environment name, compute pool, and Enabled EAIs on a notebook service" width=78%}
+
+**SQL** (automation / CI):
 
 ```sql
 EXECUTE NOTEBOOK PROJECT MYDB.MYSCHEMA.MY_PROJECT
