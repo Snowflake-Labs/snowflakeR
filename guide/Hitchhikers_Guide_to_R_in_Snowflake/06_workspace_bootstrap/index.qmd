@@ -11,7 +11,7 @@ After [Workspaces & Notebooks](../05_workspaces_overview/index.qmd), enable R in
 
 **2. Self-serve bootstrap (this chapter’s main content)** — While CRE is being set up — or for a solo proof-of-concept — a **single Python cell** runs `setup_notebook()` to install micromamba, R, tarballs, and `%%R` on the default runtime. It works without Docker or admin image builds, but runs **on each notebook compute restart** (after idle recycle). **Typical time for a standard snowflakeR + RSnowflake configuration is ~60 seconds**; more conda/CRAN packages, ADBC, or multilanguage options in your YAML add time (large stacks can reach several minutes).
 
-You may use **both**: bootstrap during evaluation; CRE once your organisation’s image is live.
+You may use **both**: bootstrap during evaluation, or testing new R versions and packages; CRE once your organisation’s image is live.
 
 ## Learning Objectives
 
@@ -75,11 +75,7 @@ setup_notebook(
 
 `packages=` loads named R packages after bootstrap. Always list **tarballs** in YAML for production — [Appendix B](../appendices/B_config_reference/index.qmd).
 
-::: {.callout-note appearance="minimal"}
-## TODO: Screenshot — Bootstrap cell
-
-Capture: Python cell running `setup_notebook()` with successful output.
-:::
+![Workspace notebook ready for Python bootstrap cell](../_images/06-bootstrap-cell.png){fig-alt="Workspace notebook editor where the setup_notebook Python bootstrap cell runs" width=85%}
 
 ## Configuration file essentials {#sec-yaml}
 

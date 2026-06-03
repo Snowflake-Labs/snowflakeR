@@ -202,11 +202,7 @@ Even after SQL succeeds, **enable external access on the session**:
 3. **External Access** → toggle your EAI **ON** → **Save**
 4. Re-run bootstrap if the first attempt failed mid-download
 
-::: {.callout-note appearance="minimal"}
-## TODO: Screenshot — EAI toggle
-
-Capture: Connected/Edit dialog with External Access integration enabled.
-:::
+![Connect session settings — role, warehouse, external access](../_images/07-eai-toggle.png){fig-alt="Workspace notebook Connect control for role, warehouse, and external access settings" width=85%}
 
 **One-time per account setup, reuse across notebooks:** The same EAI can serve many notebooks once created — each new session still needs the **toggle** unless your org automates attachment.
 
