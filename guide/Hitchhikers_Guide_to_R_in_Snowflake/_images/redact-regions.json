@@ -1,9 +1,9 @@
 {
-  "_comment": "Coordinates for 3840x2160 (2x retina) Playwright captures.",
+  "_comment": "Coordinates for 3960x2704 (Browser MCP retina) captures. Scaled from 3840x2160 baseline.",
   "default_regions": {
-    "user_badge": [20, 1990, 380, 170],
-    "top_context": [2400, 0, 1440, 90],
-    "legacy_sidebar": [0, 900, 520, 1260]
+    "user_badge": [21, 2491, 392, 213],
+    "top_context": [2475, 0, 1485, 113],
+    "legacy_sidebar": [0, 1127, 536, 1578]
   },
   "images": {
     "05-snowsight-nav.png": {

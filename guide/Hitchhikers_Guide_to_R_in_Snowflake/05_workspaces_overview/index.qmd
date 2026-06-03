@@ -48,7 +48,7 @@ Before bootstrapping R, understand **where** you work in Snowflake. **Snowsight*
 
 ![Snowsight navigation — Projects and Workspaces menu](../_images/05-snowsight-nav.png){fig-alt="Snowsight left navigation with Projects and Workspaces menu open" width=85%}
 
-![Workspace and project entry points in Snowsight](../_images/05-workspace-landing.png){fig-alt="Snowsight Workspaces menu showing Projects, Workspaces, and Legacy Notebooks" width=85%}
+![Welcome to Workspaces — My Workspace file tree and quick-start actions](../_images/05-workspace-landing.png){fig-alt="Snowsight Workspaces welcome page with My Workspace file tree and create shortcuts" width=85%}
 
 ## Workspace notebooks {#sec-workspace-notebooks}
 
@@ -72,13 +72,13 @@ Workspace does **not** auto-set database/schema in all versions — set context 
 
 ### Notebook workflow in Snowsight {#sec-screenshots-create}
 
-![New Workspace notebook — add Python, SQL, or Markdown cells](../_images/05-create-notebook.png){fig-alt="Empty Workspace notebook with buttons to add Python, SQL, or Markdown cells" width=85%}
+![Create menu — Notebook, SQL file, Streamlit, and more](../_images/05-create-notebook.png){fig-alt="Snowsight Create dropdown in Workspaces with Notebook and SQL file options" width=85%}
 
 ![Workspace notebook editor with file tree and Run toolbar](../_images/05-notebook-editor.png){fig-alt="Workspace notebook editor showing My Workspace file tree and Run/Connect toolbar" width=85%}
 
 ![Session context — Choose role and Choose warehouse in notebook toolbar](../_images/05-compute-context.png){fig-alt="Workspace notebook toolbar with Choose role and Choose warehouse before session start" width=85%}
 
-![Notebook session toolbar — Run and Connect](../_images/05-session-controls.png){fig-alt="Workspace notebook showing Run button and Connect control in the toolbar" width=85%}
+![Notebook session toolbar — Run and Connect while kernel starts](../_images/05-session-controls.png){fig-alt="Workspace notebook Run button and Connect status while the kernel is connecting" width=85%}
 
 ## Notebook toolbar & session {#sec-toolbar}
 

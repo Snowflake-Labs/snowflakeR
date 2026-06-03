@@ -75,7 +75,7 @@ setup_notebook(
 
 `packages=` loads named R packages after bootstrap. Always list **tarballs** in YAML for production — [Appendix B](../appendices/B_config_reference/index.qmd).
 
-![Workspace notebook ready for Python bootstrap cell](../_images/06-bootstrap-cell.png){fig-alt="Workspace notebook editor where the setup_notebook Python bootstrap cell runs" width=85%}
+![Python bootstrap cell with setup_notebook() in a connected notebook](../_images/06-bootstrap-cell.png){fig-alt="Workspace notebook Python cell calling setup_notebook with snowflakeR and RSnowflake packages" width=85%}
 
 ## Configuration file essentials {#sec-yaml}
 
