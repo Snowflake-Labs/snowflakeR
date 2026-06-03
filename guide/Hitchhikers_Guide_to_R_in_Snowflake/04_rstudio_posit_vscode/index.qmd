@@ -5,7 +5,9 @@ subtitle: "Use RSnowflake and snowflakeR from desktop R tooling"
 
 ## Overview
 
-Most R users work in **RStudio**, **Posit Workbench**, **Positron**, or **VS Code**. Both packages support that workflow: RSnowflake integrates with the **Connections Pane** and **dbplyr**; snowflakeR runs the same ML APIs as in Workspace once Python is configured ([Local R Setup](../03_local_r_setup/index.qmd)).
+Most R users work in **RStudio**, **Posit Workbench**, **Positron**, or **VS Code**. Both packages support that workflow: RSnowflake integrates with the **Connections Pane** and **dbplyr**; snowflakeR runs the same ML APIs as in Workspace once Python is configured.
+
+**Prerequisite:** complete [Local R Setup](../03_local_r_setup/index.qmd) (packages, Python env, authentication). This chapter does not repeat those steps except where an IDE needs a specific setting.
 
 You do **not** need Workspace Notebooks to use Snowflake from R.
 
@@ -70,8 +72,8 @@ On desktop **RStudio**, **Posit Workbench**, and **Positron**, you have two well
 | Topic | RSnowflake | `odbc` + Snowflake ODBC |
 |-------|------------|-------------------------|
 | **Admin / CI footprint** | R package (+ optional ADBC build for bulk) | Driver binaries, `odbc.ini` / DSN, often IT-managed |
-| **Client `GET` / `PUT` SQL** | Not on SQL API — use ADBC bulk, Snowpark in Workspace, or stage files another way ([Query §limits](../13_rsnowflake_query/index.qmd#sec-limits)) | ODBC/JDBC stack often used for stage-oriented workflows teams already know |
-| **Bulk load from R** | `"auto"` → ADBC / Snowpark / literal INSERT ([Query §bulk](../13_rsnowflake_query/index.qmd#sec-bulk)) | Driver-dependent; no RSnowflake-specific routing |
+| **Stage file upload/download** | The SQL REST API does not support Snowflake **`PUT`** and **`GET`** commands (upload/download files to internal **stages**). Use ADBC bulk table loads, SQL `COPY`, or stage **volume mounts** in containers instead ([Query §limits](../13_rsnowflake_query/index.qmd#sec-limits)) | ODBC/JDBC drivers often support stage-oriented file workflows teams already use |
+| **Writing large data.frames to tables** | RSnowflake **`upload_method = "auto"`** (default) chooses the fastest path: **ADBC** bulk upload when installed, else Snowpark in Workspace, else batched SQL INSERT ([Query §bulk](../13_rsnowflake_query/index.qmd#sec-bulk)) | Depends on driver and DSN; no RSnowflake-specific routing |
 | **Workspace Notebooks** | First-class: session OAuth via `SNOWFLAKE_HOST`; default without ODBC install | **ODBC was impractical** in notebooks until **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** — driver + unixODBC do not fit `setup_notebook()`; bake into CRE if you must use `odbc` |
 | **Workspace bulk I/O** | Optional **ADBC** in CRE (Snowflake's optimized Arrow path) | ODBC in CRE possible; not the direction Snowflake optimizes for new bulk work |
 | **WebR / WASM** | HTTPS SQL API works without a native driver | Needs ODBC in the environment — usually impractical |

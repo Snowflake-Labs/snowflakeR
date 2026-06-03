@@ -22,10 +22,19 @@ It covers three open-source packages, platform concepts for newcomers to Snowfla
 
 Chapter sources live in **prefixed folders** (`01_snowflake_platform/`, `07_network_and_eai/`, …). Quarto assigns chapter numbers **in reading order** from `_quarto.yml`, so a folder name like `07_` is **not** the same as “Chapter 7” in the built book — for example, [Network & EAI](../07_network_and_eai/index.qmd) usually renders as **Chapter 8** after Introduction, platform/IDE chapters, and Workspace bootstrap.
 
-**Cross-references in this guide use chapter titles**, not folder prefixes. Maintainer notes: [Guide design & plan](../../GUIDE_DESIGN_AND_PLAN.md).
+**Cross-references in this guide use chapter titles**, not folder prefixes (folder names like `07_` are for repo layout only).
 :::
 
-## What's Covered in This Guide
+## Two paths into this guide {#sec-two-paths}
+
+| If you start from… | Read first |
+|--------------------|------------|
+| **RStudio, Posit, or VS Code** on your laptop | [Local R Setup](../03_local_r_setup/index.qmd) → [RStudio, Posit & VS Code](../04_rstudio_posit_vscode/index.qmd) |
+| **Snowflake Workspace Notebooks** (in Snowsight) | [Snowflake Platform Primer](../01_snowflake_platform/index.qmd) → [Workspaces overview](../05_workspaces_overview/index.qmd) |
+
+Workspace-specific setup (bootstrap cells, org runtime images) is in Part II — not needed on day one if you only use a local IDE.
+
+## What's covered in this guide
 
 | Ch | Topic | Description |
 |----|-------|-------------|
@@ -65,18 +74,10 @@ These open-source packages are developed to help customers use R in Workspaces a
 snowflakeR depends on Snowflake's **supported** `snowflake-ml-python` SDK on the Python side; the R wrapper itself remains community-maintained.
 :::
 
-::: {.callout-note}
-## CRE vs bootstrap
-
-In most enterprises, **platform or IT** first onboards a **Custom Runtime Environment (CRE)** — a pre-built image registered as `cre@<org_name>` so analysts get R and `%%R` without a setup cell ([Workspace Bootstrap ch. 6](../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap), [CRE ch. 9](../09_custom_runtime_and_ml_jobs/index.qmd)).
-
-**`setup_notebook()` bootstrap** is what you use **until that org image exists**, or for your own PoC: one Python cell, no Docker — typically **~60 seconds per compute restart** for a standard package set (longer if you add many R packages or options in YAML). When a CRE is attached, the toolkit detects it (`SFNB_CUSTOM_RUNTIME`) and skips redundant installs.
-:::
-
 ::: {.callout-warning}
 ## Pre-built package tarballs in Workspace
 
-Configure **pre-built `.tar.gz`** tarballs for `snowflakeR` and `RSnowflake` in your notebook YAML (`languages.r.tarballs`). Installing from source inside Workspace is slow (minutes) and brittle. See [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd) and [Appendix B](../appendices/B_config_reference/index.qmd).
+Configure **pre-built `.tar.gz`** tarballs for `snowflakeR` and `RSnowflake` in your notebook YAML when you reach [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd). Installing from source inside Workspace is slow (minutes) and brittle. See also [Appendix B](../appendices/B_config_reference/index.qmd).
 :::
 
 ## Prerequisites {#sec-prerequisites}

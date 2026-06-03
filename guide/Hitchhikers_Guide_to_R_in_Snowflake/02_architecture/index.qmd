@@ -117,10 +117,6 @@ flowchart LR
 
 At inference time, registered R models deploy as Python **CustomModel** handlers that call back into R via rpy2 inside the **SPCS** inference environment container. Training stays in R; serving runs on Snowflake's container runtime. See [Model Registry](../18_model_registry/index.qmd).
 
-### Future: R in warehouses (proposed)
-
-Engineering discussions include **r-base + rpy2 on Snowflake's Anaconda channel** for Python UDFs/sprocs — the same bridge pattern, without a notebook kernel. This guide focuses on what works **today** (Workspace + SPCS); warehouse-native R is not assumed.
-
 ## Design principles {#sec-principles}
 
 These ideas assume familiarity with [Snowflake basics](../01_snowflake_platform/index.qmd). Terms in **bold** are in the [Glossary](../appendices/F_glossary/index.qmd).

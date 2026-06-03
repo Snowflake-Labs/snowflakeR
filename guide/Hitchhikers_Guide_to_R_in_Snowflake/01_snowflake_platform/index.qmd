@@ -43,14 +43,17 @@ flowchart TB
     WH[Warehouse SQL compute]
     SPCS[Snowpark Container Services]
     ML[ML Feature Store / Registry]
-    STG[Stages and tables]
+    TBL[Tables]
+    STG[Internal stages]
   end
   IDE --> WH
   IDE --> ML
   WS --> WH
   WS --> ML
   WS --> SPCS
+  WH --> TBL
   WH --> STG
+  ML --> TBL
   ML --> STG
   SPCS --> STG
 ```

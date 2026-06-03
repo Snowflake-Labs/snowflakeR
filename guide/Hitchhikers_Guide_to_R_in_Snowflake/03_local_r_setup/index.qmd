@@ -7,7 +7,16 @@ subtitle: "Install packages, Python, and authentication outside Workspace"
 
 **RSnowflake** and **snowflakeR** are ordinary R packages. You can use them from **RStudio**, **Posit Workbench / Positron**, **VS Code**, a terminal `R` session, or CI — not only from Snowflake Workspace Notebooks.
 
-This chapter covers what you install once on your machine and how you authenticate. The next chapter covers IDE-specific ergonomics.
+This chapter covers what you install once on your machine and how you authenticate. The next chapter covers **IDE-specific** workflows (Connections Pane, VS Code extensions, RSnowflake vs ODBC) — not duplicate install steps.
+
+::: {.callout-note}
+## How chapters 3 and 4 divide the work
+
+| Chapter | Focus |
+|---------|--------|
+| **This chapter** | Packages, Python/reticulate for snowflakeR, `connections.toml`, auth — **same on every IDE** |
+| **[RStudio, Posit & VS Code](../04_rstudio_posit_vscode/index.qmd)** | Per-IDE settings, Snowflake VS Code extension, **RSnowflake vs `odbc`**, Posit Native App — assumes install/auth from here |
+:::
 
 ## Learning Objectives
 
