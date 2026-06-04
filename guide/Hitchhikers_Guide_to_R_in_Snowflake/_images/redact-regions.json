@@ -1,136 +1,75 @@
 {
-  "_comment": "Coordinates for 3840x2160 (Playwright+Chrome, deviceScale=2). After redact, run validate_screenshots.py",
+  "_comment": "Manual Snowsight captures (mixed resolutions). Run: redact_screenshot.py --in-dir raw/wave1_publish",
   "default_regions": {
-    "user_badge": [
-      20,
-      1990,
-      380,
-      170
-    ],
-    "top_context": [
-      2400,
-      0,
-      1439,
-      90
-    ],
-    "legacy_sidebar": [
-      0,
-      900,
-      519,
-      1261
-    ]
+    "user_badge": [20, 1990, 380, 170],
+    "top_context": [2400, 0, 1439, 90],
+    "legacy_sidebar": [0, 900, 519, 1261]
   },
   "images": {
     "05-snowsight-nav.png": {
-      "regions": [
-        "user_badge",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        0,
-        0,
-        823,
-        1078
-      ]
+      "regions": [],
+      "extra": [[8, 420, 72, 100]]
     },
     "05-workspace-landing.png": {
-      "regions": [
-        "user_badge",
-        "top_context"
-      ],
-      "crop": [
-        436,
-        0,
-        1648,
-        1318
+      "regions": [],
+      "crop": [520, 120, 3000, 1180],
+      "extra": [
+        [12, 2480, 420, 200],
+        [3580, 0, 1380, 110]
       ]
     },
     "05-create-notebook.png": {
-      "regions": [
-        "user_badge",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        0,
-        0,
-        1065,
-        1238
-      ]
+      "regions": [],
+      "crop": [0, 0, 1180, 1376],
+      "extra": [[0, 0, 72, 1376], [12, 1280, 200, 90]]
     },
     "05-notebook-editor.png": {
-      "regions": [
-        "user_badge",
-        "top_context",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        339,
-        0,
-        2036,
-        959
+      "regions": [],
+      "crop": [0, 0, 1680, 703],
+      "extra": [
+        [980, 0, 730, 72],
+        [120, 560, 280, 140]
       ]
     },
     "05-compute-context.png": {
-      "regions": [
-        "user_badge",
-        "top_context"
-      ],
-      "crop": [
-        339,
-        0,
-        2036,
-        759
+      "regions": [],
+      "extra": [
+        [78, 48, 235, 195],
+        [308, 48, 318, 195]
       ]
     },
     "05-session-controls.png": {
-      "regions": [
-        "user_badge",
-        "top_context"
-      ],
-      "crop": [
-        339,
-        0,
-        2036,
-        799
+      "regions": [],
+      "crop": [0, 0, 2100, 620],
+      "extra": [
+        [1580, 0, 930, 80],
+        [12, 1260, 380, 90]
       ]
     },
     "06-bootstrap-cell.png": {
-      "regions": [
-        "user_badge",
-        "top_context",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        625,
-        64,
-        1718,
-        559
+      "regions": [],
+      "crop": [420, 280, 2680, 1050],
+      "extra": [
+        [0, 0, 520, 2706],
+        [3580, 0, 1380, 110],
+        [12, 2480, 420, 200]
       ]
     },
     "07-eai-toggle.png": {
-      "regions": [
-        "user_badge",
-        "top_context",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        872,
-        0,
-        1454,
-        879
+      "regions": [],
+      "crop": [0, 0, 1436, 1104],
+      "extra": [
+        [180, 280, 1250, 520],
+        [980, 0, 450, 70]
       ]
     },
     "09-cre-runtime-select.png": {
-      "regions": [
-        "user_badge",
-        "top_context",
-        "legacy_sidebar"
-      ],
-      "crop": [
-        823,
-        0,
-        1551,
-        959
+      "regions": [],
+      "crop": [0, 40, 1596, 2440],
+      "extra": [
+        [32, 108, 1520, 56],
+        [32, 620, 1520, 200],
+        [32, 1180, 1520, 80]
       ]
     }
   }

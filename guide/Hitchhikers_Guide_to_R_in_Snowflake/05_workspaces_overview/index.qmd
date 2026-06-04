@@ -76,7 +76,7 @@ Workspace does **not** auto-set database/schema in all versions — set context 
 
 ![Create menu — Notebook, SQL file, Streamlit, and more](../_images/05-create-notebook.png){fig-alt="Snowsight Create dropdown in Workspaces with Notebook and SQL file options" width=72%}
 
-![Workspace notebook editor — Run toolbar and Python/SQL/Markdown cells](../_images/05-notebook-editor.png){fig-alt="Workspace notebook editor showing Run and Connect toolbar plus empty Python cell" width=90%}
+![Workspace notebook editor — Run toolbar and Python/SQL cells](../_images/05-notebook-editor.png){fig-alt="Workspace notebook editor with Run and Connected toolbar, empty Python cell, and SQL smoke query with results" width=90%}
 
 ![Session context — role and warehouse selectors](../_images/05-compute-context.png){fig-alt="Workspace notebook Use role and Use warehouse dropdowns in the toolbar" width=90%}
 
