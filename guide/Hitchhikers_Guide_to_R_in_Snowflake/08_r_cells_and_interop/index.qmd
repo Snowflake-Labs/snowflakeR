@@ -356,7 +356,7 @@ setup_notebook(
 )
 ```
 
-Keep **one copy** of `sfnb_setup.py` in the repo (usually `snowflakeR/inst/notebooks/`) instead of duplicating it per folder. Full walkthrough: [Bootstrap §filesystem](../06_workspace_bootstrap/index.qmd#sec-filesystem).
+Keep **one copy** of `sfnb_setup.py` in the repo (usually `snowflakeR/inst/notebooks/`) instead of duplicating it per folder. Full walkthrough: [Bootstrap — filesystem](../06_workspace_bootstrap/index.qmd#sec-filesystem).
 
 ---
 

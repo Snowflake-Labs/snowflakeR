@@ -8,7 +8,7 @@ subtitle: "Driverless REST access — how RSnowflake connects"
 **RSnowflake** does not use JDBC or ODBC. It speaks to Snowflake through the **SQL API** — HTTPS REST endpoints that submit SQL and return results as JSON (or Arrow with **ADBC** for bulk I/O).
 
 ::: {.callout-note title="What is ADBC?"}
-**ADBC** (Arrow Database Connectivity) is a **columnar database access standard** built on Apache Arrow — not a Snowflake-specific product. RSnowflake can route large result sets through the Snowflake **ADBC driver** (`adbcsnowflake`) instead of deserializing JSON from the SQL API. See [Glossary](../appendices/F_glossary/index.qmd) and [RSnowflake: Query §Arrow](../13_rsnowflake_query/index.qmd#sec-arrow).
+**ADBC** (Arrow Database Connectivity) is a **columnar database access standard** built on Apache Arrow — not a Snowflake-specific product. RSnowflake can route large result sets through the Snowflake **ADBC driver** (`adbcsnowflake`) instead of deserializing JSON from the SQL API. See [Glossary](../appendices/F_glossary/index.qmd) and [RSnowflake: Query — Arrow](../13_rsnowflake_query/index.qmd#sec-arrow).
 :::
 
 Understanding the SQL API explains RSnowflake's strengths, limits, and why patterns like **WebR-in-the-browser** are possible without a native driver install.
@@ -80,7 +80,7 @@ The SQL API supports **parameter binding** and batched `INSERT` statements — R
 | **PUT + COPY** (JDBC/ODBC driver) | Stage file upload + server-side `COPY INTO` | **Highest throughput** for very large local files |
 
 ::: {.callout-important}
-If you are moving a **large volume of data** into Snowflake from R, prefer a **driver-based** workflow (**JDBC/ODBC `PUT` + `COPY`**, or RSnowflake **ADBC** bulk upload when installed) over SQL API bind inserts. RSnowflake's `upload_method = "auto"` already prefers ADBC when available — see [Query §Bulk write routing](../13_rsnowflake_query/index.qmd#sec-bulk). For terabyte-scale file loads outside DBI, classic drivers remain the standard pattern.
+If you are moving a **large volume of data** into Snowflake from R, prefer a **driver-based** workflow (**JDBC/ODBC `PUT` + `COPY`**, or RSnowflake **ADBC** bulk upload when installed) over SQL API bind inserts. RSnowflake's `upload_method = "auto"` already prefers ADBC when available — see [Query — Bulk write routing](../13_rsnowflake_query/index.qmd#sec-bulk). For terabyte-scale file loads outside DBI, classic drivers remain the standard pattern.
 :::
 
 ## Pros and cons {#sec-pros-cons}
@@ -91,7 +91,7 @@ If you are moving a **large volume of data** into Snowflake from R, prefer a **d
 | **Serverless / browser** | Possible (HTTPS) | Impractical |
 | **DBI + dbplyr** | Yes | Yes (other drivers) |
 | **Stage file I/O** | No `GET`/`PUT` | Often yes |
-| **Ecosystem maturity** | Newer | Decades of tooling (incl. Posit [`odbc`](https://odbc.r-dbi.org/) + Snowflake ODBC — see [§RSnowflake vs ODBC](../04_rstudio_posit_vscode/index.qmd#sec-odbc)) |
+| **Ecosystem maturity** | Newer | Decades of tooling (incl. Posit [`odbc`](https://odbc.r-dbi.org/) + Snowflake ODBC — see [RSnowflake vs ODBC](../04_rstudio_posit_vscode/index.qmd#sec-odbc)) |
 
 ### Why WebR + SQL API matters {#sec-webr}
 

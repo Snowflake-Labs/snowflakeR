@@ -147,7 +147,7 @@ For **desktop DBI + dbplyr**, the other common path is CRAN **`odbc`** with Snow
 | `connections.toml` | `dbConnect(Snowflake(), name = ...)` | `dbConnect(odbc::snowflake(), connection_name = ...)` |
 | **Workspace** | Default — no ODBC install | ODBC only practical if baked into **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)**; not via bootstrap |
 
-In Workspace, **ADBC** (optional, often in CRE) is the optimized bulk driver path; ODBC was not viable at bootstrap time. Full comparison: [RStudio, Posit & VS Code §RSnowflake vs ODBC](../04_rstudio_posit_vscode/index.qmd#sec-odbc).
+In Workspace, **ADBC** (optional, often in CRE) is the optimized bulk driver path; ODBC was not viable at bootstrap time. Full comparison: [RStudio, Posit & VS Code — RSnowflake vs ODBC](../04_rstudio_posit_vscode/index.qmd#sec-odbc).
 
 ---
 

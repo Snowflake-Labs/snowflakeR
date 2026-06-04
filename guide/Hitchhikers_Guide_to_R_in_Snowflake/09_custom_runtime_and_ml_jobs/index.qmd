@@ -240,7 +240,7 @@ The sfnb CRE startup hook prints a banner when the **Python kernel** starts (not
 ```
 
 ::: {.callout-warning appearance="minimal"}
-**Where is that line?** Snowflake does not document a fixed kernel stdout file path in Workspace. The message is a normal `print()` from IPython startup — you may **not** see it in the notebook UI even when CRE works. Treat **`%%R` cells succeeding** as the real proof. For logs, use [§sec-cre-logs](#sec-cre-logs) (Terminal, Run history, event table).
+**Where is that line?** Snowflake does not document a fixed kernel stdout file path in Workspace. The message is a normal `print()` from IPython startup — you may **not** see it in the notebook UI even when CRE works. Treat **`%%R` cells succeeding** as the real proof. For logs, use [Inspecting kernel and container logs](#sec-cre-logs) (Terminal, Run history, event table).
 :::
 
 ```r
@@ -540,7 +540,7 @@ Expect `[sfnb CRE] %%R ready` **here** if the hook file exists and `SFNB_CUSTOM_
 |---------|-----|
 | CRE `CREATE` fails | `snow custom-image validate` locally |
 | `exec format error` | Rebuild `--platform linux/amd64` |
-| No `[sfnb CRE] %%R ready` banner | Banner optional — test `%%R`; see [§sec-cre-logs](#sec-cre-logs); use reference **v1** image; `CREATE OR REPLACE` CRE |
+| No `[sfnb CRE] %%R ready` banner | Banner optional — test `%%R`; see [Inspecting kernel and container logs](#sec-cre-logs); use reference **v1** image; `CREATE OR REPLACE` CRE |
 | `Bootstrapping renv` hang | renv at Git repo root on `/filesystem`; use reference CRE **v1** or a project without renv |
 | Docker push invalid reference | Lowercase `IMAGE_REPO_PATH` |
 | Image Builder disk full | Local Docker build |
@@ -572,7 +572,7 @@ ML Jobs are **not** a replacement for:
 - **`sfr_deploy_model()`** SPCS inference services (different conda constraints, predict-focused)
 - **doSnowflake** worker pools (custom Docker for massive `%dopar%` scale)
 
-Use the right tier for the workload — see diagram in [§tiers](#sec-tiers).
+Use the right tier for the workload — see diagram in [tiers](#sec-tiers).
 
 ---
 
@@ -594,7 +594,7 @@ Use the right tier for the workload — see diagram in [§tiers](#sec-tiers).
 - **EAI at build time** is separate from notebook EAI (conda/GitHub/r-multiverse during `docker build`)
 - **`CREATE OR REPLACE`** the CRE after each push so notebooks resolve the new digest on restart
 - SPCS worker pools may cache old image layers — suspend/resume pool after image updates ([Appendix C](../appendices/C_troubleshooting/index.qmd))
-- CRE troubleshooting table: [§sec-cre-troubleshoot](#sec-cre-troubleshoot)
+- CRE troubleshooting table: [CRE troubleshooting](#sec-cre-troubleshoot)
 
 ---
 

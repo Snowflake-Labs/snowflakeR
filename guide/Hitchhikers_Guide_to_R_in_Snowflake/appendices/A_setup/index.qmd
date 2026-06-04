@@ -72,7 +72,7 @@ DBI::dbGetQuery(con, "SELECT CURRENT_USER()")
 | 5 | Run `%%R` smoke test (`sfr_connect()`, `dbConnect(Snowflake())`) |
 | 6 | Open `workspace_quickstart.ipynb` as reference |
 
-Notebooks not next to `sfnb_setup.py` need `/filesystem/` path discovery — [Bootstrap §filesystem](../../06_workspace_bootstrap/index.qmd#sec-filesystem).
+Notebooks not next to `sfnb_setup.py` need `/filesystem/` path discovery — [Bootstrap — filesystem](../../06_workspace_bootstrap/index.qmd#sec-filesystem).
 
 ---
 

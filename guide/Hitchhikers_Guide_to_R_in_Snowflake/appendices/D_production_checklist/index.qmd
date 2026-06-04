@@ -9,7 +9,7 @@ Use this checklist before promoting R + snowflakeR workloads from development to
 
 ## Workspace R: org CRE onboarding (platform / IT) {#sec-cre-org}
 
-- [ ] **Reference CRE v1** registered (`cre@sfnb_multilang_r` or org name) — [Bootstrap §CRE vs bootstrap](../../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap)
+- [ ] **Reference CRE v1** registered (`cre@sfnb_multilang_r` or org name) — [Bootstrap — CRE vs bootstrap](../../06_workspace_bootstrap/index.qmd#sec-cre-vs-bootstrap)
 - [ ] Image built with `create_cre.sh` / CI; `snow custom-image validate` passed
 - [ ] `CREATE OR REPLACE CUSTOM RUNTIME ENVIRONMENT` after each image push; digest communicated to users
 - [ ] `GRANT USAGE ON CUSTOM RUNTIME ENVIRONMENT` to notebook roles

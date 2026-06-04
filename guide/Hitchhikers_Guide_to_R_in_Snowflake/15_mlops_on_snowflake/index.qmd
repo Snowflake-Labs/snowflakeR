@@ -10,7 +10,7 @@ This chapter frames **MLOps on Snowflake** for R users: how data moves from sour
 The R community has strong tools through **modeling** (tidymodels, forecast, lme4, …) and **local MLOps** (renv, targets, vetiver, Posit Connect). snowflakeR adds the **in-platform infrastructure layer** — registry, feature store, governed serving — when your data and models live in Snowflake.
 
 ::: {.callout-important}
-See [Introduction §Disclaimers](../00_introduction/index.qmd#sec-disclaimers) — **snowflakeR**, **RSnowflake**, and **snowflake-notebook-multilang** are Snowflake-Labs community projects, not officially supported product offerings. APIs may change as they evolve.
+See [Introduction — Disclaimers](../00_introduction/index.qmd#sec-disclaimers) — **snowflakeR**, **RSnowflake**, and **snowflake-notebook-multilang** are Snowflake-Labs community projects, not officially supported product offerings. APIs may change as they evolve.
 :::
 
 ## Learning Objectives

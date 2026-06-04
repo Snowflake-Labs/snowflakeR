@@ -89,7 +89,7 @@ by_region |>
   collect()   # only the final, small result crosses to R
 ```
 
-`compute()` runs **`CREATE TEMPORARY TABLE … AS SELECT`** (RSnowflake implements this via dbplyr). Use a **pipeline of temp tables** for heavy joins or to break up nested SQL; use **`temporary = FALSE`** and a qualified name when you want a **permanent** table other teams can reuse. **`copy_to()`** is the opposite path — upload a local `data.frame` into Snowflake to start a pipeline. Full patterns: [RSnowflake: Query §dbplyr](../13_rsnowflake_query/index.qmd#sec-materialize).
+`compute()` runs **`CREATE TEMPORARY TABLE … AS SELECT`** (RSnowflake implements this via dbplyr). Use a **pipeline of temp tables** for heavy joins or to break up nested SQL; use **`temporary = FALSE`** and a qualified name when you want a **permanent** table other teams can reuse. **`copy_to()`** is the opposite path — upload a local `data.frame` into Snowflake to start a pipeline. Full patterns: [RSnowflake: Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-materialize).
 
 - Feature Store and Model Registry objects **persist in Snowflake** — no separate model server database to maintain.
 

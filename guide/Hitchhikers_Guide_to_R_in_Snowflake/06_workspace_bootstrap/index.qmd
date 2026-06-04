@@ -47,7 +47,7 @@ Use the bootstrap script **`sfnb_setup.py`** from [snowflake-notebook-multilang]
 | Layout | What to do |
 |--------|------------|
 | Notebook in the same folder as `sfnb_setup.py` | `from sfnb_setup import setup_notebook` |
-| Git repo cloned into Workspace (typical) | File is under `snowflakeR/inst/notebooks/` — see [§filesystem paths](#sec-filesystem) below |
+| Git repo cloned into Workspace (typical) | File is under `snowflakeR/inst/notebooks/` — see [filesystem paths](#sec-filesystem) below |
 | No Git / minimal project | Copy `sfnb_setup.py` next to your notebook, or `pip install sfnb-multilang` and use the package API |
 
 ```python

@@ -37,7 +37,7 @@ The sections below follow one linear story you can run in a notebook or RStudio.
 | 6 | [Deploy](#sec-deploy) | `sfr_deploy_model()` → SPCS inference service |
 | 7 | [Infer](#sec-infer) | `sfr_predict()` on warehouse rows |
 
-A separate path in [§Lineage](#sec-lineage) shows **Feature Store → CHURN_MODEL** when training data is a governed dataset. [§Custom predict](#sec-predict-body) shows **forecast** when `predict(model, newdata)` is not enough.
+A separate path in [Lineage](#sec-lineage) shows **Feature Store → CHURN_MODEL** when training data is a governed dataset. [Custom predict](#sec-predict-body) shows **forecast** when `predict(model, newdata)` is not enough.
 
 ---
 
@@ -459,13 +459,13 @@ scores   <- sfr_predict(reg, "MTCARS_MPG", new_cars)
 ### Workspace vs REST auth
 
 - **`sfr_predict()`** routes through the Snowpark session — no PAT in notebooks  
-- **`sfr_predict_rest()`** hits SPCS ingress directly — typically requires **PAT** outside Workspace ([R Cells §PAT](../08_r_cells_and_interop/index.qmd#sec-pat))
+- **`sfr_predict_rest()`** hits SPCS ingress directly — typically requires **PAT** outside Workspace ([R Cells — PAT](../08_r_cells_and_interop/index.qmd#sec-pat))
 
 ### Posit Connect
 
 Publish Shiny or Quarto to **Posit Connect**; the app calls **`sfr_predict_rest()`** against the Snowflake endpoint. Registry stays authoritative; Connect is the UI layer ([MLOps](../15_mlops_on_snowflake/index.qmd)).
 
-For models that **orbital** or SQL-native forms can express, warehouse SQL scoring may avoid SPCS entirely — complementary to CustomModel+R paths ([MLOps §why Snowflake ML](../15_mlops_on_snowflake/index.qmd#sec-why)).
+For models that **orbital** or SQL-native forms can express, warehouse SQL scoring may avoid SPCS entirely — complementary to CustomModel+R paths ([MLOps — why Snowflake ML](../15_mlops_on_snowflake/index.qmd#sec-why)).
 
 ---
 

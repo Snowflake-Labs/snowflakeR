@@ -312,9 +312,9 @@ snowflakeR translates the lazy table to SQL — no `collect()` before registrati
 
 When a feature view would need **hundreds of scalar columns**, prefer **OBJECT** or **ARRAY** bundles (and, for training export at scale, **ARRAY → `::VECTOR`** columns) instead of a wide table. Snowflake documents the pattern in [Implementation Guide §12.10 — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse).
 
-From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query §dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr).
+From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr).
 
-For **end-to-end training export** (scalar-wide ASOF → three ARRAY/VECTOR packs, ARRAY-native views, OBJECT flattening, Python decode), use the pipeline table in [Feature Engineering with R §End-to-end pipelines](../17a_feature_engineering_with_r/index.qmd#sec-e2e-pipelines) (Pipelines A–E).
+For **end-to-end training export** (scalar-wide ASOF → three ARRAY/VECTOR packs, ARRAY-native views, OBJECT flattening, Python decode), use the pipeline table in [Feature Engineering with R — End-to-end pipelines](../17a_feature_engineering_with_r/index.qmd#sec-e2e-pipelines) (Pipelines A–E).
 
 ### Time-series (event-level) features
 
@@ -428,7 +428,7 @@ mv <- sfr_log_model(
 )
 ```
 
-See [Model Registry §lineage](../18_model_registry/index.qmd#sec-lineage).
+See [Model Registry — lineage](../18_model_registry/index.qmd#sec-lineage).
 
 ---
 
@@ -446,13 +446,13 @@ features_for_scoring <- sfr_retrieve_features(
 
 Pass the result to `predict()` locally or to a batch scoring pipeline. Align column names with `input_cols` declared at model registration.
 
-For **sub-minute, key-based** serving, use the **online** Hybrid Table instead — [§Online serving](#sec-online) (`sfr_read_feature_view(..., store_type = "ONLINE")` or SQL on the OFT).
+For **sub-minute, key-based** serving, use the **online** Hybrid Table instead — [Online serving](#sec-online) (`sfr_read_feature_view(..., store_type = "ONLINE")` or SQL on the OFT).
 
 ---
 
 ## Online serving {#sec-online}
 
-**Online Feature Tables (OFTs)** expose the **latest** feature values per entity key on a **Hybrid Table**, refreshed from the offline Feature View on a schedule driven by `target_lag` (Stream + Task + MERGE). They are for **low-latency inference**, not point-in-time training — use offline views and [§Inference-time features](#sec-inference) / `sfr_generate_training_data()` for history.
+**Online Feature Tables (OFTs)** expose the **latest** feature values per entity key on a **Hybrid Table**, refreshed from the offline Feature View on a schedule driven by `target_lag` (Stream + Task + MERGE). They are for **low-latency inference**, not point-in-time training — use offline views and [Inference-time features](#sec-inference) / `sfr_generate_training_data()` for history.
 
 Requires **`snowflake-ml-python` ≥ 1.18.0** and a platform edition that supports online serving. Platform detail: [Implementation Guide — Online Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html).
 
@@ -511,7 +511,7 @@ online_batch <- sfr_read_feature_view(
 | `sfr_read_feature_view(..., store_type = "OFFLINE")` | Offline DT / table | Inspect materialized offline features |
 | `sfr_retrieve_features()` | Offline Feature Views | Join a **spine** to features (batch scoring / latest offline values) — not the OFT API |
 
-For **multiple Feature Views** at inference, the platform typically does **one OFT read per view** (or a **pre-joined** Feature View registered for online) — see the Implementation Guide §multi-FV online reads.
+For **multiple Feature Views** at inference, the platform typically does **one OFT read per view** (or a **pre-joined** Feature View registered for online) — see the Implementation Guide — multi-FV online reads.
 
 Operational helpers:
 
@@ -545,7 +545,7 @@ features <- dbGetQuery(con, "
 ", params = list("C001"))
 ```
 
-Use **bind parameters** (`?`) for high-QPS serving so Snowflake can reuse plans ([Implementation Guide §parameter binding](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html#sec-8-9-4-parameter-binding)).
+Use **bind parameters** (`?`) for high-QPS serving so Snowflake can reuse plans ([Implementation Guide — parameter binding](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html#sec-8-9-4-parameter-binding)).
 
 ::: {.callout-note}
 ## Offline vs online retrieval

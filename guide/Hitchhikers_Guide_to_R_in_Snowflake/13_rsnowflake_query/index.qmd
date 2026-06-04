@@ -42,13 +42,13 @@ flowchart LR
 | `collect()`, `dbGetQuery()` | **Warehouse** executes SQL |
 | Result transfer | JSON (SQL API) or Arrow (ADBC) to R |
 
-Bulk **writes** from R (`dbWriteTable`, `dbAppendTable`) use separate routing — see [§Bulk write routing](#sec-bulk). Prefer **not** loading huge tables into R only to write them back; materialize with SQL/dbplyr when possible.
+Bulk **writes** from R (`dbWriteTable`, `dbAppendTable`) use separate routing — see [Bulk write routing](#sec-bulk). Prefer **not** loading huge tables into R only to write them back; materialize with SQL/dbplyr when possible.
 
 ---
 
 ## DBI basics {#sec-dbi}
 
-DBI examples below are already the **SQL path**: you send warehouse SQL as strings (`dbGetQuery`, `dbExecute`). Pair them with [§dbplyr](#sec-dbplyr) tabs when you want the same logic as lazy dplyr.
+DBI examples below are already the **SQL path**: you send warehouse SQL as strings (`dbGetQuery`, `dbExecute`). Pair them with [dbplyr](#sec-dbplyr) tabs when you want the same logic as lazy dplyr.
 
 ### Reads and parameterized queries
 
@@ -82,7 +82,7 @@ dbRemoveTable(con, "iris_copy")
 ```
 
 ::: {.callout-note}
-Use **fully qualified** names when Workspace session context is unset. RSnowflake uppercases unquoted identifiers by default — see [Connect §case](../12_rsnowflake_connect/index.qmd#sec-case).
+Use **fully qualified** names when Workspace session context is unset. RSnowflake uppercases unquoted identifiers by default — see [Connect — case](../12_rsnowflake_connect/index.qmd#sec-case).
 :::
 
 ---
@@ -453,7 +453,7 @@ sample_for_plot <- tbl(con, in_schema("SALES", "ORDERS")) |>
 
 ### Semi-structured columns (brief) {#sec-semi-structured-brief}
 
-RSnowflake can **build** OBJECT/ARRAY bundles with `object_agg()` and `array_agg()` in dplyr ([§RSnowflake-only translations](#sec-snowflake-dbplyr)). How those columns **round-trip into R** (JSON vs Arrow list columns, VECTOR packs, Feature Store `save_as`) is covered in [Feature Engineering with R](../17a_feature_engineering_with_r/index.qmd).
+RSnowflake can **build** OBJECT/ARRAY bundles with `object_agg()` and `array_agg()` in dplyr ([RSnowflake-only translations](#sec-snowflake-dbplyr)). How those columns **round-trip into R** (JSON vs Arrow list columns, VECTOR packs, Feature Store `save_as`) is covered in [Feature Engineering with R](../17a_feature_engineering_with_r/index.qmd).
 
 ---
 
@@ -521,7 +521,7 @@ RSnowflake's `sql_query_save` generates Snowflake **`CREATE TEMPORARY TABLE`** (
 
 **When to materialize vs one big query:** materialize when (1) an intermediate is reused in multiple branches, (2) the generated SQL is deeply nested or slow to optimize, or (3) you want to inspect row counts with `SELECT COUNT(*)` on a named table. Otherwise a single pipeline + one `collect()` is fine.
 
-See [Platform Primer §storage-compute](../01_snowflake_platform/index.qmd#sec-storage-compute) for the mental model.
+See [Platform Primer — storage-compute](../01_snowflake_platform/index.qmd#sec-storage-compute) for the mental model.
 
 ---
 

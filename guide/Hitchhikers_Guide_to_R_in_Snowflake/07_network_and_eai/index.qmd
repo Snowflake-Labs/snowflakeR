@@ -9,7 +9,7 @@ Snowflake Workspace Notebooks run inside a **locked-down container**. By default
 
 That is why bootstrap can fail with timeouts, or sometimes cryptic errors: **`setup_notebook()` must fetch software from outside the account** — by default from the **public internet** (micromamba, R, CRAN, GitHub tarballs, pip for rpy2). Snowflake governs that egress through **network rules** and **External Access Integrations (EAI)**.
 
-**Alternative:** Many enterprises route the same installs through an **internal artifact repository** (Artifactory, Nexus, or similar) configured in notebook YAML under **`mirrors:`**, with the R/Python packages you need already proxied or cached there. EAI then allows the mirror hostname (often one domain instead of dozens of public CDNs). See [§Enterprise mirrors](#sec-mirrors) and [Appendix B — `mirrors:`](../appendices/B_config_reference/index.qmd#sec-sections). A **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** pre-bakes packages at image build time and avoids runtime downloads entirely.
+**Alternative:** Many enterprises route the same installs through an **internal artifact repository** (Artifactory, Nexus, or similar) configured in notebook YAML under **`mirrors:`**, with the R/Python packages you need already proxied or cached there. EAI then allows the mirror hostname (often one domain instead of dozens of public CDNs). See [Enterprise mirrors](#sec-mirrors) and [Appendix B — `mirrors:`](../appendices/B_config_reference/index.qmd#sec-sections). A **[CRE](../09_custom_runtime_and_ml_jobs/index.qmd)** pre-bakes packages at image build time and avoids runtime downloads entirely.
 
 This chapter explains EAI objects, how `setup_notebook()` discovers or creates them, what you must do in Snowsight after an admin runs SQL, and how mirrors simplify allowlists.
 
@@ -90,7 +90,7 @@ Creating SQL objects is **not enough**. Developers routinely miss the Snowsight 
 |------|----------------|
 | `proxy.golang.org`, `storage.googleapis.com`, … | `languages.r.addons.adbc: true` in YAML |
 | `repo1.maven.org` | Scala/Java multilang bootstrap |
-| Internal mirror hostname only | Corporate `mirrors:` config — [§Mirrors](#sec-mirrors) |
+| Internal mirror hostname only | Corporate `mirrors:` config — [Mirrors](#sec-mirrors) |
 
 Exact lists evolve with toolkit versions. When validation fails, bootstrap prints **missing domains** and may write **`eai_setup.sql`**.
 
