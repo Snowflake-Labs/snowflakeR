@@ -48,6 +48,8 @@ Bulk **writes** from R (`dbWriteTable`, `dbAppendTable`) use separate routing �
 
 ## DBI basics {#sec-dbi}
 
+DBI examples below are already the **SQL path**: you send warehouse SQL as strings (`dbGetQuery`, `dbExecute`). Pair them with [§dbplyr](#sec-dbplyr) tabs when you want the same logic as lazy dplyr.
+
 ### Reads and parameterized queries
 
 ```r
@@ -87,7 +89,25 @@ Use **fully qualified** names when Workspace session context is unset. RSnowflak
 
 ## dbplyr: lazy SQL from dplyr {#sec-dbplyr}
 
-**dbplyr** turns dplyr into a SQL compiler. Tables become lazy; verbs append to a query plan until you **`collect()`**:
+**dbplyr** turns dplyr into a SQL compiler. Tables become lazy; verbs append to a query plan until you **`collect()`**. Where the same logic is practical in both forms, examples use **SQL** and **dbplyr** tabs (`group="query-sql-dplyr"`).
+
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT
+  REGION,
+  COUNT(*)                    AS n,
+  SUM(AMOUNT)                 AS revenue
+FROM MY_DB.MY_SCHEMA.ORDERS
+WHERE STATUS = 'OPEN'
+  AND ORDER_DATE >= '2024-01-01'
+GROUP BY REGION
+ORDER BY revenue DESC;
+```
+
+##### dbplyr
 
 ```r
 library(dplyr)
@@ -103,6 +123,8 @@ tbl(con, in_schema("MY_SCHEMA", "ORDERS")) |>
   arrange(desc(revenue)) |>
   collect()   # single SQL round trip
 ```
+
+:::
 
 **Why lazy matters:** `filter()` and `summarise()` do not pull data to R. A 10-billion-row table stays in Snowflake until the final aggregation is computed on the warehouse.
 
@@ -161,6 +183,28 @@ Window variants of the aggregate functions above are also registered for analyti
 
 ### Example: events with JSON payloads
 
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT
+  EVENT_TYPE,
+  ARRAY_UNIQUE_AGG(USER_ID)          AS user_ids,
+  APPROX_COUNT_DISTINCT(USER_ID)     AS n_users
+FROM (
+  SELECT
+    EVENT_TYPE,
+    USER_ID,
+    TRY_PARSE_JSON(RAW_JSON) AS payload
+  FROM CLICKSTREAM_DATA.EVENTS
+) e
+WHERE IS_OBJECT(payload)
+GROUP BY EVENT_TYPE;
+```
+
+##### dbplyr
+
 ```r
 library(dplyr)
 
@@ -176,9 +220,26 @@ tbl(con, in_schema("CLICKSTREAM_DATA", "EVENTS")) |>
   collect()
 ```
 
+:::
+
 ### Example: bundle sparse features into OBJECT (Feature Store pattern)
 
 Snowflake's [Feature Store advanced patterns](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse) recommend **OBJECT** (or **ARRAY**) columns to avoid thousand-column tables. You can **build** those bundles in dplyr on the warehouse, then register the result as an external feature view from [Feature Store](../17_feature_store/index.qmd) or materialize with `compute()`.
+
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+-- Long/narrow source: one row per (entity, feature_name, value)
+SELECT
+  ENTITY_ID,
+  OBJECT_AGG(FEATURE_NAME, FEATURE_VALUE) AS feature_object
+FROM FEATURE_STORE.ENTITY_FEATURES_LONG
+GROUP BY ENTITY_ID;
+```
+
+##### dbplyr
 
 ```r
 # Long/narrow source: one row per (entity, feature_name, value)
@@ -194,6 +255,8 @@ bundled |> show_query()
 # Persist for reuse (session temp table) or inspect a sample
 feature_sample <- bundled |> head(100) |> collect()
 ```
+
+:::
 
 For **fixed keys** (known feature names), `OBJECT_CONSTRUCT` in SQL is often clearer — use `dbGetQuery()` or `mutate(feature_object = sql("OBJECT_CONSTRUCT('avg_spend', AVG_SPEND, 'n_orders', N_ORDERS)"))` after a `summarise()` step.
 
@@ -222,6 +285,37 @@ The power of dbplyr is not “R that talks SQL” — it is **keeping heavy work
 
 Break a pipeline into named steps on the warehouse instead of one nested query or repeated `collect()`:
 
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+-- Step 1 — session temp table (dbplyr compute() generates similar DDL)
+CREATE TEMPORARY TABLE daily_orders_tmp AS
+SELECT
+  CUSTOMER_ID,
+  ORDER_DATE,
+  COUNT(*)              AS n_orders,
+  SUM(AMOUNT)           AS revenue
+FROM ANALYTICS.ORDERS
+WHERE ORDER_DATE >= '2024-01-01'
+GROUP BY CUSTOMER_ID, ORDER_DATE;
+
+-- Step 2 — aggregate from materialized step
+SELECT
+  CUSTOMER_ID,
+  SUM(n_orders)  AS orders_90d,
+  SUM(revenue)   AS revenue_90d,
+  SUM(revenue) / NULLIF(SUM(n_orders), 0) AS avg_order
+FROM daily_orders_tmp
+GROUP BY CUSTOMER_ID;
+
+-- Inspect row counts without pulling data to R
+SELECT COUNT(*) AS n FROM daily_orders_tmp;
+```
+
+##### dbplyr
+
 ```r
 library(dplyr)
 
@@ -249,17 +343,47 @@ customer_rollup <- daily |>
   )
 
 customer_rollup |> show_query()
-```
 
-Inspect row counts without pulling data:
-
-```r
 dbGetQuery(con, "SELECT COUNT(*) AS n FROM daily_orders_tmp")
 ```
+
+:::
 
 ### Joins and window functions {#sec-windows}
 
 dbplyr translates joins and window verbs to Snowflake SQL — including **qualify**-style patterns via `filter()` on windowed columns:
+
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+CREATE TEMPORARY TABLE top5_orders_tmp AS
+SELECT
+  CUSTOMER_ID,
+  ORDER_ID,
+  ORDER_TS,
+  AMOUNT,
+  running_spend
+FROM (
+  SELECT
+    CUSTOMER_ID,
+    ORDER_ID,
+    ORDER_TS,
+    AMOUNT,
+    SUM(AMOUNT) OVER (
+      PARTITION BY CUSTOMER_ID ORDER BY ORDER_TS
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_spend,
+    ROW_NUMBER() OVER (
+      PARTITION BY CUSTOMER_ID ORDER BY ORDER_TS DESC
+    ) AS order_rank
+  FROM SALES.LINE_ITEMS
+)
+WHERE order_rank <= 5;
+```
+
+##### dbplyr
 
 ```r
 library(dplyr)
@@ -279,6 +403,8 @@ top5_per_customer <- ranked |>
   compute(name = "top5_orders_tmp", temporary = TRUE)
 ```
 
+:::
+
 For production pipelines, set `temporary = FALSE` and a fully qualified table name when the artifact should outlive the session.
 
 ### Collect only what you need {#sec-collect-plot}
@@ -286,6 +412,25 @@ For production pipelines, set `temporary = FALSE` and a fully qualified table na
 **Anti-pattern:** `collect()` on a billion-row table to aggregate in R.
 
 **Better:** aggregate in SQL, `collect()` the summary (or a stratified sample):
+
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+-- Summary for a dashboard — tiny result set
+SELECT REGION, SUM(AMOUNT) AS revenue
+FROM SALES.ORDERS
+GROUP BY REGION;
+
+-- Stratified sample for exploratory plots (see dbplyr show_query() for exact SAMPLE)
+SELECT *
+FROM SALES.ORDERS
+WHERE ORDER_DATE >= '2025-01-01'
+SAMPLE (5000 ROWS);
+```
+
+##### dbplyr
 
 ```r
 # Summary for a dashboard — tiny result set
@@ -297,16 +442,14 @@ by_region <- tbl(con, in_schema("SALES", "ORDERS")) |>
 # Optional: ggplot2 on the aggregated frame
 # library(ggplot2)
 # ggplot(by_region, aes(REGION, revenue)) + geom_col()
-```
 
-Stratified sample for exploratory plots:
-
-```r
 sample_for_plot <- tbl(con, in_schema("SALES", "ORDERS")) |>
   filter(ORDER_DATE >= "2025-01-01") |>
   slice_sample(n = 5000) |>   # Snowflake TABLESAMPLE / random — see show_query()
   collect()
 ```
+
+:::
 
 ### Semi-structured columns (brief) {#sec-semi-structured-brief}
 
@@ -326,6 +469,26 @@ RSnowflake can **build** OBJECT/ARRAY bundles with `object_agg()` and `array_agg
 | **`compute()`** | `CREATE TEMPORARY TABLE … AS` + return lazy handle | Multi-step ETL; break up joins; debug with `show_query()` per step |
 | **`copy_to()`** | Upload local `data.frame` to a Snowflake table | Seed pipeline from R object |
 | **`dbExecute()` + `sql_render()`** | Run explicit DDL you control | Permanent tables, `CREATE TABLE AS` with custom options |
+
+::: {.panel-tabset group="query-sql-dplyr"}
+
+##### SQL
+
+```sql
+CREATE TEMPORARY TABLE daily_events_tmp AS
+SELECT customer_id, event_date, COUNT(*) AS n_events
+FROM RAW.EVENTS
+WHERE event_date >= '2024-01-01'
+GROUP BY customer_id, event_date;
+
+-- Reuse materialized step; final features as permanent table
+CREATE TABLE MY_DB.MY_SCHEMA.CUSTOMER_EVENT_FEATURES AS
+SELECT customer_id, AVG(n_events) AS avg_daily
+FROM daily_events_tmp
+GROUP BY customer_id;
+```
+
+##### dbplyr
 
 ```r
 library(dplyr)
@@ -351,6 +514,8 @@ features |>
 # Or inspect SQL without executing
 features |> show_query()
 ```
+
+:::
 
 RSnowflake's `sql_query_save` generates Snowflake **`CREATE TEMPORARY TABLE`** (or permanent when `temporary = FALSE`). Temp tables live for the **session** — ideal for notebook pipelines; use qualified permanent names for shared artifacts.
 
