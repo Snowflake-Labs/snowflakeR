@@ -50,62 +50,69 @@ Feature Store centralizes **definitions** and enforces **temporal correctness** 
 | Phase | Question | Feature Store API (R) |
 |-------|----------|------------------------|
 | **Training** | "What did we **know** about entity X at time T?" | `sfr_generate_training_data()` / `sfr_generate_dataset()` |
-| **Inference** | "What do we **know now** about entity X?" | `sfr_retrieve_features()` |
+| **Inference (latest)** | "What do we **know now** about entity X?" | `sfr_retrieve_features()` without `spine_timestamp_col`, or OFT / online read |
+| **Inference (as-of batch)** | "What did we know at each row's timestamp?" (incremental backfill, replay scoring) | `sfr_retrieve_features(..., spine_timestamp_col = ...)` — same ASOF logic as training, without labels |
 
-Training uses a **spine** (entity keys + event timestamps + labels). Inference typically uses current or latest feature values — no labels, no point-in-time join across history.
+Training uses a **spine** (entity keys + event timestamps + labels). Inference often uses **latest** feature values, but batch pipelines can pass a **timestamp spine** for point-in-time-correct feature lookup on the offline store.
 
 ---
 
 ## Architecture {#sec-architecture}
 
+A Feature View connects **tabular sources** in Snowflake to **registered metadata** and a **materialized offline store** (table or Dynamic Table). The `feature_df` you pass at registration time can be as simple or as complex as your pipeline requires.
+
+### Sources and definitions
+
+| Layer | Options |
+|-------|---------|
+| **Source data** | Any tabular object — **table**, **view**, **Dynamic Table**, dbt model output, stage-backed table, etc. |
+| **`feature_df` definition** | **Pass-through** — `SELECT *` or column subset from an externally maintained table (external Feature View). **Transform** — aggregations, joins, windows, bundles entirely in SQL or dbplyr (managed Feature View with `refresh_freq`). **Hybrid** — read from a maintained table and enrich with SQL (e.g. keys from ETL + `OBJECT_CONSTRUCT` in the same query). |
+| **Registration mode** | **External** — no `refresh_freq`; you own refresh. **Managed** — `refresh_freq` → platform maintains backing Dynamic Table (or equivalent). |
+
+See [Authoring Feature Views](../17b_authoring_feature_views/index.qmd) for SQL/dbplyr patterns from simple aggregates through rollup tiles and OBJECT/ARRAY bundles.
+
 ```{mermaid}
-flowchart LR
-  subgraph sources [Source data in Snowflake]
-    direction TB
-    ORD[orders]
-    DBT[dbt or Dynamic Tables]
-    ACT[activity events]
-    ORD --> DBT
+flowchart TB
+  subgraph sources [Tabular sources in Snowflake]
+    direction LR
+    TBL[(Table)]
+    VW[View]
+    DTs[(Dynamic Table)]
+    TBL ~~~ VW ~~~ DTs
   end
 
-  subgraph fs [Feature Store schema]
+  subgraph define [feature_df at registration]
     direction TB
-    ENT[Entities CUSTOMER PRODUCT]
-    FV1[CUSTOMER_FEATURES v1]
-    FV2[CUSTOMER_ACTIVITY v1]
-    DT[(Backing Dynamic Table or table)]
-    ENT --> FV1
-    ENT --> FV2
-    FV1 --> DT
-    FV2 --> DT
+    PASS[Pass-through SELECT from source]
+    XFORM[Transform SQL or dbplyr aggregates joins bundles]
+    HYBRID[Hybrid source table plus SQL enrich]
   end
 
-  subgraph paths [Training then inference]
-    direction TB
-    subgraph train [Training path]
-      direction TB
-      SPINE[Spine labels plus event_ts]
-      TD[Training data or Dataset]
-      SPINE --> TD
-    end
-    subgraph infer [Inference path]
-      direction TB
-      SCORE[Scoring spine entity keys only]
-      FEAT[Feature matrix for predict]
-      SCORE --> FEAT
-    end
-    TD ~~~ SCORE
+  subgraph store [Feature Store offline]
+    FV[Feature View versioned metadata]
+    OFF[(Offline materialization table or DT)]
+    FV --> OFF
   end
 
-  DBT --> FV1
-  ACT --> FV2
-  FV1 --> TD
-  FV2 --> TD
-  FV1 --> FEAT
-  FV2 --> FEAT
+  subgraph consume [Consumption paths]
+    direction TB
+    TRAIN[sfr_generate_training_data spine plus ASOF]
+    INFER_L[sfr_retrieve_features latest keys]
+    INFER_T[sfr_retrieve_features timestamp spine ASOF]
+    ONLN[Online Feature Table key lookup]
+  end
+
+  sources --> define
+  PASS --> FV
+  XFORM --> FV
+  HYBRID --> FV
+  OFF --> TRAIN
+  OFF --> INFER_L
+  OFF --> INFER_T
+  FV --> ONLN
 ```
 
-**Compute note:** Feature view **registration and refresh** use the **warehouse** you pass to `sfr_feature_store()`. Feature data **materializes in Snowflake tables** (often Dynamic Tables when `refresh_freq` is set) — not in your R session until you explicitly read or generate training data.
+**Compute note:** Feature view **registration and refresh** use the **warehouse** you pass to `sfr_feature_store()`. Feature data **materializes in Snowflake** — not in your R session until you explicitly read or generate training data.
 
 ---
 
@@ -222,8 +229,10 @@ Multi-key entities (e.g. store + SKU) pass multiple columns — see vignette `fe
 
 A feature view is a **versioned transformation** tied to one or more entities. The `feature_df` argument accepts:
 
-- **SQL string** — executed/managed in Snowflake
+- **SQL string** — any `SELECT` over tabular sources (table, view, Dynamic Table, …)
 - **dbplyr lazy table** — dplyr pipeline translated to SQL ([RSnowflake](../13_rsnowflake_query/index.qmd))
+
+The backing query may **pass through** an externally maintained table, **compute** features entirely in SQL/dbplyr, or combine both (hybrid). See [Architecture — Sources and definitions](#sec-architecture) and [Authoring Feature Views](../17b_authoring_feature_views/index.qmd).
 
 ### Managed views (automatic refresh)
 
@@ -310,7 +319,15 @@ snowflakeR translates the lazy table to SQL — no `collect()` before registrati
 
 ### Wide and sparse feature sets {#sec-wide-sparse}
 
-When a feature view would need **hundreds of scalar columns**, prefer **OBJECT** or **ARRAY** bundles (and, for training export at scale, **ARRAY → `::VECTOR`** columns) instead of a wide table. Snowflake documents the pattern in [Implementation Guide §12.10 — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse).
+When a feature view would need **hundreds of scalar columns**, prefer **OBJECT** or **ARRAY** bundles (and, for training export at scale, **ARRAY → `::VECTOR`** columns) instead of a wide table.
+
+**Why bundles help:**
+
+- **Schema evolution** — add feature keys or array slots without a new column per feature (especially sparse or slowly growing catalogs).
+- **Scale** — fewer columns for the planner and for cross-view joins; optional flatten only at export time.
+- **Hybrid layouts** — keep join keys and timestamps as scalars; pack high-cardinality or evolving payloads into OBJECT ([Implementation Guide §12.10.4](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-4-hybrid-storage-key-columns--object-payload)).
+
+Snowflake documents platform patterns in [Implementation Guide §12.10 — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse). Authoring detail: [Authoring Feature Views — Wide and sparse bundles](../17b_authoring_feature_views/index.qmd#sec-wide-bundles).
 
 From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr) and [Authoring Feature Views](../17b_authoring_feature_views/index.qmd#sec-wide-bundles).
 
@@ -333,6 +350,10 @@ fv_ts <- sfr_create_feature_view(
 ```
 
 Required for correct point-in-time joins — the store uses timestamps to pick feature values as-of each spine row.
+
+### Rollup and tiled aggregates
+
+For **rollup Feature Views** over event streams (platform-managed tiles and lookback windows — e.g. sum of amount over 1 day), declare aggregates with `sfr_feature()` and set `feature_granularity` instead of writing every window in SQL. See [Authoring Feature Views — Rollup and tiled Feature Views](../17b_authoring_feature_views/index.qmd#sec-rollup-tiles) and the [`feature-store` vignette](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html).
 
 ---
 
@@ -434,7 +455,11 @@ See [Model Registry — lineage](../18_model_registry/index.qmd#sec-lineage).
 
 ## Inference-time features (offline store) {#sec-inference}
 
-For **batch scoring** or joins against **offline** Feature Views, fetch **latest** values (no labels, no `spine_timestamp_col`) via `sfr_retrieve_features()`:
+For **batch scoring** against **offline** Feature Views, use `sfr_retrieve_features()` to join a spine to feature values.
+
+### Latest values (no timestamp spine)
+
+When each scoring row needs **current** offline features, pass entity keys only — omit `spine_timestamp_col`:
 
 ```r
 features_for_scoring <- sfr_retrieve_features(
@@ -444,9 +469,27 @@ features_for_scoring <- sfr_retrieve_features(
 )
 ```
 
-Pass the result to `predict()` locally or to a batch scoring pipeline. Align column names with `input_cols` declared at model registration.
+### Point-in-time batch inference (timestamp spine)
 
-For **sub-minute, key-based** serving, use the **online** Hybrid Table instead — [Online serving](#sec-online) (`sfr_read_feature_view(..., store_type = "ONLINE")` or SQL on the OFT).
+For **incremental batch inference**, backfills, or replay scoring where each row has its own as-of time, pass **`spine_timestamp_col`** — the same ASOF join logic as training, without labels:
+
+```r
+features_for_scoring <- sfr_retrieve_features(
+  fs,
+  spine = "
+    SELECT customer_id, score_as_of_ts
+    FROM incremental_score_queue
+  ",
+  features            = list(fv1, fv2),
+  spine_timestamp_col = "score_as_of_ts"
+)
+```
+
+Use this when the scoring queue carries an event or decision timestamp and features must match what was knowable at that time — not necessarily "latest" across the whole table.
+
+Pass results to `predict()` locally or to a batch scoring pipeline. Align column names with `input_cols` declared at model registration.
+
+For **sub-minute, key-based** serving of **latest** values, use the **online** Hybrid Table — [Online serving](#sec-online) (`sfr_read_feature_view(..., store_type = "ONLINE")` or SQL/dbplyr on the OFT).
 
 ---
 
@@ -509,7 +552,7 @@ online_batch <- sfr_read_feature_view(
 |-----|-------|----------|
 | `sfr_read_feature_view(..., store_type = "ONLINE")` | Hybrid Table (OFT) | Real-time lookup by entity key(s) |
 | `sfr_read_feature_view(..., store_type = "OFFLINE")` | Offline DT / table | Inspect materialized offline features |
-| `sfr_retrieve_features()` | Offline Feature Views | Join a **spine** to features (batch scoring / latest offline values) — not the OFT API |
+| `sfr_retrieve_features()` | Offline Feature Views | Join spine to features — **latest** (no timestamp) or **ASOF** (`spine_timestamp_col`) — not the OFT API |
 
 For **multiple Feature Views** at inference, the platform typically does **one OFT read per view** (or a **pre-joined** Feature View registered for online) — see the Implementation Guide — multi-FV online reads.
 
@@ -520,9 +563,19 @@ sfr_refresh_feature_view(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
 sfr_get_refresh_history(fs, "CUSTOMER_ONLINE", "v1", store_type = "ONLINE")
 ```
 
-### Retrieve values — SQL on the Online Feature Table
+### Retrieve values — SQL or dbplyr on the Online Feature Table
 
-The OFT is a queryable table in your Feature Store schema (naming is managed by the platform — often a `*_OFT` suffix). Discover the exact name in **Snowsight** (Feature Store UI) or metadata commands, then query like any Hybrid Table:
+The OFT is a queryable **Hybrid Table** in your Feature Store schema (naming is managed by the platform — often a `*_OFT` suffix). Discover the exact name in **Snowsight** (Feature Store UI) or metadata commands.
+
+::: {.callout-warning}
+## Prefer the Feature Store API for serving
+
+For low-latency key lookup, **`sfr_read_feature_view(..., store_type = "ONLINE")`** is the supported path (batch keys in one call). Direct SQL or dbplyr against the OFT is useful for **warehouse-side joins**, debugging, or services that already speak RSnowflake — not as a substitute for the online API in high-QPS serving tiers.
+:::
+
+::: {.panel-tabset group="fs-oft-read"}
+
+##### SQL
 
 ```sql
 -- Illustrative: replace with your FS database.schema and OFT name
@@ -531,7 +584,19 @@ FROM MY_ML_DB.FEATURE_STORE.CUSTOMER_ONLINE_OFT
 WHERE customer_id IN ('C001', 'C002', 'C003');
 ```
 
-From R with **RSnowflake** (no Feature Store API — useful for SQL-only services or joins in the warehouse):
+##### dbplyr
+
+```r
+library(dplyr)
+
+oft <- tbl(con, in_schema("FEATURE_STORE", "CUSTOMER_ONLINE_OFT")) |>
+  filter(CUSTOMER_ID %in% c("C001", "C002", "C003")) |>
+  select(CUSTOMER_ID, CREDIT_SCORE)
+
+features <- oft |> collect()
+```
+
+##### R (DBI + bind)
 
 ```r
 library(DBI)
@@ -545,13 +610,17 @@ features <- dbGetQuery(con, "
 ", params = list("C001"))
 ```
 
-Use **bind parameters** (`?`) for high-QPS serving so Snowflake can reuse plans ([Implementation Guide — parameter binding](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html#sec-8-9-4-parameter-binding)).
+:::
+
+Use **bind parameters** (`?`) for repeated lookups so Snowflake can reuse plans ([Implementation Guide — parameter binding](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/08_online_features/index.html#sec-8-9-4-parameter-binding)).
 
 ::: {.callout-note}
 ## Offline vs online retrieval
 
 - **Training / point-in-time:** spine + `sfr_generate_training_data()` or `sfr_retrieve_features()` with `spine_timestamp_col` → **offline** store only.
-- **Real-time scoring:** `sfr_read_feature_view(..., ONLINE)` or **SQL** against the OFT → **latest** values per key, bounded by `target_lag`.
+- **Batch inference (latest):** `sfr_retrieve_features()` without `spine_timestamp_col` → current offline values per key.
+- **Batch inference (ASOF):** `sfr_retrieve_features(..., spine_timestamp_col = ...)` → features as-of each spine row ([Inference-time features](#sec-inference)).
+- **Real-time scoring:** `sfr_read_feature_view(..., ONLINE)` or SQL/dbplyr on the OFT → **latest** values per key, bounded by `target_lag`.
 :::
 
 ---

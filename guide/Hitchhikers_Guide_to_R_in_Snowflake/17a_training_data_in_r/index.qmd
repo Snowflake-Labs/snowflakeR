@@ -17,7 +17,7 @@ It complements [Feature Store](../17_feature_store/index.qmd) (catalog and train
 
 ### Scalars first, semi-structured when you need them {#sec-scalar-vs-semi}
 
-**Most training workloads use ordinary scalar columns** — one Snowflake column per feature, point-in-time join via `sfr_generate_training_data()`, read with RSnowflake + ADBC as native R types ([Pipeline A](#sec-pipeline-a)). That is the default and works well for **up to a few hundred columns** after multi–Feature View joins.
+**Use scalar columns:** Most Feature Views and training data sets use ordinary scalar columns, one Snowflake column per feature, point-in-time join via `sfr_generate_training_data()`, read with RSnowflake + ADBC as native R types ([Pipeline A](#sec-pipeline-a)). That is the default and works well for **up to a few hundred columns** after multi–Feature View joins.
 
 **Use OBJECT, ARRAY, or VECTOR when:**
 

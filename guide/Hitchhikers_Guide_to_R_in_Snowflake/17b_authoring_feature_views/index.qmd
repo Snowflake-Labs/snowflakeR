@@ -5,7 +5,7 @@ subtitle: "SQL and dbplyr patterns from simple aggregates to wide and temporal f
 
 ## Overview
 
-This chapter covers **defining features on the warehouse** and registering them as Feature Views from R — the step *before* materializing training data or reading into R.
+This chapter covers **defining features on the Snowflake warehouse** and registering them as Feature Views from R — the step *before* materializing training data or reading into R.
 
 The snowflakeR Feature Store trilogy in this guide:
 
@@ -15,148 +15,662 @@ The snowflakeR Feature Store trilogy in this guide:
 | **Authoring Feature Views** (this chapter) | How do I write the SQL or dbplyr that *produces* features? |
 | [Training Data in R](../17a_training_data_in_r/index.qmd) | After `save_as` / export, how do I get OBJECT/ARRAY/VECTOR into R efficiently? |
 
-::: {.callout-note}
-## Draft outline
-
-This chapter is a **scoped outline** — section structure and cross-links are stable; worked SQL/dbplyr examples will be added incrementally. Until then, use [Feature Store — Feature views](../17_feature_store/index.qmd#sec-views), the [`feature-store` vignette](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html), and the [Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) for full examples.
-:::
+Sources can be any **tabular object** (table, view, Dynamic Table, dbt output). The `feature_df` you register may **pass through** that source, **transform** it in SQL/dbplyr, or combine both — see [Feature Store — Architecture](../17_feature_store/index.qmd#sec-architecture).
 
 Platform background on hybrid OBJECT payloads, compile cost, and sparse arrays: [Implementation Guide — Advanced patterns §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse).
 
-## Learning Objectives
+### SQL and dbplyr tabs {#sec-sql-dplyr-tabs}
 
-When this chapter is complete, you will be able to:
+Examples use **SQL** and **dbplyr** tabs (`group="fe-sql-dplyr"`) — the same pattern as [RSnowflake: Query](../13_rsnowflake_query/index.qmd#sec-dbplyr) and [Training Data in R](../17a_training_data_in_r/index.qmd#sec-sql-dplyr-tabs). Use **dbplyr** when you already work in R with `tbl()`; use **SQL** when you share DDL with other teams or generate views from a manifest.
+
+## Learning Objectives
 
 - Choose managed vs external Feature Views and draft-then-register vs one-step creation
 - Author entity-level aggregates in SQL and dbplyr as `feature_df`
 - Add event-level features with `timestamp_col` for point-in-time joins
-- Build rolling / tile aggregates with `sfr_feature()` and `feature_granularity`
-- Compose multi-step feature SQL with dbplyr `compute()` ([RSnowflake Query](../13_rsnowflake_query/index.qmd#sec-etl-temp))
-- Register OBJECT and ARRAY bundles for wide feature sets ([RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr))
-- Know when to defer to the [Implementation Guide — Temporal features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html) for advanced patterns
+- Build **rollup Feature Views** with `sfr_feature()` and `feature_granularity`
+- Explain when **OBJECT / ARRAY bundles** beat wide scalar columns
+- Compose multi-step feature SQL with dbplyr `compute()`
+- Validate lazy pipelines before registration
 
 ## Prerequisites
 
 - [Feature Store — Setup](../17_feature_store/index.qmd#sec-setup) and at least one [entity](../17_feature_store/index.qmd#sec-entities)
-- RSnowflake + dbplyr for lazy `feature_df` pipelines ([RSnowflake: Query](../13_rsnowflake_query/index.qmd))
-- Optional: [`workspace_feature_store.ipynb`](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/workspace_feature_store.ipynb) for a runnable Workspace walkthrough
+- RSnowflake + dbplyr ([RSnowflake: Query](../13_rsnowflake_query/index.qmd))
+- Optional: [`workspace_feature_store.ipynb`](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/workspace_feature_store.ipynb)
+
+### Shared setup
+
+```r
+library(snowflakeR)
+library(dplyr)
+
+conn <- sfr_connect()
+fs   <- sfr_feature_store(conn, database = "MY_DB", schema = "ML", warehouse = "ML_WH")
+
+customer <- sfr_create_entity(fs, "CUSTOMER", "CUSTOMER_ID", desc = "Customer entity")
+con      <- sfr_dbi_connection(conn)   # RSnowflake DBI handle for dbplyr
+```
 
 ---
 
 ## Progression: simple → complex {#sec-progression}
 
-| Stage | Feature shape | Registration hook | Planned section |
-|-------|---------------|-------------------|-----------------|
-| 1 | One row per entity; scalar columns | SQL or dbplyr `summarise()` | [§Entity aggregates](#sec-entity-aggregates) |
-| 2 | You maintain the table (dbt/ETL) | External view, no `refresh_freq` | [§External views](#sec-external-views) |
-| 3 | One row per entity per event time | `timestamp_col` | [§Event-level features](#sec-event-level) |
-| 4 | Rolling sums / counts over time windows | `sfr_feature()`, `feature_granularity` | [§Tile and window aggregates](#sec-tile-windows) |
-| 5 | Multi-step rollups, joins, windows | dbplyr + `compute()` temp tables | [§Multi-step pipelines](#sec-multi-step) |
-| 6 | Hundreds of features | OBJECT / ARRAY / typed packs | [§Wide and sparse bundles](#sec-wide-bundles) |
+| Stage | Feature shape | Registration hook | Section |
+|-------|---------------|-------------------|---------|
+| 1 | One row per entity; scalar columns | SQL or dbplyr `summarise()` | [Entity aggregates](#sec-entity-aggregates) |
+| 2 | You maintain the table (dbt/ETL) | External view, no `refresh_freq` | [External views](#sec-external-views) |
+| 3 | One row per entity per event time | `timestamp_col` | [Event-level features](#sec-event-level) |
+| 4 | Rollup / tiled aggregates over event time | `features`, `feature_granularity` | [Rollup and tiled Feature Views](#sec-rollup-tiles) |
+| 5 | Multi-step rollups, joins, windows | dbplyr + `compute()` | [Multi-step pipelines](#sec-multi-step) |
+| 6 | Hundreds of features | OBJECT / ARRAY / typed packs | [Wide and sparse bundles](#sec-wide-bundles) |
 
-After registration, continue with [Feature Store — Generate training data](../17_feature_store/index.qmd#sec-training) and [Training Data in R](../17a_training_data_in_r/index.qmd).
+After registration: [Generate training data](../17_feature_store/index.qmd#sec-training) → [Training Data in R](../17a_training_data_in_r/index.qmd).
+
+---
+
+## Registration patterns {#sec-registration}
+
+| Pattern | API | When |
+|---------|-----|------|
+| **One-step** | `sfr_create_feature_view(fs, ..., version = "v1")` | Fastest path; draft + register in one call |
+| **Draft then register** | `sfr_feature_view()` → `sfr_register_feature_view()` | Inspect draft metadata before materializing |
+| **Managed** | `refresh_freq = "1 hour"` (etc.) | Feature Store maintains backing Dynamic Table |
+| **External** | omit `refresh_freq` | dbt/ETL owns the physical table; FS registers metadata |
+
+Both **`feature_df`** forms work everywhere below:
+
+- **SQL string** — passed to Snowflake as-is
+- **dbplyr lazy table** — translated to SQL at registration (no `collect()` first)
 
 ---
 
 ## Entity-level aggregates {#sec-entity-aggregates}
 
-**Goal:** One feature row per entity (e.g. `customer_id`) — `AVG(order_total)`, `COUNT(*)`, `MAX(order_date)`.
+**One feature row per entity** — classic customer rollups: `AVG(order_total)`, `COUNT(*)`, `MAX(order_date)`. Entity keys must match your [entity definition](../17_feature_store/index.qmd#sec-entities).
 
-**Planned content:**
+### Managed view — SQL
 
-- SQL `feature_df` string with `GROUP BY` entity key
-- Equivalent dbplyr: `tbl()` → `group_by()` → `summarise()` → `sfr_create_feature_view(..., feature_df = lazy_tbl)`
-- Managed view with `refresh_freq` vs one-step `sfr_create_feature_view()`
-- Draft workflow: `sfr_feature_view()` → inspect → `sfr_register_feature_view()`
+::: {.panel-tabset group="fe-sql-dplyr"}
 
-**Existing examples today:** [Feature Store — Managed views](../17_feature_store/index.qmd#sec-views), [Feature Store — dbplyr as feature_df](../17_feature_store/index.qmd#sec-views), vignette [`feature-store`](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html).
+##### SQL
+
+```sql
+-- Backing logic for Feature View CUSTOMER_FEATURES v1
+SELECT
+  customer_id,
+  AVG(order_total)   AS avg_order_total,
+  COUNT(*)           AS order_count,
+  MAX(order_date)    AS last_order_date
+FROM analytics.orders
+GROUP BY customer_id;
+```
+
+##### snowflakeR (one-step)
+
+```r
+fv <- sfr_create_feature_view(
+  fs,
+  name         = "CUSTOMER_FEATURES",
+  version      = "v1",
+  entities     = customer,
+  feature_df   = "
+    SELECT customer_id,
+           AVG(order_total) AS avg_order_total,
+           COUNT(*) AS order_count,
+           MAX(order_date) AS last_order_date
+    FROM analytics.orders
+    GROUP BY customer_id
+  ",
+  refresh_freq = "1 hour",
+  desc         = "Customer order aggregates"
+)
+```
+
+##### dbplyr
+
+```r
+customer_features <- tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
+  group_by(CUSTOMER_ID) |>
+  summarise(
+    avg_order_total = mean(ORDER_TOTAL, na.rm = TRUE),
+    order_count     = n(),
+    last_order_date = max(ORDER_DATE, na.rm = TRUE),
+    .groups         = "drop"
+  )
+
+fv <- sfr_create_feature_view(
+  fs,
+  name         = "CUSTOMER_FEATURES_DBPLYR",
+  version      = "v1",
+  entities     = customer,
+  feature_df   = customer_features,
+  refresh_freq = "1 hour"
+)
+```
+
+:::
+
+### Draft then register
+
+Useful when you want to inspect the draft object before Snowflake materializes the backing table:
+
+```r
+fv_draft <- sfr_feature_view(
+  name         = "CUSTOMER_FEATURES",
+  entities     = customer,
+  feature_df   = "
+    SELECT customer_id, AVG(order_total) AS avg_order_total
+    FROM analytics.orders GROUP BY 1
+  ",
+  refresh_freq = "1 hour"
+)
+
+fv <- sfr_register_feature_view(fs, fv_draft, version = "v1")
+```
+
+Preview generated SQL from dbplyr before registering:
+
+```r
+customer_features |> show_query()
+```
 
 ---
 
 ## External views {#sec-external-views}
 
-**Goal:** Register metadata over a table your pipeline already maintains — no Dynamic Table refresh from Feature Store.
+When **dbt**, a standalone Dynamic Table, or another ETL job already maintains the feature table, register a **pass-through** Feature View — Feature Store holds metadata and lineage; **you** own refresh.
 
-**Planned content:**
+::: {.panel-tabset group="fe-sql-dplyr"}
 
-- Omit `refresh_freq`; point `feature_df` at dbt/ETL output
-- Timestamp column on external tables for point-in-time correctness
-- When external + managed views compose in one training join
+##### SQL
 
-**Existing examples today:** [Feature Store — External views](../17_feature_store/index.qmd#sec-views).
+```sql
+-- Pass-through: no transform, external pipeline owns rows
+SELECT customer_id, age_band, region, updated_at
+FROM analytics.customer_demographics;
+```
+
+##### snowflakeR
+
+```r
+fv_demo <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_DEMOGRAPHICS",
+  version    = "v1",
+  entities   = customer,
+  feature_df = "
+    SELECT customer_id, age_band, region, updated_at
+    FROM analytics.customer_demographics
+  ",
+  timestamp_col = "updated_at"   # required for correct ASOF if values change over time
+)
+```
+
+##### dbplyr
+
+```r
+fv_demo <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_DEMOGRAPHICS",
+  version    = "v1",
+  entities   = customer,
+  feature_df = tbl(con, in_schema("ANALYTICS", "CUSTOMER_DEMOGRAPHICS")) |>
+    select(CUSTOMER_ID, AGE_BAND, REGION, UPDATED_AT),
+  timestamp_col = "UPDATED_AT"
+)
+```
+
+:::
+
+**Timestamp on external tables:** if rows can change over time, set `timestamp_col` to a column your ETL updates whenever feature values change. Stale timestamps cause **future leakage** at ASOF join time — the store thinks old values were valid longer than they were.
+
+**Hybrid:** pass-through from a maintained table plus SQL enrich in the same `feature_df`:
+
+```sql
+SELECT
+  d.customer_id,
+  d.region,
+  OBJECT_CONSTRUCT(
+    'avg_spend', o.avg_order_total,
+    'n_orders',  o.order_count
+  ) AS feature_object
+FROM analytics.customer_demographics d
+JOIN analytics.customer_order_rollups o USING (customer_id);
+```
+
+Register with `timestamp_col` on the driving table if either side is time-varying.
 
 ---
 
 ## Event-level features {#sec-event-level}
 
-**Goal:** Features that change over time — activity logs, session metrics — with correct ASOF joins at training time.
+When features **change over time** (activity logs, sessions, transactions as events), the offline store holds **one row per entity per timestamp** — not one row per entity. Set **`timestamp_col`** so training and inference ASOF joins pick values known at each spine row.
 
-**Planned content:**
+| Shape | Rows per customer | `timestamp_col` | Training join |
+|-------|-------------------|-----------------|---------------|
+| Entity aggregate | 1 | optional / NULL | Latest or snapshot semantics |
+| Event-level | many | **required** | ASOF on `spine_timestamp_col` |
 
-- `timestamp_col` on the Feature View
-- Spine `spine_timestamp_col` alignment
-- Contrast with entity-level aggregates (latest value vs history)
+::: {.panel-tabset group="fe-sql-dplyr"}
 
-**Existing examples today:** [Feature Store — Time-series features](../17_feature_store/index.qmd#sec-views), [Feature Store — Point-in-time join](../17_feature_store/index.qmd#sec-pit).
+##### SQL
 
-**Platform depth:** [Implementation Guide — Temporal features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html).
+```sql
+SELECT
+  customer_id,
+  event_ts,
+  page_views,
+  clicks
+FROM analytics.customer_activity;
+```
+
+##### snowflakeR
+
+```r
+fv_activity <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ACTIVITY",
+  version       = "v1",
+  entities      = customer,
+  feature_df    = "
+    SELECT customer_id, event_ts, page_views, clicks
+    FROM analytics.customer_activity
+  ",
+  timestamp_col = "event_ts",
+  refresh_freq  = "30 minutes"
+)
+```
+
+##### dbplyr
+
+```r
+fv_activity <- sfr_create_feature_view(
+  fs,
+  name          = "CUSTOMER_ACTIVITY",
+  version       = "v1",
+  entities      = customer,
+  feature_df    = tbl(con, in_schema("ANALYTICS", "CUSTOMER_ACTIVITY")) |>
+    select(CUSTOMER_ID, EVENT_TS, PAGE_VIEWS, CLICKS),
+  timestamp_col = "EVENT_TS",
+  refresh_freq  = "30 minutes"
+)
+```
+
+:::
+
+**Spine alignment:** training spines must use the same timestamp semantics — `spine_timestamp_col` in `sfr_generate_training_data()` matches the view's `timestamp_col`. See [Feature Store — Point-in-time join](../17_feature_store/index.qmd#sec-pit).
+
+For advanced temporal patterns (lags, session windows, sequence features), see the [Implementation Guide — Temporal features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html).
 
 ---
 
-## Tile and window aggregates {#sec-tile-windows}
+## Rollup and tiled Feature Views {#sec-rollup-tiles}
 
-**Goal:** Rolling-window features (e.g. sum of amount over 1 hour / 1 day) without hand-writing window SQL for every feature.
+**Rollup Feature Views** let you declare **aggregates over lookback windows** on event-level source data. Snowflake tiles events at `feature_granularity` and maintains rollups on refresh — you do not hand-write a separate window function for every feature.
 
-**Planned content:**
+Use when you need rolling **SUM / AVG / COUNT** over fixed windows (e.g. 1 hour, 1 day, 7 days) on a stream of events.
 
-- `sfr_feature(name, dtype, agg_func, window)` list
-- `feature_granularity` and event-level source `feature_df`
-- SQL equivalent patterns with `SUM(...) OVER (...)` for readers who prefer explicit windows ([RSnowflake Query — Joins and window functions](../13_rsnowflake_query/index.qmd#sec-windows))
+### Source data
 
-**Existing examples today:** vignette [`feature-store` — Tile-based aggregation](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html) (not yet expanded in this guide chapter).
+Rollups require an **event-level** `feature_df` with `timestamp_col` — typically raw or lightly filtered events:
+
+::: {.panel-tabset group="fe-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT customer_id, event_ts, amount
+FROM analytics.transactions
+WHERE amount IS NOT NULL;
+```
+
+##### dbplyr
+
+```r
+txn_source <- tbl(con, in_schema("ANALYTICS", "TRANSACTIONS")) |>
+  filter(!is.na(AMOUNT)) |>
+  select(CUSTOMER_ID, EVENT_TS, AMOUNT)
+```
+
+:::
+
+### Declare rollup features
+
+Each `sfr_feature()` names a **source column**, **dtype**, **aggregation**, and **lookback window**:
+
+```r
+rollup_feats <- list(
+  sfr_feature("AMOUNT", "FLOAT", agg = "SUM", window = "1 hour"),
+  sfr_feature("AMOUNT", "FLOAT", agg = "AVG", window = "1 day"),
+  sfr_feature("AMOUNT", "FLOAT", agg = "SUM", window = "7 day")
+)
+
+fv_txn_rollup <- sfr_create_feature_view(
+  fs,
+  name                = "TXN_ROLLUPS",
+  version             = "v1",
+  entities            = customer,
+  feature_df          = "
+    SELECT customer_id, event_ts, amount
+    FROM analytics.transactions
+  ",
+  features            = rollup_feats,
+  feature_granularity = "1 DAY",
+  timestamp_col       = "event_ts",
+  refresh_freq        = "1 hour"
+)
+```
+
+| Argument | Role |
+|----------|------|
+| `features` | List of `sfr_feature()` — column, dtype, agg func, window string |
+| `feature_granularity` | Tile size for the rollup engine (e.g. `"1 DAY"`, `"1 HOUR"`) |
+| `timestamp_col` | Event time column in source data |
+| `refresh_freq` | Managed refresh schedule |
+
+### Rollups vs hand-written windows
+
+| Approach | Best for |
+|----------|----------|
+| **Rollup Feature View** (`sfr_feature` + `feature_granularity`) | Standard rolling agg/count over fixed windows on event streams |
+| **SQL `OVER (...)` / dbplyr windows** | Custom frame bounds, `ROW_NUMBER`, joins, non-standard logic — [Multi-step pipelines](#sec-multi-step), [RSnowflake Query — windows](../13_rsnowflake_query/index.qmd#sec-windows) |
+| **Entity-level `GROUP BY`** | Lifetime aggregates with no time dimension — [Entity aggregates](#sec-entity-aggregates) |
 
 ---
 
 ## Multi-step feature pipelines {#sec-multi-step}
 
-**Goal:** Break complex feature logic into named warehouse steps instead of one nested query or R-side `collect()`.
+Complex features often need **named intermediate tables** — daily rollups before 90-day sums, joins across sources, or window filters. Build the pipeline with dbplyr + `compute()` on the warehouse, then pass the **final lazy table** as `feature_df`.
 
-**Planned content:**
+::: {.panel-tabset group="fe-sql-dplyr"}
 
-- Step 1: daily rollups → `compute(temporary = TRUE)`
-- Step 2: 90-day aggregates from temp table
-- Register the **final** lazy table or view SQL as `feature_df`
-- `show_query()` before registration
+##### SQL
 
-**Existing examples today:** [RSnowflake Query — Multi-step ETL](../13_rsnowflake_query/index.qmd#sec-etl-temp) (generic dbplyr; Feature Store registration glue to be added here).
+```sql
+CREATE TEMPORARY TABLE daily_orders_tmp AS
+SELECT
+  customer_id,
+  order_date,
+  COUNT(*)    AS n_orders,
+  SUM(amount) AS revenue
+FROM analytics.orders
+WHERE order_date >= '2024-01-01'
+GROUP BY customer_id, order_date;
+
+CREATE TEMPORARY TABLE customer_90d_tmp AS
+SELECT
+  customer_id,
+  SUM(n_orders)  AS orders_90d,
+  SUM(revenue)   AS revenue_90d,
+  SUM(revenue) / NULLIF(SUM(n_orders), 0) AS avg_order_90d
+FROM daily_orders_tmp
+GROUP BY customer_id;
+
+-- Register customer_90d_tmp logic as feature_df (permanent view in practice)
+SELECT * FROM customer_90d_tmp;
+```
+
+##### dbplyr
+
+```r
+orders <- tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
+  filter(ORDER_DATE >= "2024-01-01")
+
+daily <- orders |>
+  group_by(CUSTOMER_ID, ORDER_DATE) |>
+  summarise(
+    n_orders = n(),
+    revenue  = sum(AMOUNT, na.rm = TRUE),
+    .groups  = "drop"
+  ) |>
+  compute(name = "daily_orders_tmp", temporary = TRUE)
+
+customer_90d <- daily |>
+  group_by(CUSTOMER_ID) |>
+  summarise(
+    orders_90d    = sum(n_orders),
+    revenue_90d   = sum(revenue),
+    avg_order_90d = sum(revenue) / sum(n_orders),
+    .groups       = "drop"
+  )
+
+customer_90d |> show_query()
+
+fv_90d <- sfr_create_feature_view(
+  fs,
+  name         = "CUSTOMER_90D_ROLLUPS",
+  version      = "v1",
+  entities     = customer,
+  feature_df   = customer_90d,
+  refresh_freq = "1 hour"
+)
+```
+
+:::
+
+For production, prefer **permanent** tables or views (`temporary = FALSE`, fully qualified names) when the intermediate must survive beyond the session. See [RSnowflake Query — Multi-step ETL](../13_rsnowflake_query/index.qmd#sec-etl-temp).
 
 ---
 
 ## Wide and sparse bundles {#sec-wide-bundles}
 
-**Goal:** Avoid thousand-column Feature Views — pack features into OBJECT or typed ARRAY columns.
+When feature count reaches **hundreds or thousands**, wide scalar Feature Views become expensive to compile, join, and export. Pack features into **OBJECT** or typed **ARRAY** columns; keep entity keys (and usually `timestamp_col`) as scalars.
 
-**Planned content:**
+### Why bundles vs wide scalars
 
-- `OBJECT_CONSTRUCT` / `object_agg()` in SQL and dbplyr
-- Typed `ARRAY` packs and embeddings
-- Hybrid key columns + OBJECT payload (platform pattern)
-- Link forward to training export: [Training Data in R — Pipelines B–D](../17a_training_data_in_r/index.qmd#sec-e2e-pipelines)
+| Concern | Many scalar columns | OBJECT / ARRAY bundle |
+|---------|---------------------|------------------------|
+| **Schema evolution** | New column per feature | New OBJECT key or ARRAY slot; sparse rows omit keys |
+| **SQL compile / planner** | One expression per feature | Few physical columns |
+| **Multi–Feature View joins** | Width grows with `auto_prefix` | Pack per view; flatten at export |
+| **Embeddings** | Impractical | ARRAY / VECTOR packs |
 
-**Existing examples today:** [Feature Store — Wide and sparse](../17_feature_store/index.qmd#sec-wide-sparse), [RSnowflake Query — Semi-structured dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr), [Implementation Guide §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse).
+Bundles are an **authoring** choice. Reads may flatten in SQL ([Extract in Snowflake](../17a_training_data_in_r/index.qmd#sec-sql-extract)) or stay packed ([Pipelines B–C](../17a_training_data_in_r/index.qmd#sec-e2e-pipelines)).
+
+### Fixed keys — `OBJECT_CONSTRUCT`
+
+When feature names are **known at registration time**:
+
+::: {.panel-tabset group="fe-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT
+  customer_id,
+  OBJECT_CONSTRUCT(
+    'avg_spend', AVG(order_total),
+    'n_orders',  COUNT(*),
+    'last_order', MAX(order_date)
+  ) AS feature_object
+FROM analytics.orders
+GROUP BY customer_id;
+```
+
+##### snowflakeR
+
+```r
+fv_obj <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_FEATURES_OBJECT",
+  version    = "v1",
+  entities   = customer,
+  feature_df = "
+    SELECT customer_id,
+           OBJECT_CONSTRUCT(
+             'avg_spend', AVG(order_total),
+             'n_orders',  COUNT(*)
+           ) AS feature_object
+    FROM analytics.orders
+    GROUP BY customer_id
+  ",
+  refresh_freq = "1 hour"
+)
+```
+
+##### dbplyr
+
+```r
+bundled <- tbl(con, in_schema("ANALYTICS", "ORDERS")) |>
+  group_by(CUSTOMER_ID) |>
+  summarise(
+    feature_object = sql("OBJECT_CONSTRUCT(
+      'avg_spend', AVG(order_total),
+      'n_orders',  COUNT(*)
+    )"),
+    .groups = "drop"
+  )
+
+fv_obj <- sfr_create_feature_view(
+  fs,
+  name       = "CUSTOMER_FEATURES_OBJECT",
+  version    = "v1",
+  entities   = customer,
+  feature_df = bundled,
+  refresh_freq = "1 hour"
+)
+```
+
+:::
+
+### Dynamic keys — `OBJECT_AGG` from long/narrow source
+
+When features arrive as **name/value pairs** (one row per entity per feature):
+
+::: {.panel-tabset group="fe-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT
+  entity_id,
+  OBJECT_AGG(feature_name, feature_value) AS feature_object
+FROM feature_store.entity_features_long
+GROUP BY entity_id;
+```
+
+##### dbplyr
+
+```r
+bundled <- tbl(con, in_schema("FEATURE_STORE", "ENTITY_FEATURES_LONG")) |>
+  group_by(ENTITY_ID) |>
+  summarise(
+    FEATURE_OBJECT = object_agg(FEATURE_NAME, FEATURE_VALUE),
+    .groups = "drop"
+  )
+```
+
+:::
+
+See [RSnowflake Query — OBJECT bundles](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr) for `object_agg()` / `array_agg()` details.
+
+### Hybrid: scalar keys + OBJECT payload
+
+Keep join keys and timestamps as columns; pack evolving features into OBJECT ([Implementation Guide §12.10.4](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-4-hybrid-storage-key-columns--object-payload)):
+
+```sql
+SELECT
+  customer_id,
+  event_ts,
+  OBJECT_CONSTRUCT(
+    'page_views', page_views,
+    'clicks',     clicks
+  ) AS activity_object
+FROM analytics.customer_activity;
+```
+
+Register with `timestamp_col = "event_ts"` for ASOF training.
+
+### Typed ARRAY packs (embeddings)
+
+For fixed-length numeric vectors (embeddings, slot-based features):
+
+::: {.panel-tabset group="fe-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT
+  product_id,
+  embedding_arr   -- ARRAY(FLOAT) column built upstream
+FROM analytics.product_embeddings;
+```
+
+##### snowflakeR
+
+```r
+fv_emb <- sfr_create_feature_view(
+  fs,
+  name       = "PRODUCT_EMBEDDINGS",
+  version    = "v1",
+  entities   = product,   # sfr_create_entity(fs, "PRODUCT", "PRODUCT_ID")
+  feature_df = "SELECT product_id, embedding_arr FROM analytics.product_embeddings"
+)
+```
+
+:::
+
+Export and decode paths: [Training Data in R — Pipeline C](../17a_training_data_in_r/index.qmd#sec-pipeline-c).
+
+### Feature manifest
+
+Maintain a small manifest (CSV or table) mapping OBJECT keys or ARRAY indices to model input names — used when flattening for training ([Training Data in R — Pipeline D](../17a_training_data_in_r/index.qmd#sec-pipeline-d)) or when building VECTOR export SQL ([Pipeline B](../17a_training_data_in_r/index.qmd#sec-pipeline-b)).
 
 ---
 
 ## Validate before register {#sec-validate}
 
-**Goal:** Catch schema and key issues before materializing a Dynamic Table.
+Catch schema and key issues **before** Snowflake materializes a managed Dynamic Table.
 
-**Planned content:**
+### Preview lazy SQL
 
-- `head()` / `count()` on lazy `feature_df` via RSnowflake
-- Entity key uniqueness checks in SQL
-- Column naming for `auto_prefix` multi-view joins
-- `sfr_describe_feature_view()` after registration
+```r
+customer_features |> show_query()
+customer_features |> head(10) |> collect()   # small sample only
+```
+
+### Entity key uniqueness
+
+Entity-level views should have **at most one row per entity key** (unless using event-level + `timestamp_col`):
+
+::: {.panel-tabset group="fe-sql-dplyr"}
+
+##### SQL
+
+```sql
+SELECT customer_id, COUNT(*) AS n
+FROM (
+  SELECT customer_id, AVG(order_total) AS avg_order_total
+  FROM analytics.orders GROUP BY 1
+) q
+GROUP BY customer_id
+HAVING COUNT(*) > 1;
+```
+
+##### dbplyr
+
+```r
+customer_features |>
+  count(CUSTOMER_ID) |>
+  filter(n > 1L) |>
+  collect()
+```
+
+:::
+
+Non-empty results mean duplicate keys — fix `GROUP BY` or add `timestamp_col` for event grain.
+
+### After registration
+
+```r
+sfr_describe_feature_view(fs, "CUSTOMER_FEATURES", "v1")
+sfr_read_feature_view(fs, "CUSTOMER_FEATURES", "v1") |> head()
+```
+
+### Multi-view training joins
+
+When several views join into one training set, enable **`auto_prefix = TRUE`** in `sfr_generate_training_data()` to avoid column collisions — plan short, distinct feature column names at authoring time where possible.
 
 ---
 
@@ -165,4 +679,5 @@ After registration, continue with [Feature Store — Generate training data](../
 - [Feature Store](../17_feature_store/index.qmd) — entities, training generation, inference, online serving  
 - [Training Data in R](../17a_training_data_in_r/index.qmd) — read materialized training into R (ADBC, VECTOR, pipelines)  
 - [RSnowflake: Query](../13_rsnowflake_query/index.qmd) — dbplyr push-down, windows, `compute()`  
-- [Model Registry](../18_model_registry/index.qmd) — lineage from `sfr_generate_dataset()`
+- [Model Registry](../18_model_registry/index.qmd) — lineage from `sfr_generate_dataset()`  
+- Vignette [`feature-store`](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html) — full API reference including advanced registration options
