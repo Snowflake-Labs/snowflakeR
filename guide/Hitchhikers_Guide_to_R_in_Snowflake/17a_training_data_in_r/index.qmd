@@ -1,19 +1,19 @@
 ---
-title: "Feature Engineering with R"
-subtitle: "Feature Store training exports, semi-structured types, and ADBC read paths"
+title: "Training Data in R"
+subtitle: "Reading Feature Store exports — semi-structured types and ADBC paths"
 ---
 
 ## Overview
 
-This chapter covers **getting Feature Store training data into R** for modeling. It is organized in three layers:
+This chapter covers **getting Feature Store training data into R** for modeling — not authoring Feature Views (see [Authoring Feature Views](../17b_authoring_feature_views/index.qmd)). It is organized in three layers:
 
 1. **Materialize** — Feature Store joins (`save_as`, Datasets) and RSnowflake read transport (ADBC vs SQL API).
 2. **Read techniques** — flatten in Snowflake, unpack Arrow list columns in R, or parse JSON as a fallback; plus VECTOR layout reference.
 3. **End-to-end pipelines (A–E)** — recipes that combine materialization + read technique for each feature shape (scalar, wide scalar, ARRAY, OBJECT, Python decode).
 
-Start with [Feature Store training data in R](#sec-feature-store-read) if you are new to exports; jump to [Choose a pipeline](#sec-e2e-pipelines) if features are already defined and you need a full workflow.
+Start with [Feature Store training data in R](#sec-feature-store-read) if you are new to exports. Author features first in [Authoring Feature Views](../17b_authoring_feature_views/index.qmd); jump to [Choose a pipeline](#sec-e2e-pipelines) if views are already registered.
 
-It complements [Feature Store](../17_feature_store/index.qmd) (registration, spines, `sfr_generate_training_data()`) and [RSnowflake: Query](../13_rsnowflake_query/index.qmd) (dbplyr push-down, `compute()`, bulk I/O).
+It complements [Feature Store](../17_feature_store/index.qmd) (catalog and training APIs), [Authoring Feature Views](../17b_authoring_feature_views/index.qmd) (warehouse SQL/dbplyr for `feature_df`), and [RSnowflake: Query](../13_rsnowflake_query/index.qmd) (dbplyr push-down, `compute()`, bulk I/O).
 
 ### Scalars first, semi-structured when you need them {#sec-scalar-vs-semi}
 
@@ -28,7 +28,7 @@ It complements [Feature Store](../17_feature_store/index.qmd) (registration, spi
 | **Ultra-wide or sparse result sets** | Store present values only; carry null masks; decode on the client |
 | **Embeddings** | ARRAY or VECTOR instead of one column per dimension ([Pipeline C](#sec-pipeline-c)) |
 
-For platform background (hybrid OBJECT payloads, compile cost, sparse arrays, DT cascades), read the **[Feature Store Implementation Guide — Advanced patterns §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse)** — especially [§12.10.3 Semi-structured types in Feature Views](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-3-semi-structured-types-in-feature-views) and [§12.10.4 Hybrid storage](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-4-hybrid-storage-key-columns--object-payload). Registration patterns from R are in [Feature Store §Wide and sparse](../17_feature_store/index.qmd#sec-wide-sparse). **This chapter** focuses on **export into R** once features are defined.
+For **authoring** features (SQL/dbplyr `feature_df`, simple through wide/temporal), see [Authoring Feature Views](../17b_authoring_feature_views/index.qmd). For platform background (hybrid OBJECT payloads, compile cost, sparse arrays, DT cascades), read the **[Feature Store Implementation Guide — Advanced patterns §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse)** — especially [§12.10.3 Semi-structured types in Feature Views](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-3-semi-structured-types-in-feature-views) and [§12.10.4 Hybrid storage](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-12-10-4-hybrid-storage-key-columns--object-payload). **This chapter** focuses on **reading materialized training data into R** once Feature Views exist.
 
 ### SQL and dbplyr tabs {#sec-sql-dplyr-tabs}
 
@@ -51,6 +51,7 @@ Warehouse logic appears as **SQL** or **dbplyr** (RSnowflake lazy tables) wherev
 |-------|----------|---------------------|
 | **Transport** | [Semi-structured in R](#sec-semi-structured-read), [ADBC setup](#sec-adbc-semistructured) | What column types do I get over SQL API vs ADBC? |
 | **Materialize** | [Feature Store training data](#sec-feature-store-read) | How does data leave Feature Store (`save_as`, Dataset, direct SQL)? |
+| **Author** | [Authoring Feature Views](../17b_authoring_feature_views/index.qmd) | How do I define `feature_df` SQL/dbplyr before export? |
 | **Read techniques** | [Extract in Snowflake](#sec-sql-extract), [ADBC decode](#sec-parse-adbc), [JSON parse](#sec-parse-json), [VECTOR layout](#sec-vector) | After materialization, how do I turn OBJECT/ARRAY/VECTOR into a modeling frame? |
 | **Choose workflow** | [Wide training sets](#sec-wide-training), [Pipelines A–E](#sec-e2e-pipelines) | Which full story matches how my features are stored? |
 
@@ -220,7 +221,7 @@ See [Snowflake ML Dataset — direct file access](https://docs.snowflake.com/en/
 
 A future snowflakeR release may add **`format = "parquet"`** on dataset reads (fsspec → `arrow::read_parquet()`). Until then, assume Dataset APIs in R are **lineage- and moderate-scale-friendly**, not a substitute for a full Parquet export pipeline.
 
-**Next:** [Reading materialized training data](#sec-read-strategies) for OBJECT/ARRAY/VECTOR handling, then [Choose a pipeline](#sec-e2e-pipelines) (A–E) for full workflows.
+**Full export workflows:** [Reading materialized training data](#sec-read-strategies), then [Choose a pipeline](#sec-e2e-pipelines) (A–E). **Define features first?** [Authoring Feature Views](../17b_authoring_feature_views/index.qmd).
 
 ### Path 3 — RSnowflake only (custom SQL / dbplyr)
 
@@ -1435,6 +1436,7 @@ X <- py_to_r(py$X)
 ## Related chapters
 
 - [Feature Store](../17_feature_store/index.qmd) — entities, views, `sfr_generate_training_data()`, Datasets  
+- [Authoring Feature Views](../17b_authoring_feature_views/index.qmd) — SQL/dbplyr for `feature_df` (simple → wide/temporal)  
 - [RSnowflake: Query](../13_rsnowflake_query/index.qmd) — dbplyr, `compute()`, bulk writes  
 - [Feature Store — Wide & sparse](../17_feature_store/index.qmd#sec-wide-sparse) — OBJECT/ARRAY in views  
 - [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd) — install and enable ADBC  

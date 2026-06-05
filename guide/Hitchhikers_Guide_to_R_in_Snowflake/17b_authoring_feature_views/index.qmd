@@ -1,0 +1,168 @@
+---
+title: "Authoring Feature Views"
+subtitle: "SQL and dbplyr patterns from simple aggregates to wide and temporal features"
+---
+
+## Overview
+
+This chapter covers **defining features on the warehouse** and registering them as Feature Views from R — the step *before* materializing training data or reading into R.
+
+The snowflakeR Feature Store trilogy in this guide:
+
+| Chapter | Question |
+|---------|----------|
+| [Feature Store](../17_feature_store/index.qmd) | What is the store, and how do I register entities, join spines, and generate training? |
+| **Authoring Feature Views** (this chapter) | How do I write the SQL or dbplyr that *produces* features? |
+| [Training Data in R](../17a_training_data_in_r/index.qmd) | After `save_as` / export, how do I get OBJECT/ARRAY/VECTOR into R efficiently? |
+
+::: {.callout-note}
+## Draft outline
+
+This chapter is a **scoped outline** — section structure and cross-links are stable; worked SQL/dbplyr examples will be added incrementally. Until then, use [Feature Store — Feature views](../17_feature_store/index.qmd#sec-views), the [`feature-store` vignette](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html), and the [Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/) for full examples.
+:::
+
+Platform background on hybrid OBJECT payloads, compile cost, and sparse arrays: [Implementation Guide — Advanced patterns §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse).
+
+## Learning Objectives
+
+When this chapter is complete, you will be able to:
+
+- Choose managed vs external Feature Views and draft-then-register vs one-step creation
+- Author entity-level aggregates in SQL and dbplyr as `feature_df`
+- Add event-level features with `timestamp_col` for point-in-time joins
+- Build rolling / tile aggregates with `sfr_feature()` and `feature_granularity`
+- Compose multi-step feature SQL with dbplyr `compute()` ([RSnowflake Query](../13_rsnowflake_query/index.qmd#sec-etl-temp))
+- Register OBJECT and ARRAY bundles for wide feature sets ([RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr))
+- Know when to defer to the [Implementation Guide — Temporal features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html) for advanced patterns
+
+## Prerequisites
+
+- [Feature Store — Setup](../17_feature_store/index.qmd#sec-setup) and at least one [entity](../17_feature_store/index.qmd#sec-entities)
+- RSnowflake + dbplyr for lazy `feature_df` pipelines ([RSnowflake: Query](../13_rsnowflake_query/index.qmd))
+- Optional: [`workspace_feature_store.ipynb`](https://github.com/Snowflake-Labs/snowflakeR/blob/main/inst/notebooks/workspace_feature_store.ipynb) for a runnable Workspace walkthrough
+
+---
+
+## Progression: simple → complex {#sec-progression}
+
+| Stage | Feature shape | Registration hook | Planned section |
+|-------|---------------|-------------------|-----------------|
+| 1 | One row per entity; scalar columns | SQL or dbplyr `summarise()` | [§Entity aggregates](#sec-entity-aggregates) |
+| 2 | You maintain the table (dbt/ETL) | External view, no `refresh_freq` | [§External views](#sec-external-views) |
+| 3 | One row per entity per event time | `timestamp_col` | [§Event-level features](#sec-event-level) |
+| 4 | Rolling sums / counts over time windows | `sfr_feature()`, `feature_granularity` | [§Tile and window aggregates](#sec-tile-windows) |
+| 5 | Multi-step rollups, joins, windows | dbplyr + `compute()` temp tables | [§Multi-step pipelines](#sec-multi-step) |
+| 6 | Hundreds of features | OBJECT / ARRAY / typed packs | [§Wide and sparse bundles](#sec-wide-bundles) |
+
+After registration, continue with [Feature Store — Generate training data](../17_feature_store/index.qmd#sec-training) and [Training Data in R](../17a_training_data_in_r/index.qmd).
+
+---
+
+## Entity-level aggregates {#sec-entity-aggregates}
+
+**Goal:** One feature row per entity (e.g. `customer_id`) — `AVG(order_total)`, `COUNT(*)`, `MAX(order_date)`.
+
+**Planned content:**
+
+- SQL `feature_df` string with `GROUP BY` entity key
+- Equivalent dbplyr: `tbl()` → `group_by()` → `summarise()` → `sfr_create_feature_view(..., feature_df = lazy_tbl)`
+- Managed view with `refresh_freq` vs one-step `sfr_create_feature_view()`
+- Draft workflow: `sfr_feature_view()` → inspect → `sfr_register_feature_view()`
+
+**Existing examples today:** [Feature Store — Managed views](../17_feature_store/index.qmd#sec-views), [Feature Store — dbplyr as feature_df](../17_feature_store/index.qmd#sec-views), vignette [`feature-store`](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html).
+
+---
+
+## External views {#sec-external-views}
+
+**Goal:** Register metadata over a table your pipeline already maintains — no Dynamic Table refresh from Feature Store.
+
+**Planned content:**
+
+- Omit `refresh_freq`; point `feature_df` at dbt/ETL output
+- Timestamp column on external tables for point-in-time correctness
+- When external + managed views compose in one training join
+
+**Existing examples today:** [Feature Store — External views](../17_feature_store/index.qmd#sec-views).
+
+---
+
+## Event-level features {#sec-event-level}
+
+**Goal:** Features that change over time — activity logs, session metrics — with correct ASOF joins at training time.
+
+**Planned content:**
+
+- `timestamp_col` on the Feature View
+- Spine `spine_timestamp_col` alignment
+- Contrast with entity-level aggregates (latest value vs history)
+
+**Existing examples today:** [Feature Store — Time-series features](../17_feature_store/index.qmd#sec-views), [Feature Store — Point-in-time join](../17_feature_store/index.qmd#sec-pit).
+
+**Platform depth:** [Implementation Guide — Temporal features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html).
+
+---
+
+## Tile and window aggregates {#sec-tile-windows}
+
+**Goal:** Rolling-window features (e.g. sum of amount over 1 hour / 1 day) without hand-writing window SQL for every feature.
+
+**Planned content:**
+
+- `sfr_feature(name, dtype, agg_func, window)` list
+- `feature_granularity` and event-level source `feature_df`
+- SQL equivalent patterns with `SUM(...) OVER (...)` for readers who prefer explicit windows ([RSnowflake Query — Joins and window functions](../13_rsnowflake_query/index.qmd#sec-windows))
+
+**Existing examples today:** vignette [`feature-store` — Tile-based aggregation](https://snowflake-labs.github.io/snowflakeR/articles/feature-store.html) (not yet expanded in this guide chapter).
+
+---
+
+## Multi-step feature pipelines {#sec-multi-step}
+
+**Goal:** Break complex feature logic into named warehouse steps instead of one nested query or R-side `collect()`.
+
+**Planned content:**
+
+- Step 1: daily rollups → `compute(temporary = TRUE)`
+- Step 2: 90-day aggregates from temp table
+- Register the **final** lazy table or view SQL as `feature_df`
+- `show_query()` before registration
+
+**Existing examples today:** [RSnowflake Query — Multi-step ETL](../13_rsnowflake_query/index.qmd#sec-etl-temp) (generic dbplyr; Feature Store registration glue to be added here).
+
+---
+
+## Wide and sparse bundles {#sec-wide-bundles}
+
+**Goal:** Avoid thousand-column Feature Views — pack features into OBJECT or typed ARRAY columns.
+
+**Planned content:**
+
+- `OBJECT_CONSTRUCT` / `object_agg()` in SQL and dbplyr
+- Typed `ARRAY` packs and embeddings
+- Hybrid key columns + OBJECT payload (platform pattern)
+- Link forward to training export: [Training Data in R — Pipelines B–D](../17a_training_data_in_r/index.qmd#sec-e2e-pipelines)
+
+**Existing examples today:** [Feature Store — Wide and sparse](../17_feature_store/index.qmd#sec-wide-sparse), [RSnowflake Query — Semi-structured dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr), [Implementation Guide §12.10](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/index.html#sec-wide-sparse).
+
+---
+
+## Validate before register {#sec-validate}
+
+**Goal:** Catch schema and key issues before materializing a Dynamic Table.
+
+**Planned content:**
+
+- `head()` / `count()` on lazy `feature_df` via RSnowflake
+- Entity key uniqueness checks in SQL
+- Column naming for `auto_prefix` multi-view joins
+- `sfr_describe_feature_view()` after registration
+
+---
+
+## Related chapters {#sec-related}
+
+- [Feature Store](../17_feature_store/index.qmd) — entities, training generation, inference, online serving  
+- [Training Data in R](../17a_training_data_in_r/index.qmd) — read materialized training into R (ADBC, VECTOR, pipelines)  
+- [RSnowflake: Query](../13_rsnowflake_query/index.qmd) — dbplyr push-down, windows, `compute()`  
+- [Model Registry](../18_model_registry/index.qmd) — lineage from `sfr_generate_dataset()`

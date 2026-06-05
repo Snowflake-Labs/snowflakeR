@@ -100,7 +100,7 @@ RSnowflake detects `SNOWFLAKE_HOST` and uses the container **OAuth token** autom
 | Build time | Requires **Go compiler** + EAI for module downloads (~2 min cold without CRE) |
 | Bulk writes | `"auto"` prefers **ADBC** when installed (internal gateway); **Snowpark** `write_pandas` is fallback (~2–3 s vs ~7 s vs ~45 s literal for ~50k rows in RSnowflake tests) |
 | Reads | ADBC can use internal gateway with OAuth; preferred for large training pulls and VECTOR/typed ARRAY columns |
-| Semi-structured | VARIANT stays JSON in Arrow; typed ARRAY/struct need account `ENABLE_STRUCTURED_TYPES_IN_CLIENT_RESPONSE` — see [Feature Engineering — ADBC](../17a_feature_engineering_with_r/index.qmd#sec-adbc-semistructured) |
+| Semi-structured | VARIANT stays JSON in Arrow; typed ARRAY/struct need account `ENABLE_STRUCTURED_TYPES_IN_CLIENT_RESPONSE` — see [Training Data in R — ADBC](../17a_training_data_in_r/index.qmd#sec-adbc-semistructured) |
 
 ```r
 %%R

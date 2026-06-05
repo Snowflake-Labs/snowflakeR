@@ -20,7 +20,7 @@ The Snowflake **Feature Store** is a **governed catalog** of feature definitions
 For temporal joins, Dynamic Tables vs external views, online serving, and operations, read the **[Snowflake Feature Store Implementation Guide](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/)** — especially [Concepts](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/01_concepts/index.html), [Feature Views](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/04_feature_views/index.html), and [Temporal Features](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/06_temporal_features/index.html). Examples there are Python; the **objects and semantics are identical** when created from R.
 :::
 
-See also [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) for where Feature Store sits in the lifecycle, [Feature Engineering with R](../17a_feature_engineering_with_r/index.qmd) for training export pipelines (OBJECT/ARRAY/VECTOR → R), and [Model Registry](../18_model_registry/index.qmd) for logging models trained on Feature Store datasets.
+See also [MLOps on Snowflake](../15_mlops_on_snowflake/index.qmd) for where Feature Store sits in the lifecycle, [Authoring Feature Views](../17b_authoring_feature_views/index.qmd) for warehouse SQL/dbplyr feature definitions, [Training Data in R](../17a_training_data_in_r/index.qmd) for reading exports (OBJECT/ARRAY/VECTOR → R), and [Model Registry](../18_model_registry/index.qmd) for logging models trained on Feature Store datasets.
 
 ## Learning Objectives
 
@@ -312,9 +312,9 @@ snowflakeR translates the lazy table to SQL — no `collect()` before registrati
 
 When a feature view would need **hundreds of scalar columns**, prefer **OBJECT** or **ARRAY** bundles (and, for training export at scale, **ARRAY → `::VECTOR`** columns) instead of a wide table. Snowflake documents the pattern in [Implementation Guide §12.10 — Wide & sparse](https://snowflake-labs.github.io/snowflake-featurestore-imp-guide/12_advanced_patterns/#sec-wide-sparse).
 
-From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr).
+From R, build bundles on the warehouse with RSnowflake-only dplyr helpers such as `object_agg()` and `array_agg()` — see [RSnowflake Query — dbplyr](../13_rsnowflake_query/index.qmd#sec-snowflake-dbplyr) and [Authoring Feature Views](../17b_authoring_feature_views/index.qmd#sec-wide-bundles).
 
-For **end-to-end training export** (scalar-wide ASOF → three ARRAY/VECTOR packs, ARRAY-native views, OBJECT flattening, Python decode), use the pipeline table in [Feature Engineering with R — End-to-end pipelines](../17a_feature_engineering_with_r/index.qmd#sec-e2e-pipelines) (Pipelines A–E).
+For **end-to-end training export** (scalar-wide ASOF → three ARRAY/VECTOR packs, ARRAY-native views, OBJECT flattening, Python decode), use the pipeline table in [Training Data in R — End-to-end pipelines](../17a_training_data_in_r/index.qmd#sec-e2e-pipelines) (Pipelines A–E).
 
 ### Time-series (event-level) features
 
@@ -580,6 +580,10 @@ Use **bind parameters** (`?`) for high-QPS serving so Snowflake can reuse plans 
 ---
 
 ## Next steps {#sec-next}
+
+[Authoring Feature Views](../17b_authoring_feature_views/index.qmd) — SQL and dbplyr patterns for `feature_df` (simple aggregates through wide/temporal).
+
+[Training Data in R](../17a_training_data_in_r/index.qmd) — materialize and read training exports into R.
 
 [Model Registry](../18_model_registry/index.qmd) — log models with lineage from Feature Store datasets.
 

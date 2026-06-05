@@ -278,7 +278,7 @@ The power of dbplyr is not “R that talks SQL” — it is **keeping heavy work
 | `collect()` | Warehouse execute + **transfer to R** | Final table slice, ggplot input, `head()` |
 
 ::: {.callout-tip}
-**Feature Store training exports** (OBJECT/ARRAY/VECTOR pipelines, ADBC decode, wide ASOF joins) live in [Feature Engineering with R](../17a_feature_engineering_with_r/index.qmd) — not here. This chapter focuses on everyday dbplyr analytics.
+**Feature Store training exports** (OBJECT/ARRAY/VECTOR pipelines, ADBC decode, wide ASOF joins) live in [Training Data in R](../17a_training_data_in_r/index.qmd) — not here. Feature View **authoring** SQL/dbplyr is in [Authoring Feature Views](../17b_authoring_feature_views/index.qmd). This chapter focuses on everyday dbplyr analytics.
 :::
 
 ### Multi-step ETL with temp tables {#sec-etl-temp}
@@ -453,7 +453,7 @@ sample_for_plot <- tbl(con, in_schema("SALES", "ORDERS")) |>
 
 ### Semi-structured columns (brief) {#sec-semi-structured-brief}
 
-RSnowflake can **build** OBJECT/ARRAY bundles with `object_agg()` and `array_agg()` in dplyr ([RSnowflake-only translations](#sec-snowflake-dbplyr)). How those columns **round-trip into R** (JSON vs Arrow list columns, VECTOR packs, Feature Store `save_as`) is covered in [Feature Engineering with R](../17a_feature_engineering_with_r/index.qmd).
+RSnowflake can **build** OBJECT/ARRAY bundles with `object_agg()` and `array_agg()` in dplyr ([RSnowflake-only translations](#sec-snowflake-dbplyr)). Register bundles as Feature Views in [Authoring Feature Views](../17b_authoring_feature_views/index.qmd). How those columns **round-trip into R** (JSON vs Arrow list columns, VECTOR packs, Feature Store `save_as`) is covered in [Training Data in R](../17a_training_data_in_r/index.qmd).
 
 ---
 
