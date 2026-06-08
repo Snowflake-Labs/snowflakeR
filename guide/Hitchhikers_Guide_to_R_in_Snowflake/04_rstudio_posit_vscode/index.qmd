@@ -171,14 +171,19 @@ Deploying and licensing Posit Native App is a separate product process — this 
 
 ---
 
-## RStudio / Posit Server in a Snowflake container {#sec-rstudio-spcs}
+## RStudio Server on SPCS (custom container) {#sec-rstudio-spcs}
 
-Advanced pattern: run **RStudio Server** or **Posit Workbench** in a custom **SPCS** container image (R + packages pre-baked in Docker).
+Run **RStudio Server** as a custom **SPCS service** when you need full RStudio UX
+inside Snowflake but do not use Posit Workbench Native App.
 
-- Pros: full IDE, custom R versions, packages in image
-- Cons: you operate the container image, compute pool, and scaling
+- **Pros:** native R session, Connections pane, custom image
+- **Cons:** you operate Docker, compute pool, ingress, and scaling
 
-Related: [CRE & ML Jobs](../09_custom_runtime_and_ml_jobs/index.qmd), [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) for SPCS patterns.
+**Full walkthrough:** [RStudio Server on SPCS](../04b_rstudio_spcs/index.qmd) — deploy kit in
+[snowflakeR/inst/rstudio-spcs](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/rstudio-spcs),
+vignettes `rstudio-spcs` and `spcs-custom-services`.
+
+Posit **Workbench Native App** (above) is the managed Marketplace alternative.
 
 ---
 

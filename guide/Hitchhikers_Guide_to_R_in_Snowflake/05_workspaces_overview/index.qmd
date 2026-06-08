@@ -174,7 +174,7 @@ flowchart LR
 | **[Posit Workbench Native App](https://posit.co/products/enterprise/posit-workbench/)** | Full RStudio/Posit IDE in Snowflake |
 | **ML Jobs** | Non-interactive batch on container runtime |
 | **Local RStudio + RSnowflake** | Familiar desktop IDE, `connections.toml` auth |
-| **RStudio Server in SPCS** | Custom containerized IDE (you operate the image) |
+| **[RStudio Server in SPCS](../04b_rstudio_spcs/index.qmd)** | Custom containerized IDE (you operate the image) |
 
 ## Next steps {#sec-next}
 

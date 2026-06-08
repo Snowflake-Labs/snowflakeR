@@ -1,0 +1,230 @@
+---
+title: "RStudio Server on SPCS"
+subtitle: "Native R IDE in a custom container service"
+---
+
+## Overview
+
+**RStudio Server on SPCS** runs the open-source RStudio IDE as a **long-running
+Snowpark Container Services (SPCS) service**. You get a full native R session —
+Connections pane, debugger, Quarto, plots — **inside the Snowflake security
+perimeter**, with **RSnowflake** and **snowflakeR** baked into the image.
+
+This chapter is the **walkthrough**. Deep reference material lives in package
+vignettes and the deploy kit under `snowflakeR/inst/rstudio-spcs/`.
+
+::: {.callout-note}
+**Prerequisites:** SPCS compute pool, image repository, role with `CREATE SERVICE`,
+and (for in-account builds) Snowflake CLI ≥ 3.16 with Image Builder preview.
+:::
+
+## Learning objectives
+
+- Decide when RStudio-on-SPCS fits vs Workspace, Posit Native App, or Remote Dev
+- Provision stages, build an image, and deploy a service end-to-end
+- Connect with RSnowflake and snowflakeR in a native R session
+- Run smoke tests and recover the ingress URL after redeploy
+
+---
+
+## When to choose this path {#sec-when}
+
+| Choose RStudio on SPCS | Choose another path |
+|------------------------|---------------------|
+| RStudio UX is required; you accept operating Docker + pool | Notebook-first → [Workspace](../05_workspaces_overview/index.qmd) |
+| DIY image control (R version, packages, Conda) | Managed IDE → Posit Workbench Native App ([ch. 4](../04_rstudio_posit_vscode/index.qmd)) |
+| No Posit Marketplace license yet | VS Code / Cursor → Snowflake Remote Dev |
+
+Comparison matrix: [Workspaces overview — related paths](../05_workspaces_overview/index.qmd).
+
+---
+
+## Architecture {#sec-arch}
+
+```{mermaid}
+flowchart TB
+  user[R user browser]
+  ingress[SPCS public ingress]
+  svc[RStudio Server container]
+  token["/snowflake/session/token"]
+  host[SNOWFLAKE_HOST internal gateway]
+  wh[Snowflake warehouse]
+
+  user --> ingress --> svc
+  svc --> token
+  svc --> host
+  svc --> wh
+```
+
+| Component | Role |
+|-----------|------|
+| **RStudio Server** | Native R IDE on port 8787 |
+| **RSnowflake** | `dbConnect(Snowflake())` via SQL REST API + SPCS OAuth |
+| **snowflakeR** | ML APIs via reticulate → Snowpark Python |
+| **Miniconda `snowflake_ml`** | Shared Python env for reticulate (not Ubuntu system Python) |
+| **Stage volumes** | Persist workspace files and user R libraries |
+
+---
+
+## Deploy kit {#sec-kit}
+
+The reference implementation ships with **snowflakeR**:
+
+```r
+system.file("rstudio-spcs", package = "snowflakeR")
+```
+
+Public source: [snowflakeR/inst/rstudio-spcs](https://github.com/Snowflake-Labs/snowflakeR/tree/main/inst/rstudio-spcs).
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Kit entry point |
+| `config.example.env` | Account, registry, pool, passwords |
+| `provision.sql` | Stages + pool resume |
+| `provision_image_builder_eai.sql` | Egress for in-account image build |
+| `build_snowflake.sh` / `build_local.sh` | Image build paths |
+| `deploy_service.sh` | `CREATE SERVICE` |
+| `smoke_test.R` / `smoke_test.py` | Validation |
+
+**Vignettes (detail):**
+
+- [snowflakeR: rstudio-spcs](../../vignettes/snowflakeR/rstudio-spcs.html) — kit, reticulate, `sfr_connect_spcs()`
+- [RSnowflake: spcs-custom-services](../../vignettes/RSnowflake/spcs-custom-services.html) — DBI auth, REST API limits
+
+---
+
+## End-to-end steps {#sec-steps}
+
+### 1. Configure
+
+```bash
+cd inst/rstudio-spcs
+cp config.example.env config.env
+# Edit: SNOW_CONNECTION, account, registry URL, pool, roles, RSTUDIO_PASSWORD
+```
+
+Edit `provision.sql` with your database, schema, role, warehouse, and pool names.
+
+### 2. Provision Snowflake objects
+
+```bash
+snow sql -c "$SNOW_CONNECTION" -f provision.sql
+```
+
+Run `provision_image_builder_eai.sql` once as **ACCOUNTADMIN** if you use
+**SPCS Image Builder** (recommended).
+
+You need:
+
+- **Image repository** with **OWNERSHIP** for your deploy role
+- **Compute pool** (build + runtime can share a pool for pilots)
+- **Stage** `VOLUMES` with subpaths `rstudio_workspace` and `rstudio_r_libs`
+
+### 3. Build the image
+
+**Preferred — in-account (Image Builder):**
+
+```bash
+source config.env
+./build_snowflake.sh
+```
+
+Requires CLI ≥ 3.16 and `enable_spcs_build_image = true` in
+`~/.snowflake/config.toml`.
+
+**Fallback — local Docker:**
+
+```bash
+source config.env
+PUSH=1 ./build_local.sh    # always linux/amd64 for SPCS
+```
+
+The build context uploads **pre-built snowflakeR/RSnowflake tarballs** when
+possible — compiling from source inside the builder is slow. See
+[R package tarball workflow](https://github.com/Snowflake-Labs/snowflakeR#installation).
+
+### 4. Deploy the service
+
+```bash
+source config.env
+./deploy_service.sh
+```
+
+`service-spec.template.yaml` sets container env vars including
+`SNOWFLAKE_WAREHOUSE` — required because RSnowflake cannot run `USE WAREHOUSE`
+on the SQL REST API.
+
+### 5. Open RStudio and smoke test
+
+```sql
+SHOW ENDPOINTS IN SERVICE MY_DB.MY_SCHEMA.RSTUDIO_SVC;
+```
+
+::: {.callout-warning}
+## Ingress URL changes on redeploy
+
+Each `DROP SERVICE` + `CREATE SERVICE` cycle assigns a **new** public hostname.
+Re-run `SHOW ENDPOINTS` after every redeploy.
+:::
+
+1. Browser → ingress URL → Snowflake SSO
+2. RStudio login: user `rstudio`, password from `RSTUDIO_PASSWORD` in `config.env`
+3. In R Console: `source("~/smoke_test.R")`
+4. In Terminal: `python3 ~/smoke_test.py`
+
+---
+
+## Using RSnowflake {#sec-rsnowflake}
+
+```r
+library(DBI)
+library(RSnowflake)
+
+con <- dbConnect(Snowflake())
+dbGetQuery(con, "SELECT CURRENT_USER(), CURRENT_WAREHOUSE()")
+```
+
+Warehouse, database, schema, and role come from **service env vars** set at
+deploy time. Full detail:
+[vignette: spcs-custom-services](../../vignettes/RSnowflake/spcs-custom-services.html).
+
+---
+
+## Using snowflakeR {#sec-snowflaker}
+
+**`sfr_connect()`** auto-detects **Workspace Notebooks** only. In this custom
+SPCS service, use **`sfr_connect_spcs()`** from the kit:
+
+```r
+source("~/spcs_helpers.R")
+conn <- sfr_connect_spcs()
+```
+
+The image configures **reticulate** with Miniconda Python at
+`/opt/conda/envs/snowflake_ml/bin/python`. See the
+[rstudio-spcs vignette](../../vignettes/snowflakeR/rstudio-spcs.html) for
+`collect()` vs `to_pandas()` and OpenSSL notes.
+
+---
+
+## Operations {#sec-ops}
+
+| Topic | Guidance |
+|-------|----------|
+| **Image updates** | Rebuild, push, redeploy; suspend/resume pool to force fresh pull |
+| **Persistence** | Use stage volume mounts — not container ephemeral storage |
+| **EAI** | Required for image **build** egress (Docker Hub, CRAN/PPM, PyPI); not for routine Snowflake queries via internal gateway |
+| **Security** | Use ingress OAuth; set a strong `PASSWORD`; do not use `DISABLE_AUTH` |
+| **Cost** | Dedicated service + pool — size `MIN_NODES` / `MAX_NODES` for pilots |
+
+Stage file I/O: mount stages as volumes — RSnowflake does not support SQL
+`GET`/`PUT`. Same pattern as [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) workers.
+
+---
+
+## Related chapters {#sec-related}
+
+- [RStudio, Posit & VS Code](../04_rstudio_posit_vscode/index.qmd) — desktop IDE and Posit Native App
+- [CRE & ML Jobs](../09_custom_runtime_and_ml_jobs/index.qmd) — SPCS images for Workspace (different use case)
+- [RSnowflake in Workspace](../14_rsnowflake_workspace/index.qmd) — `%%R` bootstrap path
+- [Parallel doSnowflake](../22_parallel_dosnowflake/index.qmd) — batch R workers on SPCS

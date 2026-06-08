@@ -25,6 +25,7 @@ These open on the **same** Hitchhiker's Guide GitHub Pages host under `vignettes
 |----------|------|---------------|
 | `getting-started` | [getting-started.html](../../vignettes/snowflakeR/getting-started.html) | [16 — Connect](../../16_snowflaker_connect/index.qmd) |
 | `setup` | [setup.html](../../vignettes/snowflakeR/setup.html) | [03](../../03_local_r_setup/index.qmd), [04](../../04_rstudio_posit_vscode/index.qmd) |
+| `rstudio-spcs` | [rstudio-spcs.html](../../vignettes/snowflakeR/rstudio-spcs.html) | [04b — RStudio on SPCS](../../04b_rstudio_spcs/index.qmd) |
 | `workspace-notebooks` | [workspace-notebooks.html](../../vignettes/snowflakeR/workspace-notebooks.html) | [06–08](../../06_workspace_bootstrap/index.qmd) |
 | `feature-store` | [feature-store.html](../../vignettes/snowflakeR/feature-store.html) | [17 — Feature Store](../../17_feature_store/index.qmd), [17b — Authoring Feature Views](../../17b_authoring_feature_views/index.qmd), [17a — Training Data in R](../../17a_training_data_in_r/index.qmd) |
 | `model-registry` | [model-registry.html](../../vignettes/snowflakeR/model-registry.html) | [18 — Model Registry](../../18_model_registry/index.qmd) |
@@ -47,6 +48,7 @@ Source repo: **[Snowflake-Labs/RSnowflake](https://github.com/Snowflake-Labs/RSn
 |----------|------|---------------|
 | `getting-started` | [getting-started.html](../../vignettes/RSnowflake/getting-started.html) | [12–13](../../12_rsnowflake_connect/index.qmd) |
 | `workspace-rsnowflake` | [workspace-rsnowflake.html](../../vignettes/RSnowflake/workspace-rsnowflake.html) | [14 — Workspace](../../14_rsnowflake_workspace/index.qmd) |
+| `spcs-custom-services` | [spcs-custom-services.html](../../vignettes/RSnowflake/spcs-custom-services.html) | [04b — RStudio on SPCS](../../04b_rstudio_spcs/index.qmd) |
 
 Package repo docs (not vignettes): [WORKSPACE_ADBC.md](https://github.com/Snowflake-Labs/RSnowflake/blob/main/WORKSPACE_ADBC.md){target="_blank" rel="noopener noreferrer"}
 

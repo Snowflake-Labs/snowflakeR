@@ -34,6 +34,7 @@ book:
       chapters:
         - 03_local_r_setup/index.qmd
         - 04_rstudio_posit_vscode/index.qmd
+        - 04b_rstudio_spcs/index.qmd
     - part: "Workspace Notebooks with R"
       chapters:
         - 05_workspaces_overview/index.qmd

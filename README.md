@@ -31,8 +31,20 @@ R interface to the Snowflake ML platform -- Model Registry, Feature Store, Datas
 | **REST Inference** | Pure-R prediction against SPCS service endpoints via `sfr_predict_rest()` |
 | **Parallel / SPCS R** | `foreach` via `registerDoSnowflake()` (local, Tasks, Hybrid Table queue); stage scripts with `sfr_run_executor()`; optional `crew` + `mirai` workers via `crew_controller_spcs()` |
 | **Workspace Notebooks** | First-class support for Snowflake Workspace Notebooks with zero-config auth and `%%R` magic cells |
+| **RStudio on SPCS** | Deploy kit for RStudio Server as a custom SPCS service (`inst/rstudio-spcs/`) |
 
 Under the hood, `snowflakeR` uses [`reticulate`](https://rstudio.github.io/reticulate/) to bridge to the [`snowflake-ml-python`](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index) SDK while exposing a native R API with `snake_case` naming, S3 classes, and `cli` messaging. The same code runs identically in local R sessions and Snowflake Workspace Notebooks.
+
+### RStudio Server on SPCS
+
+For a **native RStudio IDE** inside Snowflake (not `%%R` notebooks), use the deploy kit shipped in this package:
+
+```r
+system.file("rstudio-spcs", package = "snowflakeR")
+```
+
+Walkthrough: [Hitchhiker's Guide — RStudio Server on SPCS](https://snowflake-labs.github.io/snowflakeR/04b_rstudio_spcs/index.html).  
+Vignettes: `vignette("rstudio-spcs")`, `vignette("spcs-custom-services", package = "RSnowflake")`.
 
 ### DBI / dbplyr
 

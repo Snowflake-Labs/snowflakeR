@@ -1,0 +1,162 @@
+---
+title: "RStudio Server on SPCS"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{RStudio Server on SPCS}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+Deploy **RStudio Server** as a custom **SPCS service** with **snowflakeR** and
+**RSnowflake** pre-installed. This vignette is the **technical reference** for
+the deploy kit shipped in this package:
+
+```r
+kit <- system.file("rstudio-spcs", package = "snowflakeR")
+list.files(kit)
+```
+
+The Hitchhiker's Guide chapter **RStudio Server on SPCS** walks through the
+same flow at a higher level.
+
+## Architecture
+
+```
+Browser ──HTTPS ingress──► SPCS service (RStudio :8787)
+                              ├── Native R session
+                              ├── RSnowflake (SQL API / DBI)
+                              ├── snowflakeR + reticulate
+                              ├── Miniconda snowflake_ml (Snowpark Python)
+                              └── /snowflake/session/token + SNOWFLAKE_HOST
+```
+
+Unlike Workspace Notebooks, there is **no Python kernel** and no `%%R` magic.
+R is the primary runtime.
+
+## Deploy kit overview
+
+| Step | Script / file |
+|------|----------------|
+| Configure | `config.example.env` → `config.env` |
+| Provision stages / pool | `provision.sql` |
+| Build EAI (Image Builder) | `provision_image_builder_eai.sql` |
+| Build image | `build_snowflake.sh` or `build_local.sh` |
+| Deploy service | `deploy_service.sh` + `service-spec.template.yaml` |
+| Validate | `smoke_test.R`, `smoke_test.py` |
+
+All paths are under `inst/rstudio-spcs/` in the snowflakeR repository.
+
+## RSnowflake in RStudio
+
+```r
+library(DBI)
+library(RSnowflake)
+
+con <- dbConnect(Snowflake())
+dbGetQuery(con, "SELECT CURRENT_USER(), CURRENT_WAREHOUSE()")
+```
+
+Set `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, and
+`SNOWFLAKE_ROLE` in the service spec. See
+**`vignette("spcs-custom-services", package = "RSnowflake")`** for REST API
+limits (`USE WAREHOUSE`, `GET`/`PUT`).
+
+## snowflakeR: `sfr_connect_spcs()`
+
+**`sfr_connect()`** auto-detects **Workspace Notebook** sessions only. Custom
+SPCS services need explicit host + OAuth token for Snowpark Python:
+
+```r
+source("~/spcs_helpers.R")   # copied into image from the kit
+conn <- sfr_connect_spcs()
+```
+
+The helper:
+
+1. Points **reticulate** at Miniconda Python (`RETICULATE_PYTHON`).
+2. Sets `LD_LIBRARY_PATH` for Conda OpenSSL (avoids `OPENSSL_3.3.0` mismatch).
+3. Calls `snowflakeR`'s Python bridge with `authenticator = "oauth"`.
+
+### reticulate notes
+
+- Use **`reticulate::use_python(full_path)`** — not `use_condaenv()`.
+- The reference image installs **Miniconda** env `snowflake_ml` at
+  `/opt/conda/envs/snowflake_ml/bin/python`.
+- Run `conda install openssl` in that env if you extend the Dockerfile.
+
+### Snowpark `collect()` vs pandas
+
+Snowpark **`collect()`** returns a list of `Row` objects, not a pandas
+DataFrame:
+
+```python
+rows = session.sql("SELECT 1 AS x").collect()
+rows[0].as_dict()
+```
+
+For R via reticulate, prefer **`to_pandas()`** or `py_to_r()` on the result.
+
+## Smoke tests
+
+After deploy, log in via ingress SSO, then RStudio (`rstudio` / service password):
+
+```r
+source("~/smoke_test.R")
+```
+
+```bash
+python3 ~/smoke_test.py
+```
+
+## Image build: tarballs
+
+Compiling R packages inside Image Builder is slow. The kit's
+`prepare_build_ctx.sh` builds a **snowflakeR** tarball locally and copies it
+into the flat build context. **RSnowflake** is included when available;
+otherwise `install_packages.R` installs from GitHub (requires build EAI).
+
+For production, pin tarball URLs or commit `.tar.gz` files under `pkg/` in the
+kit directory.
+
+## Ingress URL
+
+The public endpoint hostname **changes** when you `DROP SERVICE` and
+`CREATE SERVICE` again. Always run:
+
+```sql
+SHOW ENDPOINTS IN SERVICE MY_DB.MY_SCHEMA.RSTUDIO_SVC;
+```
+
+## Persistence
+
+Mount internal stages for workspace files and user-installed R packages:
+
+```yaml
+volumes:
+- name: workspace
+  source: "@MY_DB.MY_SCHEMA.VOLUMES/rstudio_workspace"
+- name: r-libs
+  source: "@MY_DB.MY_SCHEMA.VOLUMES/rstudio_r_libs"
+```
+
+## When not to use this pattern
+
+| Alternative | Why |
+|-------------|-----|
+| Workspace + `setup_notebook()` | No Docker; notebook-first |
+| Posit Workbench Native App | Managed multi-user IDE |
+| Snowflake Remote Dev | VS Code / Cursor; no RStudio |
+
+## Related reading
+
+- **`vignette("spcs-custom-services", package = "RSnowflake")`** — DBI auth and REST API constraints
+- **`vignette("workspace-notebooks")`** — `%%R` / bootstrap path
+- Kit README: `system.file("rstudio-spcs/README.md", package = "snowflakeR")`

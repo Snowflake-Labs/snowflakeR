@@ -1,0 +1,40 @@
+# SPCS service spec for RStudio Server.
+# deploy_service.sh substitutes placeholders from config.env.
+spec:
+  containers:
+  - name: rstudio
+    image: <IMAGE_URI>
+    env:
+      ROOT: "true"
+      PASSWORD: "<RSTUDIO_PASSWORD>"
+      SNOWFLAKE_ACCOUNT: "<SNOWFLAKE_ACCOUNT>"
+      SNOWFLAKE_WAREHOUSE: "<SNOWFLAKE_WAREHOUSE>"
+      SNOWFLAKE_DATABASE: "<SNOWFLAKE_DATABASE>"
+      SNOWFLAKE_SCHEMA: "<SNOWFLAKE_SCHEMA>"
+      SNOWFLAKE_ROLE: "<SNOWFLAKE_ROLE>"
+      LD_LIBRARY_PATH: "/opt/conda/envs/snowflake_ml/lib:/opt/conda/lib"
+    resources:
+      requests:
+        memory: 5Gi
+        cpu: 1
+      limits:
+        memory: 8Gi
+        cpu: 2
+    volumeMounts:
+    - name: workspace
+      mountPath: /home/rstudio/workspace
+    - name: r-libs
+      mountPath: /home/rstudio/r_packages
+  endpoints:
+  - name: rstudio
+    port: 8787
+    public: true
+  volumes:
+  - name: workspace
+    source: "@<VOLUME_STAGE>/rstudio_workspace"
+    uid: 1000
+    gid: 1000
+  - name: r-libs
+    source: "@<VOLUME_STAGE>/rstudio_r_libs"
+    uid: 1000
+    gid: 1000

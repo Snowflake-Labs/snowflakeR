@@ -1,0 +1,4 @@
+config.env
+build-ctx/
+.service-spec.rendered.yaml
+pkg/*.tar.gz

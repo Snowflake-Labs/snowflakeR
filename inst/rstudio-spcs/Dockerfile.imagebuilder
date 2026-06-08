@@ -1,0 +1,40 @@
+# Flat build context for SPCS Image Builder (all files in one directory).
+FROM rocker/rstudio:4.4.2
+
+LABEL description="RStudio Server with RSnowflake and snowflakeR for SPCS"
+
+USER root
+
+# Miniconda Python — reticulate requires --enable-shared (Ubuntu system python3 does not)
+RUN python3 -c "import urllib.request; urllib.request.urlretrieve('https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh', '/tmp/miniconda.sh')" \
+    && bash /tmp/miniconda.sh -b -p /opt/conda \
+    && /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
+    && /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
+    && /opt/conda/bin/conda create -y -n snowflake_ml python=3.12 pip \
+    && /opt/conda/bin/conda install -y -n snowflake_ml -c conda-forge openssl ca-certificates \
+    && /opt/conda/envs/snowflake_ml/bin/pip install --no-cache-dir \
+        snowflake-snowpark-python snowflake-ml-python \
+    && rm -f /tmp/miniconda.sh
+
+ENV RETICULATE_PYTHON=/opt/conda/envs/snowflake_ml/bin/python
+ENV LD_LIBRARY_PATH=/opt/conda/envs/snowflake_ml/lib:/opt/conda/lib
+ENV R_LIBS_USER=/home/rstudio/r_packages
+
+COPY install_packages.R /tmp/install_packages.R
+RUN mkdir -p /tmp/pkg "${R_LIBS_USER}" \
+    && chown -R rstudio:rstudio "${R_LIBS_USER}" /opt/conda
+
+# prepare_build_ctx.sh places *.tar.gz here (snowflakeR required; RSnowflake optional)
+COPY *.tar.gz /tmp/pkg/
+RUN R -f /tmp/install_packages.R \
+    && rm -rf /tmp/install_packages.R /tmp/pkg
+
+COPY rstudio.Rprofile /home/rstudio/.Rprofile
+COPY smoke_test.R smoke_test.py spcs_helpers.R WELCOME.md /home/rstudio/
+RUN chmod +x /home/rstudio/smoke_test.py \
+    && chown -R rstudio:rstudio /home/rstudio/.Rprofile \
+       /home/rstudio/smoke_test.R /home/rstudio/smoke_test.py \
+       /home/rstudio/spcs_helpers.R /home/rstudio/WELCOME.md
+
+WORKDIR /home/rstudio/workspace
+EXPOSE 8787
