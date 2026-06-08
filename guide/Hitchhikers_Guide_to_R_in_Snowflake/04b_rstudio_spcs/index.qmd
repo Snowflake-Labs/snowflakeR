@@ -80,8 +80,9 @@ Public source: [snowflakeR/inst/rstudio-spcs](https://github.com/Snowflake-Labs/
 |------|---------|
 | `README.md` | Kit entry point |
 | `config.example.env` | Account, registry, pool, passwords |
-| `provision.sql` | Stages + pool resume |
-| `provision_image_builder_eai.sql` | Egress for in-account image build |
+| `provision.sh` | Render + run SQL templates from `config.env` |
+| `provision.sql.template` | Stages + pool resume |
+| `provision_image_builder_eai.sql.template` | Egress for in-account image build |
 | `build_snowflake.sh` / `build_local.sh` | Image build paths |
 | `deploy_service.sh` | `CREATE SERVICE` |
 | `smoke_test.R` / `smoke_test.py` | Validation |
@@ -103,16 +104,14 @@ cp config.example.env config.env
 # Edit: SNOW_CONNECTION, account, registry URL, pool, roles, RSTUDIO_PASSWORD
 ```
 
-Edit `provision.sql` with your database, schema, role, warehouse, and pool names.
+All object names live in `config.env` — the same file used by build and deploy scripts.
 
 ### 2. Provision Snowflake objects
 
 ```bash
-snow sql -c "$SNOW_CONNECTION" -f provision.sql
+./provision.sh
+./provision.sh --eai    # once, if using SPCS Image Builder (SNOW_EAI_ROLE, default ACCOUNTADMIN)
 ```
-
-Run `provision_image_builder_eai.sql` once as **ACCOUNTADMIN** if you use
-**SPCS Image Builder** (recommended).
 
 You need:
 

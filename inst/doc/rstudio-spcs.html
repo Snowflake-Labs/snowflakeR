@@ -364,6 +364,10 @@ runtime.</p>
 <div id="deploy-kit-overview" class="section level2">
 <h2>Deploy kit overview</h2>
 <table>
+<colgroup>
+<col width="27%" />
+<col width="72%" />
+</colgroup>
 <thead>
 <tr class="header">
 <th>Step</th>
@@ -377,11 +381,12 @@ runtime.</p>
 </tr>
 <tr class="even">
 <td>Provision stages / pool</td>
-<td><code>provision.sql</code></td>
+<td><code>provision.sh</code> (from
+<code>provision.sql.template</code>)</td>
 </tr>
 <tr class="odd">
 <td>Build EAI (Image Builder)</td>
-<td><code>provision_image_builder_eai.sql</code></td>
+<td><code>provision.sh --eai</code></td>
 </tr>
 <tr class="even">
 <td>Build image</td>

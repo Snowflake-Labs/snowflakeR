@@ -1,0 +1,20 @@
+-- One-time provisioning for RStudio SPCS service.
+-- Rendered by provision.sh from config.env — do not edit placeholders by hand.
+--   source config.env && ./provision.sh
+
+USE ROLE <SNOW_ROLE>;
+USE WAREHOUSE <SNOWFLAKE_WAREHOUSE>;
+USE DATABASE <SNOW_DATABASE>;
+USE SCHEMA <SNOW_SCHEMA>;
+
+CREATE STAGE IF NOT EXISTS VOLUMES
+  ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
+  DIRECTORY = (ENABLE = TRUE);
+
+-- Volume subpaths used by service-spec.template.yaml:
+-- @<VOLUME_STAGE>/rstudio_workspace  -> /home/rstudio/workspace
+-- @<VOLUME_STAGE>/rstudio_r_libs     -> /home/rstudio/r_packages
+
+SHOW IMAGE REPOSITORIES;
+
+ALTER COMPUTE POOL <COMPUTE_POOL> RESUME;

@@ -1,4 +1,6 @@
 config.env
 build-ctx/
 .service-spec.rendered.yaml
+.provision.rendered.sql
+.provision_eai.rendered.sql
 pkg/*.tar.gz

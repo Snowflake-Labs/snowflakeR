@@ -153,17 +153,23 @@ Unlike Workspace Notebooks, there is \textbf{no Python kernel} and no
 
 \subsection{Deploy kit overview}\label{deploy-kit-overview}
 
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.2727}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.7273}}@{}}
 \toprule\noalign{}
-Step & Script / file \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Step
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Script / file
+\end{minipage} \\
 \midrule\noalign{}
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
 Configure & \texttt{config.example.env} → \texttt{config.env} \\
-Provision stages / pool & \texttt{provision.sql} \\
-Build EAI (Image Builder) &
-\texttt{provision\_image\_builder\_eai.sql} \\
+Provision stages / pool & \texttt{provision.sh} (from
+\texttt{provision.sql.template}) \\
+Build EAI (Image Builder) & \texttt{provision.sh\ -\/-eai} \\
 Build image & \texttt{build\_snowflake.sh} or
 \texttt{build\_local.sh} \\
 Deploy service & \texttt{deploy\_service.sh} +

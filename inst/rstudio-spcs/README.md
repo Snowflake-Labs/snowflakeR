@@ -47,12 +47,11 @@ cp config.example.env config.env
 # Edit config.env — account, registry, pool, passwords, roles
 ```
 
-Edit `provision.sql` and `provision_image_builder_eai.sql` with your object names, then:
+Provision Snowflake objects from the same `config.env` (no manual SQL editing):
 
 ```bash
-snow sql -c "$SNOW_CONNECTION" -f provision.sql
-# As ACCOUNTADMIN once:
-snow sql -c "$SNOW_CONNECTION" -f provision_image_builder_eai.sql
+./provision.sh
+./provision.sh --eai    # once, with SNOW_EAI_ROLE (default ACCOUNTADMIN)
 ```
 
 ### 3. Build image
@@ -102,6 +101,7 @@ source("~/smoke_test.R")
 | File | Purpose |
 |------|---------|
 | `config.example.env` | Connection, registry, pool, service names |
+| `provision.sh` | Render + run `provision.sql.template` / EAI template |
 | `service-spec.template.yaml` | SPCS service spec (rendered by `deploy_service.sh`) |
 | `Dockerfile.imagebuilder` | Image recipe (Miniconda + R packages) |
 | `prepare_build_ctx.sh` | Flat build context for Image Builder |

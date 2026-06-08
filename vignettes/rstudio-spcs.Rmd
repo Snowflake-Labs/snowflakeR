@@ -46,8 +46,8 @@ R is the primary runtime.
 | Step | Script / file |
 |------|----------------|
 | Configure | `config.example.env` → `config.env` |
-| Provision stages / pool | `provision.sql` |
-| Build EAI (Image Builder) | `provision_image_builder_eai.sql` |
+| Provision stages / pool | `provision.sh` (from `provision.sql.template`) |
+| Build EAI (Image Builder) | `provision.sh --eai` |
 | Build image | `build_snowflake.sh` or `build_local.sh` |
 | Deploy service | `deploy_service.sh` + `service-spec.template.yaml` |
 | Validate | `smoke_test.R`, `smoke_test.py` |
