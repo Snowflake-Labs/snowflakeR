@@ -389,15 +389,20 @@ runtime.</p>
 <td><code>provision.sh --eai</code></td>
 </tr>
 <tr class="even">
+<td>RStudio password</td>
+<td><code>RSTUDIO_PASSWORD=&#39;…&#39; ./create_password_secret.sh</code>
+(Snowflake secret)</td>
+</tr>
+<tr class="odd">
 <td>Build image</td>
 <td><code>build_snowflake.sh</code> or <code>build_local.sh</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Deploy service</td>
 <td><code>deploy_service.sh</code> +
 <code>service-spec.template.yaml</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Validate</td>
 <td><code>smoke_test.R</code>, <code>smoke_test.py</code></td>
 </tr>
@@ -462,7 +467,7 @@ the result.</p>
 <div id="smoke-tests" class="section level2">
 <h2>Smoke tests</h2>
 <p>After deploy, log in via ingress SSO, then RStudio
-(<code>rstudio</code> / service password):</p>
+(<code>rstudio</code> / password from the Snowflake secret):</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">source</span>(<span class="st">&quot;~/smoke_test.R&quot;</span>)</span></code></pre></div>
 <div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="ex">python3</span> ~/smoke_test.py</span></code></pre></div>
 </div>

@@ -2,7 +2,10 @@
 # Create or replace RStudio SPCS service from service-spec.template.yaml.
 #
 # Prereqs: image in registry; stage @<db>.<schema>.VOLUMES exists
-# Usage: source config.env && ./deploy_service.sh
+# Usage:
+#   source config.env
+#   RSTUDIO_PASSWORD='...' ./create_password_secret.sh   # first time or rotation
+#   ./deploy_service.sh
 #
 set -euo pipefail
 
@@ -16,7 +19,7 @@ SNOW="${SNOW_CLI:-snow}"
 : "${REGISTRY_URL:?Set REGISTRY_URL}"
 : "${IMAGE_NAME:=rstudio-rsnowflake}"
 : "${IMAGE_TAG:=dev}"
-: "${RSTUDIO_PASSWORD:?Set RSTUDIO_PASSWORD}"
+: "${RSTUDIO_PASSWORD_SECRET:?Set RSTUDIO_PASSWORD_SECRET (Snowflake secret name)}"
 : "${SNOWFLAKE_ACCOUNT:?Set SNOWFLAKE_ACCOUNT}"
 : "${SNOWFLAKE_WAREHOUSE:?Set SNOWFLAKE_WAREHOUSE}"
 : "${SNOWFLAKE_DATABASE:=${SNOW_DATABASE}}"
@@ -28,11 +31,12 @@ SNOW="${SNOW_CLI:-snow}"
 SNOW_SQL=( "${SNOW}" sql -c "${SNOW_CONNECTION}" --role "${SNOW_ROLE}" )
 IMAGE_URI="${REGISTRY_URL}/${IMAGE_NAME}:${IMAGE_TAG}"
 VOLUME_STAGE="${SNOW_DATABASE}.${SNOW_SCHEMA}.VOLUMES"
+RSTUDIO_PASSWORD_SECRET_FQN="${SNOW_DATABASE}.${SNOW_SCHEMA}.${RSTUDIO_PASSWORD_SECRET}"
 SPEC_FILE="${SCRIPT_DIR}/.service-spec.rendered.yaml"
 TEMPLATE="${SCRIPT_DIR}/service-spec.template.yaml"
 
 sed -e "s|<IMAGE_URI>|${IMAGE_URI}|g" \
-    -e "s|<RSTUDIO_PASSWORD>|${RSTUDIO_PASSWORD}|g" \
+    -e "s|<RSTUDIO_PASSWORD_SECRET_FQN>|${RSTUDIO_PASSWORD_SECRET_FQN}|g" \
     -e "s|<SNOWFLAKE_ACCOUNT>|${SNOWFLAKE_ACCOUNT}|g" \
     -e "s|<SNOWFLAKE_WAREHOUSE>|${SNOWFLAKE_WAREHOUSE}|g" \
     -e "s|<SNOWFLAKE_DATABASE>|${SNOWFLAKE_DATABASE}|g" \

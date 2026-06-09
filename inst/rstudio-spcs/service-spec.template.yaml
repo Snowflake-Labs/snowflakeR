@@ -6,7 +6,6 @@ spec:
     image: <IMAGE_URI>
     env:
       ROOT: "true"
-      PASSWORD: "<RSTUDIO_PASSWORD>"
       SNOWFLAKE_ACCOUNT: "<SNOWFLAKE_ACCOUNT>"
       SNOWFLAKE_WAREHOUSE: "<SNOWFLAKE_WAREHOUSE>"
       SNOWFLAKE_DATABASE: "<SNOWFLAKE_DATABASE>"
@@ -20,6 +19,9 @@ spec:
       limits:
         memory: 8Gi
         cpu: 2
+    secrets:
+    - snowflakeSecret: <RSTUDIO_PASSWORD_SECRET_FQN>
+      envVarName: PASSWORD
     volumeMounts:
     - name: workspace
       mountPath: /home/rstudio/workspace

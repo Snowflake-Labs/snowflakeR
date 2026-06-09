@@ -6,7 +6,7 @@ for in-account R development via SPCS OAuth.
 ## First-time smoke tests
 
 After Snowflake ingress SSO, log in to RStudio as user `rstudio` with the password
-set in your service spec (`PASSWORD` env var).
+stored in your Snowflake secret (injected as `PASSWORD` at container start).
 
 **R Console**
 

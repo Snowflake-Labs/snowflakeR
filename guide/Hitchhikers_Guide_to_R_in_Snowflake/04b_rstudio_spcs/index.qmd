@@ -81,6 +81,7 @@ Public source: [snowflakeR/inst/rstudio-spcs](https://github.com/Snowflake-Labs/
 | `README.md` | Kit entry point |
 | `config.example.env` | Account, registry, pool, passwords |
 | `provision.sh` | Render + run SQL templates from `config.env` |
+| `create_password_secret.sh` | Snowflake secret → runtime `PASSWORD` (never in git) |
 | `provision.sql.template` | Stages + pool resume |
 | `provision_image_builder_eai.sql.template` | Egress for in-account image build |
 | `build_snowflake.sh` / `build_local.sh` | Image build paths |
@@ -101,7 +102,7 @@ Public source: [snowflakeR/inst/rstudio-spcs](https://github.com/Snowflake-Labs/
 ```bash
 cd inst/rstudio-spcs
 cp config.example.env config.env
-# Edit: SNOW_CONNECTION, account, registry URL, pool, roles, RSTUDIO_PASSWORD
+# Edit: SNOW_CONNECTION, account, registry URL, pool, roles (not the RStudio password)
 ```
 
 All object names live in `config.env` — the same file used by build and deploy scripts.
@@ -142,18 +143,28 @@ The build context uploads **pre-built snowflakeR/RSnowflake tarballs** when
 possible — compiling from source inside the builder is slow. See
 [R package tarball workflow](https://github.com/Snowflake-Labs/snowflakeR#installation).
 
-### 4. Deploy the service
+### 4. Store the RStudio password (Snowflake secret)
+
+Do **not** put the RStudio login password in `config.env` or the image. Create a
+[Snowflake secret](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/working-with-services) and reference it from the service spec — SPCS injects it as the container `PASSWORD` env var at runtime.
+
+```bash
+source config.env
+RSTUDIO_PASSWORD='your-new-password' ./create_password_secret.sh
+```
+
+### 5. Deploy the service
 
 ```bash
 source config.env
 ./deploy_service.sh
 ```
 
-`service-spec.template.yaml` sets container env vars including
-`SNOWFLAKE_WAREHOUSE` — required because RSnowflake cannot run `USE WAREHOUSE`
-on the SQL REST API.
+`service-spec.template.yaml` sets `SNOWFLAKE_WAREHOUSE` and other context env vars
+(required because RSnowflake cannot run `USE WAREHOUSE` on the SQL REST API).
+The RStudio password is **not** in the rendered spec — only the secret object name.
 
-### 5. Open RStudio and smoke test
+### 6. Open RStudio and smoke test
 
 ```sql
 SHOW ENDPOINTS IN SERVICE MY_DB.MY_SCHEMA.RSTUDIO_SVC;
@@ -167,7 +178,7 @@ Re-run `SHOW ENDPOINTS` after every redeploy.
 :::
 
 1. Browser → ingress URL → Snowflake SSO
-2. RStudio login: user `rstudio`, password from `RSTUDIO_PASSWORD` in `config.env`
+2. RStudio login: user `rstudio`, password from `create_password_secret.sh`
 3. In R Console: `source("~/smoke_test.R")`
 4. In Terminal: `python3 ~/smoke_test.py`
 

@@ -15,13 +15,14 @@ That design choice is fundamental. It means:
 - Python, `%%R`, and SQL cells can be intermingled throughout a notebook on the same compute pool / container runtime
 - **snowflakeR** and **RSnowflake** both run inside the embedded R session
 
-This chapter explains how that feels in practice: session persistence, passing data across the bridge, readable output, plotting, and mixing R with Python and SQL in one notebook. For the three-package stack, see [Architecture](../02_architecture/index.qmd). For bootstrap detail, see [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd).
+This chapter explains how that feels in practice: session persistence, passing data across the bridge, readable output, plotting, Workspace tools (Variable explorer, Scratchpad), and mixing R with Python and SQL in one notebook. For the three-package stack, see [Architecture](../02_architecture/index.qmd). For bootstrap detail, see [Workspace Bootstrap](../06_workspace_bootstrap/index.qmd).
 
 ## Learning Objectives
 
 - Explain why `%%R` cells are Python cells under the hood
 - Use `-i` / `-o` magic flags and know when to avoid cross-bridge data transfer
-- Configure output and plots for Workspace rendering
+- Configure output and plots for Workspace rendering — including **plot + interactive data grid** in one cell
+- Use the **Tools panel** Variable explorer and Scratchpad when debugging R/Python interop
 - Structure multi-language notebooks and resolve `/filesystem/` paths
 
 ---
@@ -182,9 +183,32 @@ Optional flags on the magic line:
 |------|---------|---------|
 | **`-i var`** | Import Python variable into R | `%%R -i py_df` |
 | **`-o var`** | Export R object to Python | `%%R -o r_df` |
+| **`-o var1,var2`** | Export **multiple** R objects | `%%R -o p,mtcars` |
 | **`-w` / `-h`** | Plot width / height (pixels) | `%%R -w 700 -h 450` |
 
 Combine flags: `%%R -i py_df -o r_summary -w 600 -h 400`.
+
+Export several objects in one cell:
+
+```r
+%%R -w 700 -h 450 -o p,mtcars
+library(ggplot2)
+p <- ggplot(mtcars, aes(wt, mpg)) + geom_point() + theme_minimal()
+print(p)
+```
+
+Both `p` and `mtcars` appear in the Python namespace for the next cell. You can also repeat the flag: `%%R -o p -o mtcars`. Spaces after commas (`-o p, mtcars`) are normalized automatically by `sfnb_multilang` — older builds without that fix may error with `mtcarslibrary(...)`.
+
+::: {.callout-tip title="Plot and interactive data grid in one cell"}
+Combining **`-w` / `-h`**, **`print(p)`**, and **`-o`** gives two complementary outputs in a single `%%R` cell:
+
+1. **Static ggplot image** — `-w 700 -h 450` plus `print(p)` renders the plot inline (same as a plot-only cell).
+2. **Interactive data grid** — `-o` exports objects into the Python kernel; `SafeRMagics` returns the **last `-o` variable that is a pandas `DataFrame`** as the cell result, which Workspace renders as the **Table / Chart / Pivot** explorer.
+
+So `%%R -w 700 -h 450 -o p,mtcars` with `print(p)` typically shows **both** the scatter plot and an explorable `mtcars` grid. Put the DataFrame **last** in the `-o` list (`-o p,mtcars`, not `-o mtcars,p`) if you want the grid to target that table. Non-tabular `-o` values (ggplot objects, `raw` PNG bytes) are still exported to Python but do not drive the grid viewer.
+
+Use `%%R --text` if you want exports without the interactive grid.
+:::
 
 ### Passing Python → R (`-i`)
 
@@ -217,6 +241,17 @@ r_result.head()   # pandas DataFrame in Python
 ```
 
 The bundled **`r_helpers.py`** (from `sfnb_setup`) also wires richer conversions for notebook displays — lazy dbplyr tables can execute SQL via Snowpark and land as pandas grids without manual `-o` in some workflows.
+
+**What lands in Python** after `-o` (via rpy2's default converter):
+
+| R object | Python type in kernel | Useful for |
+|----------|----------------------|------------|
+| `data.frame` | `pandas.DataFrame` | Next Python cell, grid display |
+| `ggplot` object | `rpy2` RS4 (`ggplot2::ggplot`) | Re-print in R via Scratchpad; not matplotlib-ready |
+| `raw` vector (PNG bytes) | `rpy2` `ByteVector` / `bytes`-like | `IPython.display.Image(data=bytes(...))` |
+| Vectors, lists | `numpy` / Python scalars | Small summaries, counts |
+
+See [Workspace tools panel](#sec-tools-panel) for inspecting these in the Variable explorer.
 
 ### When **not** to use `-i` / `-o`
 
@@ -271,7 +306,7 @@ If output still looks wrong, compare the same cell in **local RStudio** vs Works
 Bootstrap / CRE also set console width from Python when needed:
 
 ```python
-from sfnb_setup import set_r_console_width
+from r_helpers import set_r_console_width
 set_r_console_width(150)
 ```
 
@@ -292,6 +327,43 @@ print(p)
 ```
 
 Without `print(p)`, the cell may run successfully but show a blank output area. Tune `-w` / `-h` for slide exports vs inline notebook viewing.
+
+To show a **plot and** pass the underlying data to Python in one shot, combine plotting flags with `-o` — see the callout under [The `%%R` magic line](#sec-magic).
+
+---
+
+## Workspace tools panel {#sec-tools-panel}
+
+Snowsight's notebook **Tools panel** (alongside the main cell editor) is useful when debugging `%%R` workflows — especially Python↔R exports — without cluttering the notebook with throwaway cells.
+
+### Variable explorer
+
+Open **Variables** in the Tools panel. It lists names in the **Python kernel namespace** (updated when a cell finishes).
+
+Objects exported with **`-o`** appear here as **rpy2-converted Python values**, not as native R objects in an RStudio Environment pane:
+
+| Name (example) | Type shown | Meaning |
+|----------------|------------|---------|
+| `mtcars` | `DataFrame` `(32, 11)` | R `data.frame` → pandas |
+| `p` | `RS4` (`ggplot2::ggplot`, …) | Live ggplot handle in embedded R |
+| `png_bytes` | `ByteVector` / `raw` | PNG file bytes from `readBin()` |
+| `fig`, `ax` | `Figure`, `Axes` | Native matplotlib objects from Python cells |
+
+Use the **Preview** column to confirm conversion before writing a downstream Python cell. The explorer answers "what did `-o` actually give me?" — especially for ggplot (RS4) vs tabular data (DataFrame) vs binary (`raw`).
+
+### Scratchpad
+
+**Scratchpad** provides extra **Python kernel cells** that do not appear in the saved notebook — ideal for ad-hoc inspection while developing:
+
+- `%%R` then `print(mtcars)` or `str(conn)` to probe the embedded R session
+- `%%R -w 700 -h 450` + `print(p)` to re-render a ggplot already in R memory
+- Python snippets: `mtcars.head()`, `type(png_bytes)`, `bytes(png_bytes)[:8]`
+
+Create multiple scratch tabs (**Scratch 1**, **Scratch 2**, …) for parallel experiments. Scratchpad cells share the **same kernel session** as the notebook (variables from `-o`, `conn`, loaded packages all visible).
+
+::: {.callout-note}
+Scratchpad output is ephemeral — useful for debugging and demos-in-progress, not for production pipeline steps. Commit logic to proper notebook cells once it works.
+:::
 
 ---
 
@@ -455,6 +527,7 @@ Pin **`r-reticulate>=1.25`** in config (bootstrap YAML or CRE profile). Older re
 | Auth | `connections.toml`, key-pair, browser | Session OAuth auto |
 | `sfr_connect()` | Reads TOML / params | Wraps active Snowpark session |
 | Plots | Plot pane | `%%R -w … -h …` + `print(p)` |
+| Environment / debug | RStudio Environment, Console | Tools panel **Variables** + **Scratchpad** ([§ Tools panel](#sec-tools-panel)) |
 | Output | Standard | Prefer `rprint()` / `rview()` |
 | Setup | Once per machine | Bootstrap per session (CRE reduces cost) |
 | Python interop | reticulate (optional) | rpy2 + reticulate (required for snowflakeR) |
@@ -482,6 +555,7 @@ Most notebook workflows use **`sfr_predict()`** through the Snowpark session —
 | Blank ggplot cell | Missing `print(p)` or size flags | `%%R -w 700 -h 450` + `print(p)` |
 | Huge data frame slow across `-i` | Bridge transfer | Query from Snowflake in R instead |
 | `sfr_use()` ignored | No reassignment | `conn <- sfr_use(conn, ...)` |
+| `could not find function "mtcarslibrary"` | Space after comma in `-o` list on old `sfnb_multilang` | Use `-o p,mtcars` or `-o p -o mtcars`; upgrade multilang (normalizes `-o p, mtcars`) |
 
 More: [Appendix C: Troubleshooting](../appendices/C_troubleshooting/index.qmd).
 

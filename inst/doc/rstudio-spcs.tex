@@ -170,6 +170,9 @@ Configure & \texttt{config.example.env} → \texttt{config.env} \\
 Provision stages / pool & \texttt{provision.sh} (from
 \texttt{provision.sql.template}) \\
 Build EAI (Image Builder) & \texttt{provision.sh\ -\/-eai} \\
+RStudio password &
+\texttt{RSTUDIO\_PASSWORD=\textquotesingle{}…\textquotesingle{}\ ./create\_password\_secret.sh}
+(Snowflake secret) \\
 Build image & \texttt{build\_snowflake.sh} or
 \texttt{build\_local.sh} \\
 Deploy service & \texttt{deploy\_service.sh} +
@@ -264,7 +267,7 @@ For R via reticulate, prefer \textbf{\texttt{to\_pandas()}} or
 \subsection{Smoke tests}\label{smoke-tests}
 
 After deploy, log in via ingress SSO, then RStudio (\texttt{rstudio} /
-service password):
+password from the Snowflake secret):
 
 \begin{Shaded}
 \begin{Highlighting}[]

@@ -54,6 +54,13 @@ Provision Snowflake objects from the same `config.env` (no manual SQL editing):
 ./provision.sh --eai    # once, with SNOW_EAI_ROLE (default ACCOUNTADMIN)
 ```
 
+**RStudio login password** — never put in `config.env` or git. Store in a Snowflake
+secret; SPCS injects it as the container `PASSWORD` env var at runtime:
+
+```bash
+RSTUDIO_PASSWORD='your-new-password' ./create_password_secret.sh
+```
+
 ### 3. Build image
 
 **Preferred — in-account (Image Builder):**
@@ -75,7 +82,14 @@ PUSH=1 ./build_local.sh
 **RSnowflake** is included when the monorepo sibling exists; otherwise
 `install_packages.R` installs from GitHub during the image build (requires EAI).
 
-### 4. Deploy service
+### 4. Create password secret (first deploy or rotation)
+
+```bash
+source config.env
+RSTUDIO_PASSWORD='your-new-password' ./create_password_secret.sh
+```
+
+### 5. Deploy service
 
 ```bash
 source config.env
@@ -88,9 +102,9 @@ Fetch the ingress URL (it **changes** after each `DROP SERVICE` + `CREATE SERVIC
 SHOW ENDPOINTS IN SERVICE MY_DB.MY_SCHEMA.RSTUDIO_SVC;
 ```
 
-### 5. Smoke test
+### 6. Smoke test
 
-Log in via ingress SSO, then RStudio (`rstudio` / password from `config.env`):
+Log in via ingress SSO, then RStudio (`rstudio` / password you set in `create_password_secret.sh`):
 
 ```r
 source("~/smoke_test.R")
@@ -102,6 +116,7 @@ source("~/smoke_test.R")
 |------|---------|
 | `config.example.env` | Connection, registry, pool, service names |
 | `provision.sh` | Render + run `provision.sql.template` / EAI template |
+| `create_password_secret.sh` | Snowflake secret → runtime `PASSWORD` env (not in image/spec git) |
 | `service-spec.template.yaml` | SPCS service spec (rendered by `deploy_service.sh`) |
 | `Dockerfile.imagebuilder` | Image recipe (Miniconda + R packages) |
 | `prepare_build_ctx.sh` | Flat build context for Image Builder |

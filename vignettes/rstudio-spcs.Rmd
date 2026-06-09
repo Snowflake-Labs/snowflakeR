@@ -48,6 +48,7 @@ R is the primary runtime.
 | Configure | `config.example.env` → `config.env` |
 | Provision stages / pool | `provision.sh` (from `provision.sql.template`) |
 | Build EAI (Image Builder) | `provision.sh --eai` |
+| RStudio password | `RSTUDIO_PASSWORD='…' ./create_password_secret.sh` (Snowflake secret) |
 | Build image | `build_snowflake.sh` or `build_local.sh` |
 | Deploy service | `deploy_service.sh` + `service-spec.template.yaml` |
 | Validate | `smoke_test.R`, `smoke_test.py` |
@@ -106,7 +107,7 @@ For R via reticulate, prefer **`to_pandas()`** or `py_to_r()` on the result.
 
 ## Smoke tests
 
-After deploy, log in via ingress SSO, then RStudio (`rstudio` / service password):
+After deploy, log in via ingress SSO, then RStudio (`rstudio` / password from the Snowflake secret):
 
 ```r
 source("~/smoke_test.R")
